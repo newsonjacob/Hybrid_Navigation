@@ -5,6 +5,9 @@ __pycache__/
 
 # Log files
 *.log
+*.flag
+/logs
+/flags
 
 # Video outputs
 *.avi

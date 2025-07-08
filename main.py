@@ -1,75 +1,96 @@
 import logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
+import threading
+import time
+import os
+from pathlib import Path
+
 from uav.cli import parse_args
 from uav.sim_launcher import launch_sim
-from uav.nav_loop import (setup_environment, start_perception_thread, navigation_loop, cleanup)
+from uav.nav_loop import setup_environment, start_perception_thread, navigation_loop, cleanup
 import airsim
 from uav.utils import FLOW_STD_MAX
 from uav.config import load_app_config
+from slam_bridge.slam_receiver import start_receiver
+from slam_bridge.slam_plotter import plot_slam_trajectory
 
-from pathlib import Path
-
-# Default path to AirSim settings file
-SETTINGS_PATH = str(Path.home() / "Documents" / "AirSim" / "settings.json")
+# --- Flag paths ---
+flags_dir = Path("flags")
+flags_dir.mkdir(exist_ok=True)
+START_FLAG_PATH = flags_dir / "start_nav.flag"
+SETTINGS_PATH = r"C:\Users\Jacob\OneDrive\Documents\AirSim\settings.json"
 
 def get_settings_path(args, config):
-    """
-    Determine the path to the AirSim settings file.
-    Priority: command-line argument > config file > default path.
-    """
     try:
         return args.settings_path or config.get("paths", "settings")
     except Exception:
         return SETTINGS_PATH
 
+def wait_for_nav_trigger():
+    logging.info("[INFO] Waiting for navigation start flag...")
+    while not START_FLAG_PATH.exists():
+        time.sleep(1)
+    logging.info("[INFO] Navigation start flag found. Beginning nav logic...")
+
 def main() -> None:
-    # Parse command-line arguments (e.g., config file, simulation settings)
     args = parse_args()
-    # Load application configuration from file
     config = load_app_config(args.config)
-    # Get the AirSim settings path
     settings_path = get_settings_path(args, config)
-    # Launch the AirSim simulator process
+
+    logging.info(f"Using settings file at: {settings_path}")
     sim_process = launch_sim(args, settings_path, config)
+    pid_path = Path("flags/ue4_sim.pid")
+    pid_path.write_text(str(sim_process.pid))
 
     # Wait for the simulator to be ready before connecting the AirSim client
-    import time
     max_attempts = 10
     for attempt in range(max_attempts):
         try:
-            client = airsim.MultirotorClient()  # Create AirSim client
-            client.confirmConnection()          # Try to connect
-            break                              # Success: exit loop
+            client = airsim.MultirotorClient()
+            client.confirmConnection()
+            break
         except Exception as e:
             logging.info(f"Waiting for simulator to be ready... (attempt {attempt+1}/{max_attempts})")
-            time.sleep(2)                      # Wait and retry
+            time.sleep(2)
     else:
-        # If connection fails after all attempts, clean up and exit
         logging.error("Failed to connect to AirSim simulator after multiple attempts.")
         cleanup(None, sim_process, None)
         return
 
-    # Enable API control and arm the drone (redundant for safety)
+    # ✅ Signal AirSim ready
+    (flags_dir / "airsim_ready.flag").touch()
+    logging.info("[INFO] AirSim + camera ready — flag set")
+
+
+    # ✅ NOW WAIT for navigation trigger AFTER sim is fully launched
+    wait_for_nav_trigger()
+
     client.enableApiControl(True)
     client.armDisarm(True)
     client.confirmConnection()
     client.enableApiControl(True)
     client.armDisarm(True)
 
-    ctx = None  # Context dictionary for sharing state between modules
+
+    ctx = None
     try:
-        # Set up the simulation environment (logging, video, navigation state, etc.)
+        start_receiver()
+        import atexit
+        from slam_bridge.slam_plotter import save_interactive_plot
+        threading.Thread(target=plot_slam_trajectory, daemon=True).start()
+        atexit.register(save_interactive_plot)
+
         ctx = setup_environment(args, client)
-        # Start the perception thread (handles image capture and optical flow)
         start_perception_thread(ctx)
-        # Enter the main navigation loop (handles drone movement and logic)
         navigation_loop(args, client, ctx)
     finally:
-        # Always clean up resources (stop threads, close files, terminate sim)
+        for flag in [flags_dir / "airsim_ready.flag", flags_dir / "start_nav.flag"]:
+            try:
+                flag.unlink()
+            except FileNotFoundError:
+                pass
         cleanup(client, sim_process, ctx if ctx is not None else None)
-
-    # Note: navigator.settling is handled inside the navigation loop
 
 if __name__ == "__main__":
     main()

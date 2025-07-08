@@ -7,8 +7,11 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 def launch_sim(args, settings_path, config: Optional[ConfigParser] = None):
+    """
+    Launches the Unreal Engine (AirSim) simulation and returns the process handle.
+    """
     map_launch_args = {
-        "reactive": "/Game/Maps/Map_Reactive",
+        "reactive": "/Game/Map_Reactive",
         "deliberative": "/Game/Maps/Map_Deliberative",
         "hybrid": "/Game/Maps/Map_Hybrid"
     }
