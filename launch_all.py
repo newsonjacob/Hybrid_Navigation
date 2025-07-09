@@ -139,12 +139,13 @@ def main():
     try:
         # --- STEP 1: Launch Unreal + main.py ---
         main_proc = subprocess.Popen([
-            "python", "main.py", "--nav-mode", "slam",
+            "python", "main.py", "--nav-mode", args.nav_mode,
             "--slam-server-host", slam_server_host,
             "--slam-server-port", str(slam_server_port),
             "--slam-receiver-host", slam_receiver_host,
             "--slam-receiver-port", str(slam_receiver_port),
         ])
+
         logging.info("Started Unreal Engine + main script (idle)")
         logging.info("Giving Unreal Engine time to finish loading map and camera...")
 
@@ -153,93 +154,88 @@ def main():
             shutdown_all(main_proc)
             sys.exit(1)
 
-        # --- STEP 3: Launch image streamer BEFORE waiting for slam_ready.flag
-        stream_proc = subprocess.Popen([
-            "python",
-            "slam_bridge/stream_airsim_image.py",
-            "--host", slam_server_host,
-            "--port", str(slam_server_port),
-        ])
-        logging.info("Started SLAM image streamer")
-        
-        # --- STEP 3.5: Wait a moment for first image to be sent ---
-        time.sleep(2)
+        if args.nav_mode == "slam":
+            # --- STEP 3: Launch image streamer BEFORE waiting for slam_ready.flag
+            stream_proc = subprocess.Popen([
+                "python",
+                "slam_bridge/stream_airsim_image.py",
+                "--host", slam_server_host,
+                "--port", str(slam_server_port),
+            ])
+            logging.info("Started SLAM image streamer")
+            
+            # --- STEP 3.5: Wait a moment for first image to be sent ---
+            time.sleep(2)
 
-        # --- STEP 4: Launch SLAM backend in WSL ---
-        slam_cmd = [
-            "wsl", "bash", "-c",
-            f"export POSE_RECEIVER_IP={slam_receiver_host}; "
-            f"export POSE_RECEIVER_PORT={slam_receiver_port}; "
-            "cd /mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/linux_slam/build && ./app/tcp_slam_server ../Vocabulary/ORBvoc.txt ../app/rgbd_settings.yaml"
-        ]
+            # --- STEP 4: Launch SLAM backend in WSL ---
+            slam_cmd = [
+                "wsl", "bash", "-c",
+                f"export POSE_RECEIVER_IP={slam_receiver_host}; "
+                f"export POSE_RECEIVER_PORT={slam_receiver_port}; "
+                "cd /mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/linux_slam/build && ./app/tcp_slam_server ../Vocabulary/ORBvoc.txt ../app/rgbd_settings.yaml"
+            ]
 
-        slam_proc = subprocess.Popen(slam_cmd)
-        logging.info("Started SLAM backend in WSL")
+            slam_proc = subprocess.Popen(slam_cmd)
+            logging.info("Started SLAM backend in WSL")
 
-        # --- STEP 4c: Wait for slam_ready.flag (now that streamer can talk to SLAM)
-        if not wait_for_flag(SLAM_READY_FLAG, timeout=30):
-            logging.error("SLAM backend never received first image — shutting down.")
-            time.sleep(2)  # Give some time for SLAM to log the error
-            shutdown_all(main_proc, slam_proc, stream_proc)
-            sys.exit(1)
+            # --- STEP 4c: Wait for slam_ready.flag (now that streamer can talk to SLAM)
+            if not wait_for_flag(SLAM_READY_FLAG, timeout=30):
+                logging.error("SLAM backend never received first image — shutting down.")
+                time.sleep(2)  # Give some time for SLAM to log the error
+                shutdown_all(main_proc, slam_proc, stream_proc)
+                sys.exit(1)
 
-        # --- Debug: List all open window titles ---
-        logging.debug("Current open windows:")
-        for title in gw.getAllTitles():
-            logging.debug("  - %s", title)
+            # --- STEP 5: Wait for Pangolin window to appear ---
+            try:
+                wait_for_window("ORB-SLAM2", timeout=20)
+            except TimeoutError as e:
+                logging.error(e)
+                logging.info("Shutting down due to missing SLAM visualization window...")
+                shutdown_all(main_proc, slam_proc)
+                sys.exit(1)
 
-        # --- Wait for Pangolin window to appear ---
-        try:
-            wait_for_window("ORB-SLAM2", timeout=20)
-        except TimeoutError as e:
-            logging.error(e)
-            logging.info("Shutting down due to missing SLAM visualization window...")
-            shutdown_all(main_proc, slam_proc)
-            sys.exit(1)
+            # --- STEP 6: Start screen recording ---
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            slam_video_path = f"analysis/slam_output_{timestamp}.mp4"
 
-        # Generate timestamped filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        slam_video_path = f"analysis/slam_output_{timestamp}.mp4"
+            window_title = None
+            for title in gw.getAllTitles():
+                if "ORB-SLAM2" in title:
+                    window_title = title
+                    break
 
-        # Screen capture command (adjust coordinates as needed)
-        # Find the window title containing "ORB-SLAM2"
-        window_title = None
-        for title in gw.getAllTitles():
-            if "ORB-SLAM2" in title:
-                window_title = title
-                break
+            if not window_title:
+                logging.error("Could not find window with title containing 'ORB-SLAM2'.")
+                shutdown_all(main_proc, slam_proc)
+                sys.exit(1)
 
-        if not window_title:
-            logging.error("Could not find window with title containing 'ORB-SLAM2'.")
-            shutdown_all(main_proc, slam_proc)
-            sys.exit(1)
+            ffmpeg_cmd = [
+                "ffmpeg",
+                "-hide_banner", "-loglevel", "error",
+                "-y",
+                "-f", "gdigrab",
+                "-framerate", "30",
+                "-i", f"title={window_title}",
+                "-t", "60",
+                slam_video_path
+            ]
 
-        ffmpeg_cmd = [
-            "ffmpeg",
-            "-hide_banner",              # ✅ hides config/compile info
-            "-loglevel", "error",        # ✅ only show actual errors (or use "warning" for minimal logs)
-            "-y",
-            "-f", "gdigrab",
-            "-framerate", "30",
-            "-i", f"title={window_title}",
-            "-t", "60",
-            slam_video_path
-        ]
+            try:
+                ffmpeg_proc = subprocess.Popen(ffmpeg_cmd)
+            except FileNotFoundError:
+                logging.error("ffmpeg executable not found.")
+                shutdown_all(main_proc, slam_proc, stream_proc)
+                sys.exit(1)
 
-        try:
-            ffmpeg_proc = subprocess.Popen(ffmpeg_cmd) # Start ffmpeg process
-        except FileNotFoundError:
-            logging.error("ffmpeg executable not found. Please install ffmpeg and ensure it is in your PATH.")
-            shutdown_all(main_proc, slam_proc, stream_proc, None, slam_video_path)
-            sys.exit(1)
-        logging.info("Started screen recording to %s", slam_video_path)
+            logging.info("Started screen recording to %s", slam_video_path)
 
-        # --- STEP 6.5: Abort if SLAM failed to receive first image ---
-        if os.path.exists(SLAM_FAILED_FLAG):
-            logging.error("SLAM backend reported failure — aborting simulation.")
-            shutdown_all(main_proc, slam_proc, stream_proc, ffmpeg_proc, slam_video_path)
-            SLAM_FAILED_FLAG.unlink(missing_ok=True)
-            sys.exit(1)
+            # --- STEP 6.5: Abort if SLAM failed to receive first image ---
+            if os.path.exists(SLAM_FAILED_FLAG):
+                logging.error("SLAM backend reported failure — aborting simulation.")
+                shutdown_all(main_proc, slam_proc, stream_proc, ffmpeg_proc, slam_video_path)
+                SLAM_FAILED_FLAG.unlink(missing_ok=True)
+                sys.exit(1)
+
 
         # --- STEP 7: Touch start_nav.flag to begin navigation ---
         START_NAV_FLAG.touch()
