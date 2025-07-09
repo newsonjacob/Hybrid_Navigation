@@ -11,7 +11,7 @@ from threading import Thread
 
 # === AirSim Imports ===
 import airsim
-from airsim import ImageRequest, ImageType
+from airsim import ImageRequest, ImageType, LandedState
 
 # === Internal Module Imports ===
 from uav.overlay import draw_overlay
@@ -655,6 +655,27 @@ def cleanup(client, sim_process, ctx):
                 time.sleep(0.1)
             except Exception:
                 break
+
+    try:
+        # Wait until the drone is landed or until a timeout (e.g., 15 seconds)
+        if client and ctx is not None and ctx.get("exit_flag", None) and ctx["exit_flag"].is_set():
+            logger.info("🕒 Waiting for drone to land for graceful shutdown...")
+            max_wait = 15  # seconds
+            start_wait = time.time()
+            while True:
+                try:
+                    state = client.getMultirotorState()
+                    if state.landed_state == LandedState.Landed:
+                        logger.info("Drone is landed (LandedState.Landed).")
+                        break
+                except Exception:
+                    break
+                if time.time() - start_wait > max_wait:
+                    logger.warning("Timeout waiting for drone to land.")
+                    break
+                time.sleep(0.1)
+    except Exception as e:
+        logger.error("Error during graceful shutdown wait: %s", e)
 
     if sim_process:
         sim_process.terminate()

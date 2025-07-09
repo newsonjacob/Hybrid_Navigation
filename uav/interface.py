@@ -1,5 +1,6 @@
 # uav/interface.py
 """Simple Tkinter GUI utilities for controlling the simulation."""
+import os
 import tkinter as tk
 from threading import Thread
 from threading import Event
@@ -21,9 +22,17 @@ def launch_control_gui(param_refs, nav_mode="unknown"):
         state_val.set(param_refs['state'][0])
         root.after(200, update_labels)
 
+    def update_status_lights():
+        for name, flag_path in systems:
+            if os.path.exists(flag_path):
+                status_labels[name].config(fg="green")
+            else:
+                status_labels[name].config(fg="red")
+        root.after(500, update_status_lights)
+
     root = tk.Tk()
     root.title("UAV Controller")
-    root.geometry("300x280")
+    root.geometry("340x380")
 
     l_val = tk.StringVar()
     c_val = tk.StringVar()
@@ -31,6 +40,29 @@ def launch_control_gui(param_refs, nav_mode="unknown"):
     state_val = tk.StringVar()
 
     tk.Label(root, text=f"Navigation Mode: {nav_mode.upper()}", fg="blue", font=("Arial", 12, "bold")).pack(pady=(5, 0))
+
+    # --- Traffic light indicators for all flags ---
+    status_frame = tk.Frame(root)
+    status_frame.pack(pady=10)
+
+    systems = [
+        ("AirSim", "flags/airsim_ready.flag"),
+        ("SLAM", "flags/slam_ready.flag"),
+        ("Streamer", "flags/streamer_ready.flag"),
+        ("Main", "flags/main_ready.flag"),
+        ("Start Nav", "flags/start_nav.flag"),
+        ("UE4 PID", "flags/ue4_sim.pid"),
+        # Add/remove flags as needed for your workflow
+    ]
+    status_labels = {}
+
+    for idx, (name, _) in enumerate(systems):
+        tk.Label(status_frame, text=name + ":").grid(row=idx, column=0, sticky='e')
+        lbl = tk.Label(status_frame, text="●", font=("Arial", 18), fg="red")
+        lbl.grid(row=idx, column=1, sticky='w')
+        status_labels[name] = lbl
+
+    update_status_lights()
 
     tk.Button(
         root,
