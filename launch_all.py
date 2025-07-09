@@ -141,16 +141,6 @@ def main():
     main_proc = slam_proc = stream_proc = ffmpeg_proc = None
     slam_video_path = None
 
-    # --- LAUNCH GUI FIRST ---
-    # You can pass param_refs={} or any shared state if needed, or just nav_mode
-    param_refs = {
-        "L": [0.0],
-        "C": [0.0],
-        "R": [0.0],
-        "state": ["idle"]
-    }
-    start_gui(param_refs, nav_mode=args.nav_mode)  # Launches GUI in a background thread
-
     try:
         # --- STEP 1: Launch Unreal + main.py ---
         main_proc = subprocess.Popen([
@@ -255,6 +245,10 @@ def main():
         # --- STEP 7: Wait for user to initiate navigation via GUI ---
         logging.info("Waiting for user to initiate navigation via GUI (flags/start_nav.flag)...")
         while not START_NAV_FLAG.exists():
+            if os.path.exists("flags/stop.flag"):
+                logging.info("Stop flag detected before navigation started. Shutting down.")
+                shutdown_all(main_proc, slam_proc, stream_proc, ffmpeg_proc, slam_video_path)
+                sys.exit(0)
             time.sleep(0.2)
         logging.info("Signaling navigation to begin...")
 
@@ -267,7 +261,7 @@ def main():
 
 if __name__ == "__main__":
     # --- CLEANUP FLAGS FIRST ---
-    for flag in [AIRSIM_READY_FLAG, SLAM_READY_FLAG, SLAM_FAILED_FLAG, START_NAV_FLAG]:
+    for flag in [AIRSIM_READY_FLAG, SLAM_READY_FLAG, SLAM_FAILED_FLAG, START_NAV_FLAG, flags_dir / "stop.flag", flags_dir / "nav_mode.flag"]:
         try:
             flag.unlink()
         except FileNotFoundError:
@@ -275,4 +269,27 @@ if __name__ == "__main__":
         except PermissionError:
             logging.warning(f"Could not delete {flag} due to permission error.")
 
+    # --- LAUNCH GUI ---
+    param_refs = {
+        "L": [0.0],
+        "C": [0.0],
+        "R": [0.0],
+        "state": ["idle"]
+    }
+    start_gui(param_refs)
+
+    # Wait for user to select nav mode and launch simulation
+    logging.info("Waiting for user to select navigation mode and launch simulation...")
+    while not os.path.exists("flags/nav_mode.flag"):
+        if os.path.exists("flags/stop.flag"):
+            logging.info("Stop flag detected before simulation started. Shutting down.")
+            sys.exit(0)
+        time.sleep(0.2)
+
+    # Read selected navigation mode
+    with open("flags/nav_mode.flag") as f:
+        selected_nav_mode = f.read().strip()
+    logging.info(f"User selected navigation mode: {selected_nav_mode}")
+
+    # --- NOW CALL MAIN() TO LAUNCH THE SIMULATION ---
     main()

@@ -352,6 +352,7 @@ def handle_reset(client, ctx, frame_count):
         "time,features,simgetimage_s,decode_s,processing_s,loop_s\n"
     )
     retain_recent_logs("flow_logs")
+    retain_recent_logs("logs")
     frame_queue.put(None)
     video_thread.join()
     out.release()

@@ -16,6 +16,11 @@ def launch_control_gui(param_refs, nav_mode="unknown"):
         from pathlib import Path
         Path("flags/stop.flag").touch()
 
+    def on_launch_sim():
+        """Write selected nav mode to a flag file to trigger simulation startup."""
+        from pathlib import Path
+        Path("flags/nav_mode.flag").write_text(nav_mode_var.get())
+
     def on_start_nav():
         """Create the start_nav.flag to trigger navigation."""
         from pathlib import Path
@@ -74,6 +79,24 @@ def launch_control_gui(param_refs, nav_mode="unknown"):
         lbl = tk.Label(status_frame, text="●", font=("Arial", 18), fg="red")
         lbl.grid(row=idx, column=1, sticky='w')
         status_labels[name] = lbl
+
+    # Navigation mode selection
+    nav_modes = ["slam", "reactive", "other"]  # Add your modes here
+    nav_mode_var = tk.StringVar(value=nav_modes[0])
+
+    # Add dropdown and launch button to GUI
+    tk.Label(root, text="Select Navigation Mode:").pack(pady=(10, 0))
+    nav_mode_menu = tk.OptionMenu(root, nav_mode_var, *nav_modes)
+    nav_mode_menu.pack(pady=(0, 10))
+
+    launch_sim_btn = tk.Button(
+        root,
+        text="Launch Simulation",
+        command=on_launch_sim,
+        bg='blue',
+        fg='white'
+    )
+    launch_sim_btn.pack(pady=5)
 
     # Start Navigation button (initially disabled)
     start_nav_btn = tk.Button(

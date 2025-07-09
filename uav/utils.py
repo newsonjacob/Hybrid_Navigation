@@ -58,7 +58,7 @@ def _timestamp_from_name(path: str) -> float:
         return os.path.getmtime(path)
 
 
-def retain_recent_logs(log_dir: str, keep: int = 5) -> None:
+def retain_recent_logs(log_dir: str, keep: int = 1) -> None:
     """
     Keep only the ``keep`` most recent logs for each log type in the logs folder.
     Handles: full_log_*.csv, launch_*.log, slam_server_debug_*.log, pose_log_*.txt
@@ -66,8 +66,9 @@ def retain_recent_logs(log_dir: str, keep: int = 5) -> None:
     log_patterns = [
         "full_log_*.csv",
         "launch_*.log",
-        "slam_server_debug_*.log",
-        "pose_log_*.txt",
+        "slam_*.log",
+        "pose_*.txt",
+        "pose_*.log",
     ]
     for pattern in log_patterns:
         try:
@@ -83,7 +84,7 @@ def retain_recent_logs(log_dir: str, keep: int = 5) -> None:
         files.sort(key=_timestamp_from_name, reverse=True)
         logger.info("\U0001F9F9 [%s] Found %d logs, keeping %d most recent.", pattern, len(files), keep)
 
-        for old_file in files[keep:]:
+        for old_file in files[keep:]: # Keep the most recent `keep` files
             try:
                 logger.info("\U0001F5D1\uFE0F Deleting old log: %s", old_file)
                 os.remove(old_file)
