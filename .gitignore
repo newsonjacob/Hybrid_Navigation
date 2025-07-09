@@ -18,6 +18,7 @@ __pycache__/
 
 # Flow logs
 .html
+flow_logs/
 
 linux_slam/app/data/
 linux_slam/custom/data/
