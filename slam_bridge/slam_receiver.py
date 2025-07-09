@@ -4,6 +4,10 @@ import time
 import threading
 from collections import deque
 import numpy as np
+import logging
+from slam_bridge.logging_helper import configure_file_logger
+
+logger = configure_file_logger("slam_receiver.log")
 
 HOST = "192.168.1.102"  # Default IP if not provided
 PORT = 6001
@@ -28,7 +32,7 @@ def recvall(conn, n):
     return data
 
 def _recv_loop(host: str, port: int):
-    print("[SLAM Receiver] Starting...")
+    logger.info("Starting...")
     while True:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:  # Create a new socket
@@ -39,13 +43,13 @@ def _recv_loop(host: str, port: int):
 
                 try:
                     conn, addr = sock.accept()
-                    print(f"[SLAM Receiver] ✅ Connected by {addr}")
+                    logger.info("\u2705 Connected by %s", addr)
                     with conn:
                         global frame_counter
                         while True:
                             data = recvall(conn, 48) # 12 floats * 4 bytes each = 48 bytes
                             if data is None:
-                                print("[SLAM Receiver] Connection closed.")
+                                logger.info("Connection closed.")
                                 break
                             pose = struct.unpack('<12f', data) # Unpack 12 floats (3x4 matrix)
                             matrix = np.array([pose[i*4:(i+1)*4] for i in range(3)], dtype=np.float32)
@@ -54,14 +58,14 @@ def _recv_loop(host: str, port: int):
                                 slam_pose['timestamp'] = time.time()
                                 slam_pose['valid'] = True
                             is_identity = np.allclose(matrix, np.eye(3,4), atol=1e-6)
-                            print(f"[SLAM Receiver] Frame {frame_counter} valid={not is_identity}")
-                            print(matrix)
+                            logger.info("Frame %d valid=%s", frame_counter, not is_identity)
+                            logger.info("%s", matrix)
                             pose_history.append((frame_counter, slam_pose['timestamp'], matrix, not is_identity))
                             frame_counter += 1
                 except socket.timeout:
                     pass
         except Exception as e:
-            print(f"[SLAM Receiver] Error: {e}")
+            logger.error("Error: %s", e)
 
 def start_receiver(host: str = HOST, port: int = PORT):
     threading.Thread(target=_recv_loop, args=(host, port), daemon=True).start()
@@ -85,7 +89,7 @@ if __name__ == "__main__":
     parser.add_argument("--host", default=HOST)
     parser.add_argument("--port", type=int, default=PORT)
     args = parser.parse_args()
-    print("[SLAM Receiver] Waiting for SLAM client...")
+    logger.info("Waiting for SLAM client...")
     start_receiver(args.host, args.port)
     while True:
         time.sleep(1)  # Keep the script alive

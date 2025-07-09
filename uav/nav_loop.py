@@ -33,6 +33,9 @@ logger = logging.getLogger(__name__)
 # Grace period duration (seconds) after dodge/brake actions
 NAV_GRACE_PERIOD_SEC = 0.5
 
+# Flag file to stop the drone
+STOP_FLAG_PATH = "flags/stop.flag"
+
 # === Perception Processing ===
 
 def perception_loop(tracker, image):
@@ -360,7 +363,7 @@ def handle_reset(client, ctx, frame_count):
 
 def setup_environment(args, client):
     """Initialize the navigation environment and return a context dict."""
-    from uav.interface import exit_flag, start_gui
+    from uav.interface import exit_flag
     from uav.utils import retain_recent_logs
     param_refs = {
         'L': [0.0], 'C': [0.0], 'R': [0.0],
@@ -368,7 +371,6 @@ def setup_environment(args, client):
         'delta_L': [0.0], 'delta_C': [0.0], 'delta_R': [0.0],
         'state': [''], 'reset_flag': [False]
     }
-    start_gui(param_refs)
     logger.info("Available vehicles: %s", client.listVehicles())
     client.enableApiControl(True); client.armDisarm(True)
     client.takeoffAsync().join(); client.moveToPositionAsync(0, 0, -2, 2).join()
@@ -393,6 +395,7 @@ def setup_environment(args, client):
         "time,features,simgetimage_s,decode_s,processing_s,loop_s\n"
     )
     retain_recent_logs("flow_logs")
+    retain_recent_logs("logs")
     try: fourcc = cv2.VideoWriter_fourcc(*'MJPG')
     except AttributeError: fourcc = cv2.FOURCC(*'MJPG')
     out = cv2.VideoWriter(config.VIDEO_OUTPUT, fourcc, config.VIDEO_FPS, config.VIDEO_SIZE)
@@ -460,6 +463,10 @@ def navigation_loop(args, client, ctx):
     try:
         loop_start = time.time()
         while not exit_flag.is_set():
+            if os.path.exists(STOP_FLAG_PATH):
+                logger.info("Stop flag detected. Landing and shutting down.")
+                exit_flag.set()
+                break
             frame_count += 1
             time_now = time.time()
             if not startup_grace_over:
@@ -527,6 +534,11 @@ def slam_navigation_loop(args, client, ctx):
 
     from slam_bridge.slam_receiver import get_latest_pose
 
+    # --- Incorporate exit_flag from ctx for GUI stop button ---
+    exit_flag = None
+    if ctx is not None:
+        exit_flag = ctx.get("exit_flag", None)
+
     start_time = time.time()
     max_duration = getattr(args, "max_duration", 60)
     goal_x = getattr(args, "goal_x", 29)
@@ -536,6 +548,12 @@ def slam_navigation_loop(args, client, ctx):
 
     try:
         while True:
+            # --- Check for exit_flag to allow GUI stop button to interrupt navigation ---
+            if (exit_flag is not None and exit_flag.is_set()) or os.path.exists(STOP_FLAG_PATH):
+                logger.info("[SLAMNav] Stop flag detected. Landing and exiting navigation loop.")
+                client.landAsync().join()
+                break
+
             pose = get_latest_pose()
             if pose is not None:
                 x, y, z = pose
@@ -684,5 +702,14 @@ def cleanup(client, sim_process, ctx):
         except Exception:
             sim_process.kill()
         logger.info("UE4 simulation closed.")
+
+    # --- New cleanup code ---
+    try:
+        # Ensure the stop flag file is removed on cleanup
+        if os.path.exists(STOP_FLAG_PATH):
+            os.remove(STOP_FLAG_PATH)
+            logger.info("Removed stop flag file.")
+    except Exception as e:
+        logger.error("Error removing stop flag file: %s", e)
 
 

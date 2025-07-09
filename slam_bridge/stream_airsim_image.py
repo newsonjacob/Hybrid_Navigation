@@ -1,10 +1,20 @@
+import sys
+import os
 import argparse
 import logging
-import os
+from pathlib import Path
+
+# --- Robust import for configure_file_logger ---
+try:
+    from slam_bridge.logging_helper import configure_file_logger
+except ModuleNotFoundError:
+    # Fallback: add parent directory to sys.path and try again
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from slam_bridge.logging_helper import configure_file_logger
+
 import socket
 import struct
 import time
-from pathlib import Path
 
 from typing import List
 
@@ -128,7 +138,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
+    configure_file_logger("airsim_stream.log")
     Path("flags").mkdir(exist_ok=True)
     args = parse_args()
     streamer = ImageStreamer(args.host, args.port, args.retries)

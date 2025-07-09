@@ -12,8 +12,14 @@ exit_flag = Event()
 def launch_control_gui(param_refs, nav_mode="unknown"):
     """Launch the full control window using mutable parameter refs."""
     def on_stop():
-        """Signal the main loop to terminate."""
-        exit_flag.set()
+        """Signal the main loop to terminate by creating a stop flag file."""
+        from pathlib import Path
+        Path("flags/stop.flag").touch()
+
+    def on_start_nav():
+        """Create the start_nav.flag to trigger navigation."""
+        from pathlib import Path
+        Path("flags/start_nav.flag").touch()
 
     def update_labels():
         l_val.set(f"{param_refs['L'][0]:.2f}")
@@ -23,16 +29,24 @@ def launch_control_gui(param_refs, nav_mode="unknown"):
         root.after(200, update_labels)
 
     def update_status_lights():
+        all_ready = True
         for name, flag_path in systems:
             if os.path.exists(flag_path):
                 status_labels[name].config(fg="green")
             else:
                 status_labels[name].config(fg="red")
+                if name in required_systems:
+                    all_ready = False
+        # Enable the Start Navigation button only if all required flags are green
+        if all_ready:
+            start_nav_btn.config(state="normal")
+        else:
+            start_nav_btn.config(state="disabled")
         root.after(500, update_status_lights)
 
     root = tk.Tk()
     root.title("UAV Controller")
-    root.geometry("340x380")
+    root.geometry("340x420")
 
     l_val = tk.StringVar()
     c_val = tk.StringVar()
@@ -48,21 +62,29 @@ def launch_control_gui(param_refs, nav_mode="unknown"):
     systems = [
         ("AirSim", "flags/airsim_ready.flag"),
         ("SLAM", "flags/slam_ready.flag"),
-        ("Streamer", "flags/streamer_ready.flag"),
-        ("Main", "flags/main_ready.flag"),
-        ("Start Nav", "flags/start_nav.flag"),
         ("UE4 PID", "flags/ue4_sim.pid"),
-        # Add/remove flags as needed for your workflow
+        # Removed Streamer and Main flags since they are not used elsewhere
     ]
-    status_labels = {}
+    # List of system names that are required before navigation can start
+    required_systems = ["AirSim", "SLAM", "UE4 PID"]
 
+    status_labels = {}
     for idx, (name, _) in enumerate(systems):
         tk.Label(status_frame, text=name + ":").grid(row=idx, column=0, sticky='e')
         lbl = tk.Label(status_frame, text="●", font=("Arial", 18), fg="red")
         lbl.grid(row=idx, column=1, sticky='w')
         status_labels[name] = lbl
 
-    update_status_lights()
+    # Start Navigation button (initially disabled)
+    start_nav_btn = tk.Button(
+        root,
+        text="Start Navigation",
+        command=on_start_nav,
+        bg='green',
+        fg='white',
+        state="disabled"
+    )
+    start_nav_btn.pack(pady=5)
 
     tk.Button(
         root,
@@ -87,6 +109,7 @@ def launch_control_gui(param_refs, nav_mode="unknown"):
     tk.Label(root, textvariable=state_val).pack()
 
     update_labels()
+    update_status_lights()
     root.mainloop()
 
 

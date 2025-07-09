@@ -12,6 +12,9 @@ from uav.config import load_app_config
 
 import pygetwindow as gw
 
+# --- Add GUI import ---
+from uav.interface import start_gui
+
 # --- Logging setup ---
 log_dir = Path("logs")
 log_dir.mkdir(exist_ok=True)
@@ -20,8 +23,8 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s: %(message)s",
     handlers=[
-        logging.FileHandler(logfile, mode='w', encoding='utf-8'), # Uncomment this line to log to a file
-        logging.StreamHandler(sys.stdout) # Uncomment this line to also log to console
+        logging.FileHandler(logfile, mode='w', encoding='utf-8'),
+        logging.StreamHandler(sys.stdout)
     ]
 )
 logging.info(f"Logging to {logfile}")
@@ -137,6 +140,17 @@ def main():
 
     main_proc = slam_proc = stream_proc = ffmpeg_proc = None
     slam_video_path = None
+
+    # --- LAUNCH GUI FIRST ---
+    # You can pass param_refs={} or any shared state if needed, or just nav_mode
+    param_refs = {
+        "L": [0.0],
+        "C": [0.0],
+        "R": [0.0],
+        "state": ["idle"]
+    }
+    start_gui(param_refs, nav_mode=args.nav_mode)  # Launches GUI in a background thread
+
     try:
         # --- STEP 1: Launch Unreal + main.py ---
         main_proc = subprocess.Popen([
@@ -238,8 +252,10 @@ def main():
                 sys.exit(1)
 
 
-        # --- STEP 7: Touch start_nav.flag to begin navigation ---
-        START_NAV_FLAG.touch()
+        # --- STEP 7: Wait for user to initiate navigation via GUI ---
+        logging.info("Waiting for user to initiate navigation via GUI (flags/start_nav.flag)...")
+        while not START_NAV_FLAG.exists():
+            time.sleep(0.2)
         logging.info("Signaling navigation to begin...")
 
         # --- STEP 8: Wait for main process to finish ---

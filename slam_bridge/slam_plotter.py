@@ -4,12 +4,13 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from slam_bridge.slam_receiver import get_latest_pose
-from pathlib import Path
 import time
 import plotly.graph_objects as go
 import logging
+from slam_bridge.logging_helper import configure_file_logger
 
-print("[SLAM Plotter] Script started.")
+logger = configure_file_logger("slam_plotter.log")
+logger.info("Script started.")
 
 # Configure logging for plotting
 log_dir = Path("logs")
@@ -34,9 +35,9 @@ x_vals, y_vals, z_vals = [], [], []
 pose_lock = threading.Lock()
 
 def plot_slam_trajectory():
-    print("[SLAM Plotter] Starting SLAM pose collection...")
+    logger.info("Starting SLAM pose collection...")
     try:
-        print("[SLAM Plotter] Script is running...")
+        logger.info("Script is running...")
         while True:
             pose = get_latest_pose()
             if pose is not None:
@@ -82,5 +83,5 @@ def save_interactive_plot():
         template="plotly_dark"
     )
     fig.write_html(str(filename))
-    print(f"[SLAM Plotter] Saved interactive plot to {filename}")
+    logger.info("Saved interactive plot to %s", filename)
 
