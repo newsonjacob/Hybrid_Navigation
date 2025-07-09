@@ -6,6 +6,8 @@ import struct
 import time
 from pathlib import Path
 
+from typing import List
+
 import airsim
 import numpy as np
 
@@ -41,7 +43,7 @@ class ImageStreamer:
                 raise RuntimeError("Socket connection broken")
             total_sent += sent
 
-    def _send_frame(self, responses: list[airsim.ImageResponse]) -> None:
+    def _send_frame(self, responses: List[airsim.ImageResponse]) -> None:
         rgb = np.frombuffer(responses[0].image_data_uint8, dtype=np.uint8).reshape(
             responses[0].height, responses[0].width, 3
         )
