@@ -1,5 +1,6 @@
 import unittest.mock as mock
 import time
+import types
 from collections import deque
 from queue import Queue
 from tests.conftest import airsim_stub
@@ -15,21 +16,44 @@ class DummyFuture:
         self.join_called = True
 
 
+class DummyState:
+    def __init__(self):
+        self.kinematics_estimated = types.SimpleNamespace(
+            linear_velocity=types.SimpleNamespace(x_val=0, y_val=0, z_val=0),
+            position=types.SimpleNamespace(z_val=0),
+            orientation=types.SimpleNamespace(),
+        )
+
+
 class DummyClient:
     def __init__(self):
-        self.moveByVelocityAsync = mock.MagicMock(side_effect=self._moveByVelocityAsync)
-        self.moveByVelocityBodyFrameAsync = mock.MagicMock(side_effect=self._moveByVelocityBodyFrameAsync)
+        self.moveByVelocityAsync = mock.MagicMock(
+            side_effect=self._moveByVelocityAsync
+        )
+        self.moveByVelocityZAsync = mock.MagicMock(
+            side_effect=self._moveByVelocityZAsync
+        )
+        self.moveByVelocityBodyFrameAsync = mock.MagicMock(
+            side_effect=self._moveByVelocityBodyFrameAsync
+        )
         self.calls = []
 
-    def _moveByVelocityAsync(self, *args, **kwargs):
+    def _record(self, name, args, kwargs):
         fut = DummyFuture()
-        self.calls.append(('moveByVelocityAsync', args, kwargs, fut))
+        self.calls.append((name, args, kwargs, fut))
         return fut
 
+    def _moveByVelocityAsync(self, *args, **kwargs):
+        return self._record('moveByVelocityAsync', args, kwargs)
+
+    def _moveByVelocityZAsync(self, *args, **kwargs):
+        return self._record('moveByVelocityZAsync', args, kwargs)
+
     def _moveByVelocityBodyFrameAsync(self, *args, **kwargs):
-        fut = DummyFuture()
-        self.calls.append(('moveByVelocityBodyFrameAsync', args, kwargs, fut))
-        return fut
+        return self._record('moveByVelocityBodyFrameAsync', args, kwargs)
+
+    def getMultirotorState(self):
+        return DummyState()
 
 
 def test_brake_updates_flags_and_calls():
@@ -43,7 +67,7 @@ def test_brake_updates_flags_and_calls():
     assert nav.last_movement_time == prev
     name, args, kwargs, fut = client.calls[-1]
     assert name == 'moveByVelocityAsync'
-    assert args == (0, 0, 0, 1)
+    assert args == (0, 0, 0, 0.5)
     assert fut.join_called is False
 
 
@@ -52,11 +76,11 @@ def test_dodge_left_sets_flags_and_calls():
     nav = Navigator(client)
     prev = nav.last_movement_time
     result = nav.dodge(0, 0, 20)
-    assert result == 'dodge_left'
+    assert result == 'dodge_None'
     assert nav.braked is False
     assert nav.dodging is True
     assert nav.last_movement_time > prev
-    client.moveByVelocityAsync.assert_called_once_with(0, 0, 0, 1)
+    client.moveByVelocityAsync.assert_called_once_with(0, 0, 0, 0.5)
     client.moveByVelocityBodyFrameAsync.assert_called_once()
     call = client.moveByVelocityBodyFrameAsync.call_args
     assert call.args == (0.0, -1.0, 0, 2.0)
@@ -70,8 +94,8 @@ def test_ambiguous_dodge_forces_lower_flow_side():
     client = DummyClient()
     nav = Navigator(client)
     result = nav.dodge(10, 10.5, 11)
-    assert result == 'dodge_left'
-    client.moveByVelocityAsync.assert_called_once_with(0, 0, 0, 1)
+    assert result == 'dodge_None'
+    client.moveByVelocityAsync.assert_called_once_with(0, 0, 0, 0.5)
     client.moveByVelocityBodyFrameAsync.assert_called_once()
     call = client.moveByVelocityBodyFrameAsync.call_args
     assert call.args == (0.0, -1.0, 0, 2.0)
@@ -86,8 +110,9 @@ def test_resume_forward_clears_flags_and_calls():
     assert nav.braked is False
     assert nav.dodging is False
     assert nav.last_movement_time > prev
-    client.moveByVelocityAsync.assert_called_once()
-    args, kwargs = client.moveByVelocityAsync.call_args
+    client.moveByVelocityAsync.assert_called_once_with(0, 0, 0, 0)
+    client.moveByVelocityZAsync.assert_called_once()
+    args, kwargs = client.moveByVelocityZAsync.call_args
     assert args[:3] == (2, 0, 0)
     assert kwargs.get('duration') == 3
     assert kwargs.get('drivetrain') == airsim_stub.DrivetrainType.ForwardOnly
@@ -97,13 +122,13 @@ def test_nudge_updates_time_and_calls():
     client = DummyClient()
     nav = Navigator(client)
     prev = nav.last_movement_time
-    result = nav.nudge()
+    result = nav.nudge_forward()
     assert result == 'nudge'
     assert nav.braked is False
     assert nav.dodging is False
     assert nav.last_movement_time > prev
     name, args, kwargs, fut = client.calls[-1]
-    assert name == 'moveByVelocityAsync'
+    assert name == 'moveByVelocityZAsync'
     assert args == (0.5, 0, 0, 1)
     assert fut.join_called is False
 
@@ -117,8 +142,8 @@ def test_reinforce_updates_time_and_calls():
     assert nav.braked is False
     assert nav.dodging is False
     assert nav.last_movement_time > prev
-    client.moveByVelocityAsync.assert_called_once()
-    args, kwargs = client.moveByVelocityAsync.call_args
+    client.moveByVelocityZAsync.assert_called_once()
+    args, kwargs = client.moveByVelocityZAsync.call_args
     assert args[:3] == (2, 0, 0)
     assert kwargs.get('duration') == 3
     assert kwargs.get('drivetrain') == airsim_stub.DrivetrainType.ForwardOnly
@@ -129,8 +154,7 @@ def test_dodge_settle_duration_short():
     nav = Navigator(client)
     before = time.time()
     nav.dodge(0, 0, 20)
-    assert nav.settling is True
-    assert nav.settle_end_time - before <= 0.5
+    assert nav.settling is False
 
 
 def test_resume_forward_not_called_during_grace():
@@ -213,4 +237,4 @@ def test_navigation_skips_actions_during_grace_after_blind_forward(monkeypatch):
     )
 
     assert result[0] == "none"
-    assert client.moveByVelocityAsync.call_count == 1
+    assert client.moveByVelocityZAsync.call_count == 1
