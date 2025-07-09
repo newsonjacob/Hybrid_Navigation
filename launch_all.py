@@ -38,6 +38,11 @@ SLAM_FAILED_FLAG = flags_dir / "slam_failed.flag"
 START_NAV_FLAG = flags_dir / "start_nav.flag"
 
 def shutdown_all(main_proc=None, slam_proc=None, stream_proc=None, ffmpeg_proc=None, slam_video_path=None, sim_proc=None):
+    """Terminate all subprocesses and clean temporary files.
+
+    Parameters mirror the processes started by this launcher. Any ``None`` value
+    is simply ignored. This function is safe to call multiple times.
+    """
     # --- CLEAN UP streamer ---
     if stream_proc is not None:
         logging.info("Terminating SLAM streamer")
@@ -108,6 +113,7 @@ def shutdown_all(main_proc=None, slam_proc=None, stream_proc=None, ffmpeg_proc=N
     #     webbrowser.open(slam_video_path)
 
 def wait_for_window(title_substring, timeout=20):
+    """Wait until a window containing ``title_substring`` appears."""
     logging.info(f"Waiting for window containing title: '{title_substring}'...")
     start_time = time.time()
     while time.time() - start_time < timeout:
@@ -120,6 +126,7 @@ def wait_for_window(title_substring, timeout=20):
     raise TimeoutError(f"Timeout waiting for window with title containing: '{title_substring}'")
 
 def wait_for_flag(flag_path, timeout=15):
+    """Poll for the existence of ``flag_path`` up to ``timeout`` seconds."""
     logging.info(f"Waiting for {flag_path}...")
     start = time.time()
     while not os.path.exists(flag_path):
@@ -128,6 +135,82 @@ def wait_for_flag(flag_path, timeout=15):
             return False
         time.sleep(0.5)
     logging.info(f"{flag_path} found.")
+    return True
+
+
+def start_streamer(host: str, port: int):
+    """Start the Python image streamer used for SLAM communication."""
+    proc = subprocess.Popen([
+        "python",
+        "slam_bridge/stream_airsim_image.py",
+        "--host", host,
+        "--port", str(port),
+    ])
+    logging.info("Started SLAM image streamer")
+    # Give the streamer a moment to send the first frame
+    time.sleep(2)
+    return proc
+
+
+def launch_slam_backend(receiver_host: str, receiver_port: int):
+    """Launch the SLAM backend via WSL and return the process handle."""
+    slam_cmd = [
+        "wsl", "bash", "-c",
+        f"export POSE_RECEIVER_IP={receiver_host}; "
+        f"export POSE_RECEIVER_PORT={receiver_port}; "
+        "cd /mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/linux_slam/build && ./app/tcp_slam_server ../Vocabulary/ORBvoc.txt ../app/rgbd_settings.yaml",
+    ]
+    proc = subprocess.Popen(slam_cmd)
+    logging.info("Started SLAM backend in WSL")
+    return proc
+
+
+def record_slam_video(window_substring: str = "ORB-SLAM2", duration: int = 60):
+    """Record the SLAM visualization window using ``ffmpeg``.
+
+    Returns a tuple of ``(process, video_path)``.
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    video_path = f"analysis/slam_output_{timestamp}.mp4"
+
+    window_title = None
+    for title in gw.getAllTitles():
+        if window_substring in title:
+            window_title = title
+            break
+
+    if not window_title:
+        raise RuntimeError(
+            f"Could not find window with title containing '{window_substring}'."
+        )
+
+    ffmpeg_cmd = [
+        "ffmpeg",
+        "-hide_banner", "-loglevel", "error",
+        "-y",
+        "-f", "gdigrab",
+        "-framerate", "30",
+        "-i", f"title={window_title}",
+        "-t", str(duration),
+        video_path,
+    ]
+
+    proc = subprocess.Popen(ffmpeg_cmd)
+    logging.info("Started screen recording to %s", video_path)
+    return proc, video_path
+
+
+def wait_for_start_flag():
+    """Block until the user initiates navigation via the GUI."""
+    logging.info(
+        "Waiting for user to initiate navigation via GUI (flags/start_nav.flag)..."
+    )
+    while not START_NAV_FLAG.exists():
+        if os.path.exists("flags/stop.flag"):
+            logging.info("Stop flag detected before navigation started. Shutting down.")
+            return False
+        time.sleep(0.2)
+    logging.info("Signaling navigation to begin...")
     return True
 
 def main():
@@ -161,27 +244,10 @@ def main():
 
         if args.nav_mode == "slam":
             # --- STEP 3: Launch image streamer BEFORE waiting for slam_ready.flag
-            stream_proc = subprocess.Popen([
-                "python",
-                "slam_bridge/stream_airsim_image.py",
-                "--host", slam_server_host,
-                "--port", str(slam_server_port),
-            ])
-            logging.info("Started SLAM image streamer")
-            
-            # --- STEP 3.5: Wait a moment for first image to be sent ---
-            time.sleep(2)
+            stream_proc = start_streamer(slam_server_host, slam_server_port)
 
             # --- STEP 4: Launch SLAM backend in WSL ---
-            slam_cmd = [
-                "wsl", "bash", "-c",
-                f"export POSE_RECEIVER_IP={slam_receiver_host}; "
-                f"export POSE_RECEIVER_PORT={slam_receiver_port}; "
-                "cd /mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/linux_slam/build && ./app/tcp_slam_server ../Vocabulary/ORBvoc.txt ../app/rgbd_settings.yaml"
-            ]
-
-            slam_proc = subprocess.Popen(slam_cmd)
-            logging.info("Started SLAM backend in WSL")
+            slam_proc = launch_slam_backend(slam_receiver_host, slam_receiver_port)
 
             # --- STEP 4c: Wait for slam_ready.flag (now that streamer can talk to SLAM)
             if not wait_for_flag(SLAM_READY_FLAG, timeout=30):
@@ -200,39 +266,7 @@ def main():
                 sys.exit(1)
 
             # --- STEP 6: Start screen recording ---
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            slam_video_path = f"analysis/slam_output_{timestamp}.mp4"
-
-            window_title = None
-            for title in gw.getAllTitles():
-                if "ORB-SLAM2" in title:
-                    window_title = title
-                    break
-
-            if not window_title:
-                logging.error("Could not find window with title containing 'ORB-SLAM2'.")
-                shutdown_all(main_proc, slam_proc)
-                sys.exit(1)
-
-            ffmpeg_cmd = [
-                "ffmpeg",
-                "-hide_banner", "-loglevel", "error",
-                "-y",
-                "-f", "gdigrab",
-                "-framerate", "30",
-                "-i", f"title={window_title}",
-                "-t", "60",
-                slam_video_path
-            ]
-
-            try:
-                ffmpeg_proc = subprocess.Popen(ffmpeg_cmd)
-            except FileNotFoundError:
-                logging.error("ffmpeg executable not found.")
-                shutdown_all(main_proc, slam_proc, stream_proc)
-                sys.exit(1)
-
-            logging.info("Started screen recording to %s", slam_video_path)
+            ffmpeg_proc, slam_video_path = record_slam_video("ORB-SLAM2")
 
             # --- STEP 6.5: Abort if SLAM failed to receive first image ---
             if os.path.exists(SLAM_FAILED_FLAG):
@@ -243,14 +277,9 @@ def main():
 
 
         # --- STEP 7: Wait for user to initiate navigation via GUI ---
-        logging.info("Waiting for user to initiate navigation via GUI (flags/start_nav.flag)...")
-        while not START_NAV_FLAG.exists():
-            if os.path.exists("flags/stop.flag"):
-                logging.info("Stop flag detected before navigation started. Shutting down.")
-                shutdown_all(main_proc, slam_proc, stream_proc, ffmpeg_proc, slam_video_path)
-                sys.exit(0)
-            time.sleep(0.2)
-        logging.info("Signaling navigation to begin...")
+        if not wait_for_start_flag():
+            shutdown_all(main_proc, slam_proc, stream_proc, ffmpeg_proc, slam_video_path)
+            sys.exit(0)
 
         # --- STEP 8: Wait for main process to finish ---
         main_proc.wait()
