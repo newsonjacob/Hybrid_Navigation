@@ -20,7 +20,7 @@ if __package__ is None:
     )
 
 from analysis.summarize_runs import summarize_log
-from analysis.utils import retain_recent_views
+from uav.utils import retain_recent_files, retain_recent_views
 
 logger = logging.getLogger(__name__)
 

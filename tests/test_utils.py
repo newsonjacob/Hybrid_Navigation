@@ -1,7 +1,6 @@
 import os
 import time
-from uav.utils import retain_recent_logs, should_flat_wall_dodge
-from analysis.utils import retain_recent_views, retain_recent_files
+from uav.utils import retain_recent_logs, should_flat_wall_dodge, retain_recent_views, retain_recent_files
 
 
 def test_retain_recent_logs_keeps_latest(tmp_path):

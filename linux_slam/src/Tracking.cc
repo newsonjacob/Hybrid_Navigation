@@ -48,8 +48,11 @@
 #include<mutex>
 #include <fstream>
 #include <ctime>
-#include <sys/stat.h>
 
+#ifdef _WIN32
+#include <direct.h>
+#endif
+#include <sys/stat.h>
 
 using namespace std;
 
@@ -57,6 +60,7 @@ namespace ORB_SLAM2
 {
 
 #ifdef ENABLE_TRACKING_LOG
+#pragma message("ENABLE_TRACKING_LOG is defined in Tracking.cc")
 static std::mutex tlog_mutex;
 static std::unique_ptr<std::ofstream> tlog_stream;
 
@@ -65,8 +69,15 @@ static void log_tracking_event(const std::string& msg)
     std::lock_guard<std::mutex> lock(tlog_mutex);
     if(!tlog_stream)
     {
-        mkdir("logs", 0777);
-        tlog_stream = std::make_unique<std::ofstream>("logs/tracking.log", std::ios::app);
+#ifdef _WIN32
+        _mkdir("H:\\Documents\\AirSimExperiments\\Hybrid_Navigation\\logs");
+        tlog_stream = std::make_unique<std::ofstream>(
+            "H:\\Documents\\AirSimExperiments\\Hybrid_Navigation\\logs\\tracking.log", std::ios::app);
+#else
+        mkdir("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs", 0777);
+        tlog_stream = std::make_unique<std::ofstream>(
+            "/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/tracking.log", std::ios::app);
+#endif
     }
     if(tlog_stream && tlog_stream->is_open())
     {
@@ -74,8 +85,12 @@ static void log_tracking_event(const std::string& msg)
         (*tlog_stream) << "[" << std::put_time(std::localtime(&t), "%F %T") << "] " << msg << std::endl;
         tlog_stream->flush();
     }
+    else {
+        std::cerr << "Failed to open tracking.log" << std::endl;
+    }
 }
 #else
+#pragma message("ENABLE_TRACKING_LOG is NOT defined in Tracking.cc")
 static inline void log_tracking_event(const std::string&) {}
 #endif
 
@@ -1564,7 +1579,7 @@ bool Tracking::Relocalization()
 
                                 for(int io =0; io<mCurrentFrame.N; io++)
                                     if(mCurrentFrame.mvbOutlier[io])
-                                        mCurrentFrame.mvpMapPoints[io]=NULL;
+                                        mCurrentFrame.mvpMapPoints[io]=static_cast<MapPoint*>(NULL);
                             }
                         }
                     }
@@ -1681,4 +1696,4 @@ void Tracking::InformOnlyTracking(const bool &flag)
 
 
 
-} //namespace ORB_SLAM
+} // namespace ORB_SLAM2

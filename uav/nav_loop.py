@@ -8,6 +8,7 @@ import logging
 from datetime import datetime
 from queue import Queue
 from threading import Thread
+from uav.utils import retain_recent_files
 
 # === AirSim Imports ===
 import airsim
@@ -29,7 +30,7 @@ from uav.scoring import compute_region_stats
 from uav.utils import (
     FLOW_STD_MAX, get_drone_state, retain_recent_logs, should_flat_wall_dodge
 )
-from analysis.utils import retain_recent_views
+from uav.utils import retain_recent_files, retain_recent_views
 from uav import config
 
 logger = logging.getLogger(__name__)
@@ -357,6 +358,9 @@ def handle_reset(client, ctx, frame_count):
     )
     retain_recent_logs("flow_logs")
     retain_recent_logs("logs")
+    retain_recent_files("analysis", "slam_traj_*.html", keep=5)
+    retain_recent_files("analysis", "slam_output_*.mp4", keep=5)
+
     frame_queue.put(None)
     video_thread.join()
     out.release()
@@ -401,6 +405,8 @@ def setup_environment(args, client):
     )
     retain_recent_logs("flow_logs")
     retain_recent_logs("logs")
+    retain_recent_files("analysis", "slam_traj_*.html", keep=5)
+    retain_recent_files("analysis", "slam_output_*.mp4", keep=5)
     try: fourcc = cv2.VideoWriter_fourcc(*'MJPG')
     except AttributeError: fourcc = cv2.FOURCC(*'MJPG')
     out = cv2.VideoWriter(config.VIDEO_OUTPUT, fourcc, config.VIDEO_FPS, config.VIDEO_SIZE)

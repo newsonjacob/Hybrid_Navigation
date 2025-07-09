@@ -135,3 +135,10 @@ target_include_directories(tcp_slam_server PRIVATE ${PROJECT_SOURCE_DIR}/include
 target_link_libraries(tcp_slam_server ${PROJECT_NAME})
 set_target_properties(tcp_slam_server PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/app)
+
+add_definitions(-DENABLE_TRACKING_LOG)
+
+target_compile_definitions(mono_tum PRIVATE ENABLE_TRACKING_LOG)
+target_compile_definitions(mono_kitti PRIVATE ENABLE_TRACKING_LOG)
+target_compile_definitions(mono_euroc PRIVATE ENABLE_TRACKING_LOG)
+target_compile_definitions(tcp_slam_server PRIVATE ENABLE_TRACKING_LOG)
