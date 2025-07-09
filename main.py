@@ -98,7 +98,9 @@ def main() -> None:
         client.armDisarm(True)
 
         try:
-            navigation_loop(args, client, None)  # <-- Call your reactive nav loop
+            # The navigation loop checks navigator.settling internally and keeps
+            # processing frames without skipping.
+            navigation_loop(args, client, None)
         finally:
             for flag in [flags_dir / "airsim_ready.flag", flags_dir / "start_nav.flag"]:
                 try:

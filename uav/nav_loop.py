@@ -47,9 +47,10 @@ def perception_loop(tracker, image):
 
 def navigation_step(
     client, navigator, flow_history, good_old, flow_vectors, flow_std,
-    smooth_L, smooth_C, smooth_R, delta_L, delta_C, delta_R, probe_mag, probe_count,
+    smooth_L, smooth_C, smooth_R, delta_L, delta_C, delta_R,
     left_count, center_count, right_count, frame_queue, vis_img,
-    time_now, frame_count, prev_state, state_history, pos_history, param_refs
+    time_now, frame_count, prev_state, state_history, pos_history, param_refs,
+    probe_mag=0.0, probe_count=0,
 ):
     """
     Decide and execute navigation action based on perception and state.
@@ -267,9 +268,10 @@ def apply_navigation_decision(
     """Wrapper around navigation_step for clarity."""
     return navigation_step(
         client, navigator, flow_history, good_old, flow_vectors, flow_std,
-        smooth_L, smooth_C, smooth_R, delta_L, delta_C, delta_R, probe_mag, probe_count,
+        smooth_L, smooth_C, smooth_R, delta_L, delta_C, delta_R,
         left_count, center_count, right_count, frame_queue, vis_img,
         time_now, frame_count, prev_state, state_history, pos_history, param_refs,
+        probe_mag=probe_mag, probe_count=probe_count,
     )
 
 def write_frame_output(
