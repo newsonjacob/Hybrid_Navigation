@@ -582,33 +582,80 @@ def slam_navigation_loop(args, client, ctx):
 
 def cleanup(client, sim_process, ctx):
     """Clean up resources and land the drone."""
-    exit_flag, frame_queue, video_thread = ctx['exit_flag'], ctx['frame_queue'], ctx['video_thread']
-    perception_thread, out, log_file, log_buffer = ctx.get('perception_thread'), ctx['out'], ctx['log_file'], ctx['log_buffer']
-    timestamp, fps_list = ctx['timestamp'], ctx['fps_list']
     logger.info("Landing...")
-    if log_buffer: log_file.writelines(log_buffer); log_buffer.clear()
-    log_file.close()
-    exit_flag.set()
-    frame_queue.put(None)
-    video_thread.join()
-    if perception_thread: perception_thread.join()
-    out.release()
+
+    if ctx is not None:
+        exit_flag = ctx.get('exit_flag')
+        frame_queue = ctx.get('frame_queue')
+        video_thread = ctx.get('video_thread')
+        perception_thread = ctx.get('perception_thread')
+        out = ctx.get('out')
+        log_file = ctx.get('log_file')
+        log_buffer = ctx.get('log_buffer')
+        timestamp = ctx.get('timestamp')
+        fps_list = ctx.get('fps_list')
+
+        if exit_flag:
+            exit_flag.set()
+
+        if frame_queue:
+            try: frame_queue.put(None)
+            except Exception: pass
+
+        if video_thread:
+            try: video_thread.join()
+            except Exception: pass
+
+        if perception_thread:
+            try: perception_thread.join()
+            except Exception: pass
+
+        if out:
+            try: out.release()
+            except Exception: pass
+
+        if log_file:
+            try:
+                if log_buffer:
+                    log_file.writelines(log_buffer)
+                    log_buffer.clear()
+                log_file.close()
+            except Exception as e:
+                logger.warning("⚠️ Log file already closed or error writing: %s", e)
+
+        try:
+            html_output = f"analysis/flight_view_{timestamp}.html"
+            subprocess.run(["python3", "-m", "analysis.flight_path_viewer", html_output])
+            logger.info("Flight path analysis saved to %s", html_output)
+        except Exception as e:
+            logger.error("Error generating flight path analysis: %s", e)
+
+        try:
+            retain_recent_views("analysis", 5)
+        except Exception as e:
+            logger.error("Error retaining recent views: %s", e)
+
     try:
-        client.landAsync().join()
-        client.armDisarm(False)
-        client.enableApiControl(False)
+        if client:
+            client.landAsync().join()
+            client.armDisarm(False)
+            client.enableApiControl(False)
     except Exception as e:
         logger.error("Landing error: %s", e)
-    try:
-        html_output = f"analysis/flight_view_{timestamp}.html"
-        subprocess.run(["python3", "-m", "analysis.flight_path_viewer", html_output])
-        logger.info("Flight path analysis saved to %s", html_output)
-    except Exception as e:
-        logger.error("Error generating flight path analysis: %s", e)
-    try:
-        retain_recent_views("analysis", 5)
-    except Exception as e:
-        logger.error("Error retaining recent views: %s", e)
+
+    # ✅ Wait after landing for graceful shutdown if early exit
+    if client and ctx is not None and ctx.get("exit_flag", None) and ctx["exit_flag"].is_set():
+        logger.info("🕒 Pausing briefly after landing for graceful shutdown...")
+        for _ in range(30):  # Wait up to 3 seconds
+            try:
+                pos = client.getMultirotorState().kinematics_estimated.position
+                if pos.z_val > -0.2:
+                    logger.info("Drone appears to be landed.")
+                    break
+                time.sleep(0.1)
+            except Exception:
+                break
+
     if sim_process:
         sim_process.terminate()
         try:
@@ -616,3 +663,5 @@ def cleanup(client, sim_process, ctx):
         except Exception:
             sim_process.kill()
         logger.info("UE4 simulation closed.")
+
+
