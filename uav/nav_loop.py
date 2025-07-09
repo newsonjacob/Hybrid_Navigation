@@ -11,7 +11,11 @@ from threading import Thread
 
 # === AirSim Imports ===
 import airsim
-from airsim import ImageRequest, ImageType, LandedState
+try:
+    from airsim import ImageRequest, ImageType, LandedState
+except Exception:  # LandedState may not exist in stubbed environments
+    from airsim import ImageRequest, ImageType
+    LandedState = None
 
 # === Internal Module Imports ===
 from uav.overlay import draw_overlay

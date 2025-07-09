@@ -43,8 +43,12 @@
 
 #include<iostream>
 #include<iomanip>
+#include <memory>
 
 #include<mutex>
+#include <fstream>
+#include <ctime>
+#include <sys/stat.h>
 
 
 using namespace std;
@@ -52,7 +56,30 @@ using namespace std;
 namespace ORB_SLAM2
 {
 
-void SendPose(const cv::Mat& Tcw)
+#ifdef ENABLE_TRACKING_LOG
+static std::mutex tlog_mutex;
+static std::unique_ptr<std::ofstream> tlog_stream;
+
+static void log_tracking_event(const std::string& msg)
+{
+    std::lock_guard<std::mutex> lock(tlog_mutex);
+    if(!tlog_stream)
+    {
+        mkdir("logs", 0777);
+        tlog_stream = std::make_unique<std::ofstream>("logs/tracking.log", std::ios::app);
+    }
+    if(tlog_stream && tlog_stream->is_open())
+    {
+        std::time_t t = std::time(nullptr);
+        (*tlog_stream) << "[" << std::put_time(std::localtime(&t), "%F %T") << "] " << msg << std::endl;
+        tlog_stream->flush();
+    }
+}
+#else
+static inline void log_tracking_event(const std::string&) {}
+#endif
+
+    void SendPose(const cv::Mat& Tcw)
 {
     if (Tcw.empty()) return;
 
@@ -463,7 +490,7 @@ void Tracking::Track()
         else
         {
             mState=LOST;
-            std::cout << "[TRACKING] Lost tracking at frame " << mCurrentFrame.mnId << std::endl;
+            log_tracking_event("[TRACKING] Lost tracking at frame " + std::to_string(mCurrentFrame.mnId));
         }
         // Update drawer
         mpFrameDrawer->Update(this);
@@ -547,10 +574,16 @@ void Tracking::Track()
         mlFrameTimes.push_back(mCurrentFrame.mTimeStamp);
         mlbLost.push_back(mState==LOST);
 
-        std::cout << "[TRACKING] Frame " << mCurrentFrame.mnId
-                  << " | matches: " << mnMatchesInliers
-                  << " | keypoints: " << mCurrentFrame.N << std::endl;
-        std::cout << mCurrentFrame.mTcw << std::endl;
+        {
+            std::ostringstream oss;
+            oss << "[TRACKING] Frame " << mCurrentFrame.mnId
+                << " | matches: " << mnMatchesInliers
+                << " | keypoints: " << mCurrentFrame.N;
+            log_tracking_event(oss.str());
+            std::ostringstream pose_ss;
+            pose_ss << mCurrentFrame.mTcw;
+            log_tracking_event(pose_ss.str());
+        }
     }
     else
     {
@@ -559,7 +592,7 @@ void Tracking::Track()
         mlFrameTimes.push_back(mlFrameTimes.back());
         mlbLost.push_back(mState==LOST);
 
-        std::cout << "[TRACKING] Tracking lost at frame " << mCurrentFrame.mnId << std::endl;
+        log_tracking_event("[TRACKING] Tracking lost at frame " + std::to_string(mCurrentFrame.mnId));
     }
 
 }
@@ -1563,7 +1596,7 @@ bool Tracking::Relocalization()
 void Tracking::Reset()
 {
 
-    std::cout << "[TRACKING] Resetting system" << std::endl;
+    log_tracking_event("[TRACKING] Resetting system");
     if(mpViewer)
     {
         mpViewer->RequestStop();
