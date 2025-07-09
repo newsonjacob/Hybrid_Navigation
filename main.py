@@ -5,6 +5,9 @@ import threading
 import time
 import os
 from pathlib import Path
+import queue
+from datetime import datetime
+import cv2
 
 from uav.cli import parse_args
 from uav.sim_launcher import launch_sim
@@ -20,6 +23,13 @@ flags_dir = Path("flags")
 flags_dir.mkdir(exist_ok=True)
 START_FLAG_PATH = flags_dir / "start_nav.flag"
 SETTINGS_PATH = r"C:\Users\Jacob\OneDrive\Documents\AirSim\settings.json"
+
+class DummyWriter:
+    def write(self, *args, **kwargs):
+        pass
+
+    def release(self):
+        pass
 
 def get_settings_path(args, config):
     try:
@@ -102,17 +112,36 @@ def main() -> None:
         client.enableApiControl(True)
         client.armDisarm(True)
 
+        ctx = setup_environment(args, client)
+        start_perception_thread(ctx)
+
+        # ✅ Logging: startup debug
+        logger = logging.getLogger(__name__)
+        logger.info(f"🧭 Navigation loop starting with mode: {nav_mode}")
+        logger.info(f"📌 Navigator object: {ctx['navigator']}")
+        logger.info(f"🗺️  Initial state: {ctx['param_refs']['state'][0]}")
+        logger.info(f"📦 Perception thread running: {ctx['perception_thread'].is_alive()}")
+
         try:
-            # The navigation loop checks navigator.settling internally and keeps
-            # processing frames without skipping.
-            navigation_loop(args, client, None)
+            navigation_loop(args, client, ctx)
+
         finally:
             for flag in [flags_dir / "airsim_ready.flag", flags_dir / "start_nav.flag"]:
                 try:
                     flag.unlink()
                 except FileNotFoundError:
                     pass
-            cleanup(client, sim_process, None)
+
+            # ✅ Close dummy log file to avoid warnings or open handles
+            if ctx.get("log_file"):
+                try:
+                    ctx["log_file"].close()
+                except Exception:
+                    pass
+
+            cleanup(client, sim_process, ctx)
+
+
     else:
         logging.error(f"Unknown navigation mode: {nav_mode}")
         cleanup(client, sim_process, None)

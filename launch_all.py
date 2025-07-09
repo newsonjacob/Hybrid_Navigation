@@ -71,6 +71,7 @@ def shutdown_all(main_proc=None, slam_proc=None, stream_proc=None, ffmpeg_proc=N
         main_proc.terminate()
         try:
             main_proc.wait(timeout=5)
+            logging.info("Reactive navigation loop complete.")
         except subprocess.TimeoutExpired:
             logging.warning("Forcing main script shutdown...")
             main_proc.kill()
