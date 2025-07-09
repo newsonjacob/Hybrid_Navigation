@@ -122,6 +122,8 @@ def main() -> None:
         logger.info(f"🗺️  Initial state: {ctx['param_refs']['state'][0]}")
         logger.info(f"📦 Perception thread running: {ctx['perception_thread'].is_alive()}")
 
+        # The navigation loop internally checks ``navigator.settling`` and
+        # should proceed normally at this level.
         try:
             navigation_loop(args, client, ctx)
 
