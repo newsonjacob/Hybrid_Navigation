@@ -7,6 +7,8 @@ import sys
 from datetime import datetime
 import webbrowser
 import logging
+from uav.cli import parse_args
+from uav.config import load_app_config
 
 import pygetwindow as gw
 
@@ -124,22 +126,25 @@ def wait_for_flag(flag_path, timeout=15):
     logging.info(f"{flag_path} found.")
     return True
 
-def wait_for_port(host, port, timeout=10):
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.settimeout(1)
-            if sock.connect_ex((host, port)) == 0:
-                return True
-        time.sleep(0.5)
-    return False
-
 def main():
+    args = parse_args()
+    config = load_app_config(args.config)
+    slam_server_host = args.slam_server_host or config.get("network", "slam_server_host", fallback="127.0.0.1")
+    slam_server_port = int(args.slam_server_port or config.get("network", "slam_server_port", fallback="6000"))
+    slam_receiver_host = args.slam_receiver_host or config.get("network", "slam_receiver_host", fallback="127.0.0.1")
+    slam_receiver_port = int(args.slam_receiver_port or config.get("network", "slam_receiver_port", fallback="6001"))
+
     main_proc = slam_proc = stream_proc = ffmpeg_proc = None
     slam_video_path = None
     try:
         # --- STEP 1: Launch Unreal + main.py ---
-        main_proc = subprocess.Popen(["python", "main.py", "--nav-mode", "slam"]) # Launch main.py with SLAM mode
+        main_proc = subprocess.Popen([
+            "python", "main.py", "--nav-mode", "slam",
+            "--slam-server-host", slam_server_host,
+            "--slam-server-port", str(slam_server_port),
+            "--slam-receiver-host", slam_receiver_host,
+            "--slam-receiver-port", str(slam_receiver_port),
+        ])
         logging.info("Started Unreal Engine + main script (idle)")
         logging.info("Giving Unreal Engine time to finish loading map and camera...")
 
@@ -149,7 +154,12 @@ def main():
             sys.exit(1)
 
         # --- STEP 3: Launch image streamer BEFORE waiting for slam_ready.flag
-        stream_proc = subprocess.Popen(["python", "slam_bridge/stream_airsim_image.py"])
+        stream_proc = subprocess.Popen([
+            "python",
+            "slam_bridge/stream_airsim_image.py",
+            "--host", slam_server_host,
+            "--port", str(slam_server_port),
+        ])
         logging.info("Started SLAM image streamer")
         
         # --- STEP 3.5: Wait a moment for first image to be sent ---
@@ -158,23 +168,18 @@ def main():
         # --- STEP 4: Launch SLAM backend in WSL ---
         slam_cmd = [
             "wsl", "bash", "-c",
+            f"export POSE_RECEIVER_IP={slam_receiver_host}; "
+            f"export POSE_RECEIVER_PORT={slam_receiver_port}; "
             "cd /mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/linux_slam/build && ./app/tcp_slam_server ../Vocabulary/ORBvoc.txt ../app/rgbd_settings.yaml"
         ]
 
         slam_proc = subprocess.Popen(slam_cmd)
         logging.info("Started SLAM backend in WSL")
 
-        # # --- STEP 4: Wait for port 6000 (TCP) and flag ---
-        # if not wait_for_port("127.0.0.1", 6000, timeout=10):
-        #     logging.error("SLAM port 6000 not open.")
-        #     shutdown_all(main_proc, slam_proc)
-        #     sys.exit(1)
-
-
         # --- STEP 4c: Wait for slam_ready.flag (now that streamer can talk to SLAM)
         if not wait_for_flag(SLAM_READY_FLAG, timeout=30):
             logging.error("SLAM backend never received first image — shutting down.")
-            time.sleep(2)  # Give time for SLAM to log the error
+            time.sleep(2)  # Give some time for SLAM to log the error
             shutdown_all(main_proc, slam_proc, stream_proc)
             sys.exit(1)
 

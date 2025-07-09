@@ -9,6 +9,7 @@ import traceback
 import sys
 import logging
 from pathlib import Path
+import argparse
 
 # # Test log messages (add these for testing purposes)
 # logging.info("Logging setup complete.")
@@ -103,6 +104,10 @@ def get_wsl_ip():
 
 def main():
     global frame_count
+    parser = argparse.ArgumentParser(description="AirSim image streamer")
+    parser.add_argument("--host", default=os.environ.get("SLAM_SERVER_HOST", "172.23.31.187"))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("SLAM_SERVER_PORT", "6000")))
+    args = parser.parse_args()
     # log("[DEBUG] Entering wait_for_slam_ready()")
     # try:
     #     wait_for_slam_ready()
@@ -119,7 +124,7 @@ def main():
         log("[DEBUG] Entering connect_with_retry()")
         # ip = get_wsl_ip()
         # sock = connect_with_retry(ip, 6000)
-        sock = connect_with_retry("172.23.31.187", 6000)
+        sock = connect_with_retry(args.host, args.port)
         print("[INFO] Connected to SLAM server — sending first image...", flush=True)
     except Exception as e:
         print(f"[DEBUG] Exception in connect_with_retry: {e}", flush=True)
