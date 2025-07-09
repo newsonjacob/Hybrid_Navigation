@@ -164,16 +164,17 @@ def main():
         slam_proc = subprocess.Popen(slam_cmd)
         logging.info("Started SLAM backend in WSL")
 
-        # --- STEP 4: Wait for port 6000 (TCP) and flag ---
-        if not wait_for_port("127.0.0.1", 6000, timeout=10):
-            logging.error("SLAM port 6000 not open.")
-            shutdown_all(main_proc, slam_proc)
-            sys.exit(1)
+        # # --- STEP 4: Wait for port 6000 (TCP) and flag ---
+        # if not wait_for_port("127.0.0.1", 6000, timeout=10):
+        #     logging.error("SLAM port 6000 not open.")
+        #     shutdown_all(main_proc, slam_proc)
+        #     sys.exit(1)
 
 
         # --- STEP 4c: Wait for slam_ready.flag (now that streamer can talk to SLAM)
-        if not wait_for_flag(SLAM_READY_FLAG, timeout=15):
+        if not wait_for_flag(SLAM_READY_FLAG, timeout=30):
             logging.error("SLAM backend never received first image — shutting down.")
+            time.sleep(2)  # Give time for SLAM to log the error
             shutdown_all(main_proc, slam_proc, stream_proc)
             sys.exit(1)
 

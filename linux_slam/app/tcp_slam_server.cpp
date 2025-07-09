@@ -16,6 +16,9 @@
 
 using namespace std;
 
+// Forward declaration for log_event
+static void log_event(const std::string& msg);
+
 // Helper function to receive exactly n bytes
 bool recv_all(int sock, char* buffer, int len) {
     int total = 0;
@@ -33,8 +36,12 @@ bool recv_all(int sock, char* buffer, int len) {
 
         if (received <= 0) {
             std::cerr << "[ERROR] recv() returned " << received << " at byte " << total << " of " << len << std::endl;
+            std::ostringstream oss;
+            oss << "recv_all failed: received=" << received << ", total=" << total << ", expected=" << len;
+            log_event(oss.str());
             return false;
         }
+
 
         total += received;
     }

@@ -170,6 +170,7 @@ def main():
         # --- Try sending the first image before entering the main loop ---
         try:
             log("[DEBUG] Sending first image to SLAM (pre-loop)")
+            print("[INFO] First image send triggered. Waiting for server ack...")
             # TEMP: Add a delay before first image send for debugging startup timing
             time.sleep(2)
             # Touch a crash flag before attempting the first send
@@ -241,6 +242,9 @@ def main():
                 # print("[DEBUG] About to create slam_ready.flag (pre-check passed)", flush=True)
                 with open("flags/slam_ready.flag", "w") as f:
                     f.write("SLAM is ready\n")
+                    f.flush()
+                    os.fsync(f.fileno())  # Ensure it's written to disk
+                log("[INFO] slam_ready.flag created successfully", level="info")
                 print("[DEBUG] slam_ready.flag created!", flush=True)
 
                 try:

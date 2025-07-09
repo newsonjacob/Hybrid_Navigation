@@ -18,6 +18,11 @@ __pycache__/
 
 # Flow logs
 .html
+
+linux_slam/app/data/
+linux_slam/custom/data/
+
+
 # IDE directories
 .vscode/
 .idea/
