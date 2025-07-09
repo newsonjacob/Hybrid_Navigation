@@ -59,26 +59,36 @@ def _timestamp_from_name(path: str) -> float:
 
 
 def retain_recent_logs(log_dir: str, keep: int = 5) -> None:
-    """Keep only the ``keep`` most recent ``full_log_*.csv`` files."""
-    try:
-        files = [
-            os.path.join(log_dir, f)
-            for f in os.listdir(log_dir)
-            if fnmatch.fnmatch(f, "full_log_*.csv")
-        ]
-    except FileNotFoundError:
-        logger.warning("\u26A0\uFE0F Log directory '%s' not found.", log_dir)
-        return
-
-    files.sort(key=_timestamp_from_name, reverse=True)
-    logger.info("\U0001F9F9 Found %d logs, keeping %d most recent.", len(files), keep)
-
-    for old_file in files[keep:]:
+    """
+    Keep only the ``keep`` most recent logs for each log type in the logs folder.
+    Handles: full_log_*.csv, launch_*.log, slam_server_debug_*.log, pose_log_*.txt
+    """
+    log_patterns = [
+        "full_log_*.csv",
+        "launch_*.log",
+        "slam_server_debug_*.log",
+        "pose_log_*.txt",
+    ]
+    for pattern in log_patterns:
         try:
-            logger.info("\U0001F5D1\uFE0F Deleting old log: %s", old_file)
-            os.remove(old_file)
-        except OSError as e:
-            logger.warning("\u26A0\uFE0F Could not delete %s: %s", old_file, e)
+            files = [
+                os.path.join(log_dir, f)
+                for f in os.listdir(log_dir)
+                if fnmatch.fnmatch(f, pattern)
+            ]
+        except FileNotFoundError:
+            logger.warning("\u26A0\uFE0F Log directory '%s' not found.", log_dir)
+            continue
+
+        files.sort(key=_timestamp_from_name, reverse=True)
+        logger.info("\U0001F9F9 [%s] Found %d logs, keeping %d most recent.", pattern, len(files), keep)
+
+        for old_file in files[keep:]:
+            try:
+                logger.info("\U0001F5D1\uFE0F Deleting old log: %s", old_file)
+                os.remove(old_file)
+            except OSError as e:
+                logger.warning("\u26A0\uFE0F Could not delete %s: %s", old_file, e)
 
 def should_flat_wall_dodge(
     center_mag: float,

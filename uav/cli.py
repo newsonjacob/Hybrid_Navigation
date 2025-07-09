@@ -1,7 +1,7 @@
 import argparse
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Optical flow navigation script")
+    parser = argparse.ArgumentParser(description="Hybrid UAV Navigation")
     parser.add_argument("--manual-nudge", action="store_true", help="Enable manual nudge at frame 5 for testing")
     parser.add_argument("--map", choices=["reactive", "deliberative", "hybrid"], default="reactive", help="Which map to load")
     parser.add_argument("--ue4-path", default=None, help="Override the default path to the Unreal Engine executable")
@@ -9,4 +9,10 @@ def parse_args():
     parser.add_argument("--config", default="config.ini", help="Path to config file with default paths")
     parser.add_argument("--goal-x", type=int, default=29, help="Distance from start to goal (X coordinate)")
     parser.add_argument("--max-duration", type=int, default=60, help="Maximum simulation duration in seconds")
+    parser.add_argument(
+        "--nav-mode",
+        choices=["slam", "reactive"],
+        default="slam",
+        help="Navigation mode: 'slam' for SLAM-based, 'reactive' for optical flow/reactive navigation (default: slam)"
+    )
     return parser.parse_args()

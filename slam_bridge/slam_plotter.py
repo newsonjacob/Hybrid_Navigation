@@ -7,19 +7,46 @@ from slam_bridge.slam_receiver import get_latest_pose
 from pathlib import Path
 import time
 import plotly.graph_objects as go
+import logging
 
+print("[SLAM Plotter] Script started.")
+
+# Configure logging for plotting
+log_dir = Path("logs")
+log_dir.mkdir(exist_ok=True)
+timestamp = time.strftime("%Y%m%d_%H%M%S")
+logfile = log_dir / f"pose_log_{timestamp}.txt"
+
+# Remove all handlers associated with the root logger object.
+for handler in logging.root.handlers[:]:
+    logging.root.removeHandler(handler)
+
+# Create a dedicated logger for plot logging
+plot_logger = logging.getLogger("plot_logger")
+plot_logger.setLevel(logging.INFO)
+plot_handler = logging.FileHandler(logfile, mode='a', encoding='utf-8')
+plot_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s: %(message)s"))
+plot_logger.addHandler(plot_handler)
+plot_logger.propagate = False  # Prevents double logging to root logger
+
+import threading
 x_vals, y_vals, z_vals = [], [], []
+pose_lock = threading.Lock()
 
 def plot_slam_trajectory():
-    print("[SLAM Plotter] Collecting SLAM poses...")
+    print("[SLAM Plotter] Starting SLAM pose collection...")
     try:
+        print("[SLAM Plotter] Script is running...")
         while True:
             pose = get_latest_pose()
             if pose is not None:
                 x, y, z = pose
-                x_vals.append(x)
-                y_vals.append(y)
-                z_vals.append(z)
+                with pose_lock:
+                    x_vals.append(x)
+                    y_vals.append(y)
+                    z_vals.append(z)
+                # Log the pose data
+                plot_logger.info(f"Pose received: x={x}, y={y}, z={z}") 
             time.sleep(0.05)
     except KeyboardInterrupt:
         pass
@@ -33,9 +60,10 @@ def save_interactive_plot():
     filename = plot_dir / f"slam_traj_{timestamp}.html"
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(y=x_vals, mode='lines', name='x'))
-    fig.add_trace(go.Scatter(y=y_vals, mode='lines', name='y'))
-    fig.add_trace(go.Scatter(y=z_vals, mode='lines', name='z'))
+    with pose_lock:
+        fig.add_trace(go.Scatter(y=x_vals, mode='lines', name='x'))
+        fig.add_trace(go.Scatter(y=y_vals, mode='lines', name='y'))
+        fig.add_trace(go.Scatter(y=z_vals, mode='lines', name='z'))
     fig.update_layout(
         title="SLAM Translation (x, y, z)",
         xaxis_title="Frame index",
@@ -44,3 +72,4 @@ def save_interactive_plot():
     )
     fig.write_html(str(filename))
     print(f"[SLAM Plotter] Saved interactive plot to {filename}")
+

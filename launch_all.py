@@ -18,8 +18,8 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s: %(message)s",
     handlers=[
-        logging.FileHandler(logfile, mode='w', encoding='utf-8'),
-        logging.StreamHandler(sys.stdout)
+        logging.FileHandler(logfile, mode='w', encoding='utf-8'), # Uncomment this line to log to a file
+        logging.StreamHandler(sys.stdout) # Uncomment this line to also log to console
     ]
 )
 logging.info(f"Logging to {logfile}")
@@ -98,8 +98,8 @@ def shutdown_all(main_proc=None, slam_proc=None, stream_proc=None, ffmpeg_proc=N
         logging.warning("SLAM video file not created.")
 
     # Automatically open video if it exists
-    if slam_video_path and os.path.exists(slam_video_path):
-        webbrowser.open(slam_video_path)
+    # if slam_video_path and os.path.exists(slam_video_path):
+    #     webbrowser.open(slam_video_path)
 
 def wait_for_window(title_substring, timeout=20):
     logging.info(f"Waiting for window containing title: '{title_substring}'...")
@@ -112,7 +112,6 @@ def wait_for_window(title_substring, timeout=20):
                 return True
         time.sleep(0.5)
     raise TimeoutError(f"Timeout waiting for window with title containing: '{title_substring}'")
-
 
 def wait_for_flag(flag_path, timeout=15):
     logging.info(f"Waiting for {flag_path}...")
@@ -140,7 +139,7 @@ def main():
     slam_video_path = None
     try:
         # --- STEP 1: Launch Unreal + main.py ---
-        main_proc = subprocess.Popen(["python", "main.py"])
+        main_proc = subprocess.Popen(["python", "main.py", "--nav-mode", "slam"]) # Launch main.py with SLAM mode
         logging.info("Started Unreal Engine + main script (idle)")
         logging.info("Giving Unreal Engine time to finish loading map and camera...")
 
@@ -159,8 +158,9 @@ def main():
         # --- STEP 4: Launch SLAM backend in WSL ---
         slam_cmd = [
             "wsl", "bash", "-c",
-            "cd ~/slam_ws/ORB_SLAM2_clean/build && ./app/tcp_slam_server ../Vocabulary/ORBvoc.txt ../app/rgbd_settings.yaml"
+            "cd /mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/linux_slam/build && ./app/tcp_slam_server ../Vocabulary/ORBvoc.txt ../app/rgbd_settings.yaml"
         ]
+
         slam_proc = subprocess.Popen(slam_cmd)
         logging.info("Started SLAM backend in WSL")
 
@@ -210,6 +210,8 @@ def main():
 
         ffmpeg_cmd = [
             "ffmpeg",
+            "-hide_banner",              # ✅ hides config/compile info
+            "-loglevel", "error",        # ✅ only show actual errors (or use "warning" for minimal logs)
             "-y",
             "-f", "gdigrab",
             "-framerate", "30",
@@ -219,7 +221,7 @@ def main():
         ]
 
         try:
-            ffmpeg_proc = subprocess.Popen(ffmpeg_cmd)
+            ffmpeg_proc = subprocess.Popen(ffmpeg_cmd) # Start ffmpeg process
         except FileNotFoundError:
             logging.error("ffmpeg executable not found. Please install ffmpeg and ensure it is in your PATH.")
             shutdown_all(main_proc, slam_proc, stream_proc, None, slam_video_path)

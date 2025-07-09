@@ -1,0 +1,42 @@
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+import numpy as np
+import threading
+import time
+
+# Global shared pose buffer
+poses = []
+
+def update_plot(frame):
+    if not poses:
+        return
+
+    xs = [p[0] for p in poses]
+    ys = [p[1] for p in poses]
+
+    ax.clear()
+    ax.plot(xs, ys, marker='o', color='blue')
+    ax.set_title("SLAM Trajectory")
+    ax.set_xlabel("X (m)")
+    ax.set_ylabel("Y (m)")
+    ax.grid(True)
+
+def pose_receiver():
+    while True:
+        # Example: Replace this with code that reads from your `slam_receiver.py`
+        with slam_pose['lock']:
+            pose_matrix = slam_pose['pose_matrix']
+            if pose_matrix is not None:
+                x = pose_matrix[0][3]
+                y = pose_matrix[2][3]  # SLAM's Z -> Y
+                poses.append((x, y))
+        time.sleep(0.1)
+
+# Setup live plot
+fig, ax = plt.subplots()
+ani = animation.FuncAnimation(fig, update_plot, interval=200)
+
+# Start pose listener in background
+threading.Thread(target=pose_receiver, daemon=True).start()
+
+plt.show()

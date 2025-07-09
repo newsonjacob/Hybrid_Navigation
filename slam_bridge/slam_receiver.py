@@ -3,8 +3,8 @@ import struct
 import time
 import threading
 
-HOST = "172.23.16.1"
-PORT = 5005
+HOST = "192.168.1.102"  # Or the IP your C++ server uses for the receiver
+PORT = 6001
 
 slam_pose = {
     'pose_matrix': None,
@@ -26,7 +26,7 @@ def _recv_loop():
     print("[SLAM Receiver] Starting...")
     while True:
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock: # Create a new socket
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 sock.bind((HOST, PORT))
                 sock.listen(1)
@@ -37,11 +37,11 @@ def _recv_loop():
                     print(f"[SLAM Receiver] ✅ Connected by {addr}")
                     with conn:
                         while True:
-                            data = recvall(conn, 48)
+                            data = recvall(conn, 48) # 12 floats * 4 bytes each = 48 bytes
                             if data is None:
                                 print("[SLAM Receiver] Connection closed.")
                                 break
-                            pose = struct.unpack('<12f', data)
+                            pose = struct.unpack('<12f', data) # Unpack 12 floats (3x4 matrix)
                             with slam_pose['lock']:
                                 slam_pose['pose_matrix'] = [pose[i*4:(i+1)*4] for i in range(3)]
                                 slam_pose['timestamp'] = time.time()

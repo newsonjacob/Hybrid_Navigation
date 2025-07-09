@@ -10,19 +10,22 @@ import sys
 import logging
 from pathlib import Path
 
+# # Test log messages (add these for testing purposes)
+# logging.info("Logging setup complete.")
+# logging.debug("This is a debug message.")
+# logging.error("This is an error message.")
+
 PRINT_DEBUG_FRAMES = 10  # Only print debug info to console for first N frames
 
 frame_count = 0
 
-print(f"[DEBUG] Current Working Directory: {os.getcwd()}", flush=True)
+# print(f"[DEBUG] Current Working Directory: {os.getcwd()}", flush=True)
 
-print("="*60, flush=True)
 banner = "="*60 + "\n" + \
          "   AirSim → SLAM TCP Image Streamer (stream_airsim_image.py)   \n" + \
          f"   Started at {time.strftime('%Y-%m-%d %H:%M:%S')}\n" + \
          "="*60
-print(banner, flush=True)
-logging.info(banner)
+logging.info(banner) 
 
 
 VERBOSE = True
@@ -32,22 +35,15 @@ os.environ["OMP_NUM_THREADS"] = "2"
 # Ensure flags/ and logs/ directories exist
 Path("flags").mkdir(exist_ok=True)
 
-
-# --- Logging setup ---
-log_dir = Path("logs")
-log_dir.mkdir(exist_ok=True)
-logfile = log_dir / f"streamer_{time.strftime('%Y%m%d_%H%M%S')}.log"
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s %(levelname)s: %(message)s",
-    handlers=[
-        logging.FileHandler(logfile, mode='w', encoding='utf-8'),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-logging.info(f"Logging to {logfile}")
-
 def log(msg, level="info"):
+    """
+    Logs a message to both the console (for the first few frames if VERBOSE is True)
+    and to the log file at the specified logging level.
+
+    Args:
+        msg (str): The message to log.
+        level (str): The logging level ('debug', 'info', 'warning', 'error').
+    """
     global frame_count
     if VERBOSE and frame_count < PRINT_DEBUG_FRAMES:
         print(msg, flush=True)
@@ -85,7 +81,7 @@ def connect_with_retry(host, port, retries=10, delay=1):
         except socket.error as e:
             print(f"[DEBUG] connect_with_retry: Attempt {i+1} failed: {e}", flush=True)
             log(f"connect_with_retry: Attempt {i+1} failed: {e}", level="warning")
-            print(f"[WARN] Retry {i+1}/{retries} — Connection failed: {e}", flush=True)
+            # print(f"[WARN] Retry {i+1}/{retries} — Connection failed: {e}", flush=True)
             time.sleep(delay)
     print(f"[DEBUG] connect_with_retry: All {retries} attempts failed", flush=True)
     logging.error(f"Could not connect to {host}:{port} after {retries} attempts.")
@@ -217,32 +213,32 @@ def main():
 
             # Try sending the first RGB and depth images
             try:
-                print("[DEBUG] Packing RGB header", flush=True)
+                # print("[DEBUG] Packing RGB header", flush=True)
                 header = struct.pack('!III', responses[0].height, responses[0].width, img_rgb.nbytes)
 
-                print("[DEBUG] Sending RGB header", flush=True)
+                # print("[DEBUG] Sending RGB header", flush=True)
                 send_all(sock, header)
 
-                print("[DEBUG] Sending RGB image bytes", flush=True)
+                # print("[DEBUG] Sending RGB image bytes", flush=True)
                 send_all(sock, img_rgb.tobytes())
 
-                print("[DEBUG] Packing depth header", flush=True)
+                # print("[DEBUG] Packing depth header", flush=True)
                 header = struct.pack('!III', responses[1].height, responses[1].width, img_depth.nbytes)
 
-                print("[DEBUG] Sending depth header", flush=True)
+                # print("[DEBUG] Sending depth header", flush=True)
                 send_all(sock, header)
 
-                print("[DEBUG] Sending depth image bytes", flush=True)
+                # print("[DEBUG] Sending depth image bytes", flush=True)
                 try:
-                    print("[DEBUG] Sending depth image bytes", flush=True)
+                    # print("[DEBUG] Sending depth image bytes", flush=True)
                     send_all(sock, img_depth.tobytes())
-                    print("[DEBUG] Depth image bytes sent successfully", flush=True)
+                    # print("[DEBUG] Depth image bytes sent successfully", flush=True)
                 except Exception as e:
                     print(f"[ERROR] Exception sending depth image: {e}", flush=True)
                     traceback.print_exc()
                     sys.exit(1)
 
-                print("[DEBUG] About to create slam_ready.flag (pre-check passed)", flush=True)
+                # print("[DEBUG] About to create slam_ready.flag (pre-check passed)", flush=True)
                 with open("flags/slam_ready.flag", "w") as f:
                     f.write("SLAM is ready\n")
                 print("[DEBUG] slam_ready.flag created!", flush=True)

@@ -515,6 +515,69 @@ def navigation_loop(args, client, ctx):
     except KeyboardInterrupt:
         logger.info("Interrupted.")
 
+def slam_navigation_loop(args, client, ctx):
+    """
+    Main navigation loop for SLAM-based navigation with basic obstacle avoidance.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("[SLAMNav] Starting SLAM navigation loop with obstacle avoidance.")
+
+    from slam_bridge.slam_receiver import get_latest_pose
+
+    start_time = time.time()
+    max_duration = getattr(args, "max_duration", 60)
+    goal_x = getattr(args, "goal_x", 29)
+    goal_y = getattr(args, "goal_y", 0) if hasattr(args, "goal_y") else 0
+    goal_z = getattr(args, "goal_z", -2) if hasattr(args, "goal_z") else -2
+    threshold = 0.5  # meters
+
+    try:
+        while True:
+            pose = get_latest_pose()
+            if pose is not None:
+                x, y, z = pose
+                logger.info(f"[SLAMNav] Received pose: x={x:.2f}, y={y:.2f}, z={z:.2f}")
+
+                # Check for collision/obstacle
+                collision = client.simGetCollisionInfo()
+                if getattr(collision, "has_collided", False):
+                    logger.warning("[SLAMNav] Obstacle detected! Executing avoidance maneuver.")
+                    # Back up and try to move sideways
+                    client.moveByVelocityAsync(-1.0, 0, 0, 1).join()  # Back up
+                    client.moveByVelocityAsync(0, 1.0, 0, 1).join()   # Move right
+                    continue
+
+                # Check if goal reached
+                if abs(x - goal_x) < threshold and abs(y - goal_y) < threshold:
+                    logger.info("[SLAMNav] Goal reached — landing.")
+                    client.moveToPositionAsync(x, y, goal_z, 1).join()
+                    client.landAsync().join()
+                    break
+
+                # Move toward goal (simple proportional controller)
+                vx = 1.0 if x < goal_x - threshold else 0.0
+                vy = 1.0 if y < goal_y - threshold else 0.0
+                vz = 0.0  # Maintain altitude
+                if vx != 0.0 or vy != 0.0:
+                    logger.info(f"[SLAMNav] Moving toward goal with vx={vx}, vy={vy}")
+                    client.moveByVelocityAsync(vx, vy, vz, 1, drivetrain=airsim.DrivetrainType.ForwardOnly, yaw_mode=airsim.YawMode(False, 0))
+                else:
+                    logger.info("[SLAMNav] Holding position.")
+
+            # End condition
+            if time.time() - start_time > max_duration:
+                logger.info("[SLAMNav] Max duration reached, ending navigation.")
+                client.landAsync().join()
+                break
+
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        logger.info("[SLAMNav] Interrupted by user.")
+        client.landAsync().join()
+    finally:
+        logger.info("[SLAMNav] SLAM navigation loop finished.")
+
 def cleanup(client, sim_process, ctx):
     """Clean up resources and land the drone."""
     exit_flag, frame_queue, video_thread = ctx['exit_flag'], ctx['frame_queue'], ctx['video_thread']

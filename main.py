@@ -8,7 +8,7 @@ from pathlib import Path
 
 from uav.cli import parse_args
 from uav.sim_launcher import launch_sim
-from uav.nav_loop import setup_environment, start_perception_thread, navigation_loop, cleanup
+from uav.nav_loop import setup_environment, start_perception_thread, navigation_loop, slam_navigation_loop, cleanup
 import airsim
 from uav.utils import FLOW_STD_MAX
 from uav.config import load_app_config
@@ -38,7 +38,9 @@ def main() -> None:
     config = load_app_config(args.config)
     settings_path = get_settings_path(args, config)
 
-    logging.info(f"Using settings file at: {settings_path}")
+    # Add a nav_mode argument to your CLI parser (e.g., --nav-mode [slam|reactive])
+    nav_mode = getattr(args, "nav_mode", "slam")  # Default to slam if not specified
+
     sim_process = launch_sim(args, settings_path, config)
     pid_path = Path("flags/ue4_sim.pid")
     pid_path.write_text(str(sim_process.pid))
@@ -58,39 +60,55 @@ def main() -> None:
         cleanup(None, sim_process, None)
         return
 
-    # ✅ Signal AirSim ready
     (flags_dir / "airsim_ready.flag").touch()
     logging.info("[INFO] AirSim + camera ready — flag set")
 
-
-    # ✅ NOW WAIT for navigation trigger AFTER sim is fully launched
-    wait_for_nav_trigger()
-
-    client.enableApiControl(True)
-    client.armDisarm(True)
-    client.confirmConnection()
-    client.enableApiControl(True)
-    client.armDisarm(True)
-
-
-    ctx = None
-    try:
+    if nav_mode == "slam":
         start_receiver()
-        import atexit
-        from slam_bridge.slam_plotter import save_interactive_plot
-        threading.Thread(target=plot_slam_trajectory, daemon=True).start()
-        atexit.register(save_interactive_plot)
+        wait_for_nav_trigger()
+        client.enableApiControl(True)
+        client.armDisarm(True)
+        client.confirmConnection()
+        client.enableApiControl(True)
+        client.armDisarm(True)
 
-        ctx = setup_environment(args, client)
-        start_perception_thread(ctx)
-        navigation_loop(args, client, ctx)
-    finally:
-        for flag in [flags_dir / "airsim_ready.flag", flags_dir / "start_nav.flag"]:
-            try:
-                flag.unlink()
-            except FileNotFoundError:
-                pass
-        cleanup(client, sim_process, ctx if ctx is not None else None)
+        ctx = None
+        try:
+            import atexit
+            from slam_bridge.slam_plotter import save_interactive_plot
+            threading.Thread(target=plot_slam_trajectory, daemon=True).start()
+            atexit.register(save_interactive_plot)
+
+            ctx = setup_environment(args, client)
+            start_perception_thread(ctx)
+            slam_navigation_loop(args, client, ctx)
+        finally:
+            for flag in [flags_dir / "airsim_ready.flag", flags_dir / "start_nav.flag"]:
+                try:
+                    flag.unlink()
+                except FileNotFoundError:
+                    pass
+            cleanup(client, sim_process, ctx if ctx is not None else None)
+    elif nav_mode == "reactive":
+        wait_for_nav_trigger()
+        client.enableApiControl(True)
+        client.armDisarm(True)
+        client.confirmConnection()
+        client.enableApiControl(True)
+        client.armDisarm(True)
+
+        try:
+            navigation_loop(args, client, None)  # <-- Call your reactive nav loop
+        finally:
+            for flag in [flags_dir / "airsim_ready.flag", flags_dir / "start_nav.flag"]:
+                try:
+                    flag.unlink()
+                except FileNotFoundError:
+                    pass
+            cleanup(client, sim_process, None)
+    else:
+        logging.error(f"Unknown navigation mode: {nav_mode}")
+        cleanup(client, sim_process, None)
 
 if __name__ == "__main__":
     main()

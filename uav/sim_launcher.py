@@ -41,7 +41,7 @@ def launch_sim(args, settings_path, config: Optional[ConfigParser] = None):
         map_path
     ]
 
-    logger.info("\U0001F680 Launching UE4 map '%s'...", args.map)
+    logger.info("Launching UE4 map '%s'...", args.map)
     sim_process = subprocess.Popen(sim_cmd)
     time.sleep(5)  # Give UE4 time to boot up
     return sim_process
