@@ -493,5 +493,14 @@ vector<cv::KeyPoint> System::GetTrackedKeyPointsUn()
 Tracking* System::GetTracker() {
     return mpTracker;
 }
+int System::KeyFramesInMap()
+{
+    return mpMap->KeyFramesInMap();
+}
+
+int System::MapPointsInMap()
+{
+    return mpMap->MapPointsInMap();
+}
 
 } //namespace ORB_SLAM

@@ -113,6 +113,8 @@ public:
     // True if local mapping is deactivated and we are performing only localization
     bool mbOnlyTracking;
 
+    size_t GetNumLocalKeyFrames() const { return mvpLocalKeyFrames.size(); }
+
     void Reset();
 
 protected:

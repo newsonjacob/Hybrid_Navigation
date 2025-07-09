@@ -13,6 +13,8 @@
 #include <chrono>
 #include <sstream>
 #include <mutex>
+#include <sys/stat.h>   // Add this
+
 
 using namespace std;
 
@@ -106,6 +108,12 @@ int main(int argc, char **argv) {
         cerr << "Usage: ./tcp_slam_server path_to_vocabulary path_to_settings [log_file_path]" << endl;
         return 1;
     }
+
+    #ifdef _WIN32
+        _mkdir("H:\\Documents\\AirSimExperiments\\Hybrid_Navigation\\logs");
+    #else
+        mkdir("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs", 0777);
+    #endif
 
     std::string vocab = argv[1];
     std::string settings = argv[2];
@@ -258,6 +266,12 @@ int main(int argc, char **argv) {
         rgb_height = ntohl(net_height);
         rgb_width  = ntohl(net_width);
         rgb_bytes  = ntohl(net_bytes);
+        
+        {
+            std::ostringstream oss;
+            oss << "Decoded RGB image resolution: " << rgb_width << " x " << rgb_height << " (" << rgb_bytes << " bytes)";
+            log_event(oss.str());
+        }
 
         if (rgb_bytes != rgb_height * rgb_width * 3) {
             std::cerr << "[ERROR] RGB byte count mismatch. Expected: "
@@ -337,8 +351,40 @@ int main(int argc, char **argv) {
         }
 
         float* float_ptr = reinterpret_cast<float*>(raw_depth.data());
-        cv::Mat imD(d_height, d_width, CV_32F, float_ptr);
-        imD = imD.clone();
+        cv::Mat imD_raw(d_height, d_width, CV_32F, float_ptr);
+        cv::Mat imD = imD_raw.clone();  // clone from raw buffer
+
+        // Clamp depth to max range (e.g. 5m or 10m)
+        float max_depth_m = 10.0f;
+        cv::Mat imD_clipped;
+        cv::threshold(imD, imD_clipped, max_depth_m, max_depth_m, cv::THRESH_TRUNC);
+
+        // Save visualization for debug
+        int snapshot_limit = 5;
+        if (frame_counter < snapshot_limit) {
+            std::ostringstream depth_filename;
+            depth_filename << "/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/frame_depth_" << frame_counter << ".png";
+
+            cv::Mat depth_vis;
+            imD_clipped.convertTo(depth_vis, CV_8U, 255.0 / max_depth_m);
+            cv::imwrite(depth_filename.str(), depth_vis);
+        }
+
+
+        // Replace original imD with clipped for SLAM
+        imD = imD_clipped;
+
+
+        // Log depth value at center pixel
+        int cx = d_width / 2;
+        int cy = d_height / 2;
+        float center_depth = imD.at<float>(cy, cx);
+        {
+            std::ostringstream oss;
+            oss << "Depth at center (" << cx << ", " << cy << ") = "
+                << std::fixed << std::setprecision(3) << center_depth << " meters";
+            log_event(oss.str());
+        }
 
         double timestamp = (double)cv::getTickCount() / cv::getTickFrequency();
 
@@ -350,7 +396,59 @@ int main(int argc, char **argv) {
             log_event(oss.str());
         }
         try {
+            double min_val, max_val;
+            cv::minMaxLoc(imD, &min_val, &max_val);
+            std::ostringstream d_stats;
+            d_stats << "Depth image stats — min: " << min_val << ", max: " << max_val;
+            log_event(d_stats.str());
+
+            
             SLAM.TrackRGBD(imRGB, imD, timestamp);
+
+            cv::Mat Tcw_copy = SLAM.GetTracker()->mCurrentFrame.mTcw.clone();
+            log_event("Tcw_copy rows: " + std::to_string(Tcw_copy.rows) +
+                    ", cols: " + std::to_string(Tcw_copy.cols) +
+                    ", type: " + std::to_string(Tcw_copy.type()));
+            // Defensive checks
+            bool tcw_valid = true;
+            if (Tcw_copy.empty() || Tcw_copy.rows != 4 || Tcw_copy.cols != 4) {
+                log_event("[WARN] Tcw_copy is empty or not 4x4.");
+                tcw_valid = false;
+            }
+            if (tcw_valid && (Tcw_copy.type() != CV_32F && Tcw_copy.type() != CV_64F)) {
+                log_event("[WARN] Tcw_copy is not CV_32F or CV_64F.");
+                tcw_valid = false;
+            }
+            if (tcw_valid && cv::countNonZero(Tcw_copy != Tcw_copy) > 0) {
+                log_event("[ERROR] Tcw_copy contains NaNs.");
+                tcw_valid = false;
+            }
+            if (tcw_valid && !cv::checkRange(Tcw_copy)) {
+                log_event("[ERROR] Tcw_copy contains Infs or out-of-range values.");
+                tcw_valid = false;
+            }
+
+            if (tcw_valid) {
+                try {
+                    cv::Mat Twc = Tcw_copy.inv();
+                    if (!Twc.empty() && Twc.rows >= 3 && Twc.cols >= 4) {
+                        float x = Twc.at<float>(0, 3);
+                        float y = Twc.at<float>(1, 3);
+                        float z = Twc.at<float>(2, 3);
+                        std::ostringstream twc_log;
+                        twc_log << "Camera center (twc): " << x << ", " << y << ", " << z;
+                        log_event(twc_log.str());
+                    } else {
+                        log_event("[WARN] Twc is invalid after inversion — skipping camera center log.");
+                    }
+                } catch (const cv::Exception& e) {
+                    log_event(std::string("[WARN] Exception during Twc inversion: ") + e.what());
+                }
+            } else {
+                log_event("[WARN] Tcw_copy invalid — skipping pose log.");
+            }
+
+
         } catch (const std::exception& ex) {
             std::ostringstream oss;
             oss << "Exception in SLAM.TrackRGBD: " << ex.what();
@@ -361,11 +459,95 @@ int main(int argc, char **argv) {
             std::cerr << "[ERROR] Unknown exception in SLAM.TrackRGBD." << std::endl;
         }
 
+        // Save first N frames for visual inspection
+        if (frame_counter < snapshot_limit) {
+            std::ostringstream rgb_filename, depth_filename;
+            rgb_filename << "/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/frame_rgb_" << frame_counter << ".png";
+            depth_filename << "/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/frame_depth_" << frame_counter << ".png";
+
+            cv::imwrite(rgb_filename.str(), imRGB);
+
+            // Save depth visualization that was already clamped earlier (imD is already imD_clipped)
+            cv::Mat depth_vis;
+            imD.convertTo(depth_vis, CV_8U, 255.0 / max_depth_m);
+            cv::imwrite(depth_filename.str(), depth_vis);
+        }
+
+        // Add map tracking state logs
+        auto tracker = SLAM.GetTracker();
+        if (tracker) {
+            int state = tracker->mState;
+            int n_kfs = tracker->GetNumLocalKeyFrames();  // number of local keyframes
+            int n_mappoints = tracker->mCurrentFrame.mvpMapPoints.size();  // number of tracked map points
+
+            std::ostringstream oss;
+            oss << "TrackingState=" << state
+                << ", KeyFrames=" << n_kfs
+                << ", MapPoints=" << n_mappoints
+                << ", TrackedFramePoints=" << n_mappoints
+                << ", ORBFeatures=" << tracker->mCurrentFrame.N;
+            log_event(oss.str());
+        }
+
+        // Optional: save ORB keypoints on RGB image
+        if (frame_counter < snapshot_limit) {
+            std::vector<cv::KeyPoint> orb_kps = tracker->mCurrentFrame.mvKeys;
+            cv::Mat rgb_kp;
+            cv::drawKeypoints(imRGB, orb_kps, rgb_kp);
+            std::ostringstream kp_filename;
+            kp_filename << "/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/frame_rgb_kp_" << frame_counter << ".png";
+            cv::imwrite(kp_filename.str(), rgb_kp);
+        }
+
+
         // --- After SLAM.TrackRGBD ---
         cv::Mat Tcw = SLAM.GetTracker()->mCurrentFrame.mTcw;
-        if (pose_sock >= 0 && !Tcw.empty()) {
+        int track_state = SLAM.GetTracker()->mState;
+
+        if (pose_sock >= 0 && !Tcw.empty() && track_state >= ORB_SLAM2::Tracking::OK) {
+            // Ensure Tcw is a 4x4 matrix
+            std::ostringstream pose_stream;
+            pose_stream << "Raw Tcw values: ";
+            for (int r = 0; r < 3; ++r)
+                for (int c = 0; c < 4; ++c)
+                    pose_stream << Tcw.at<float>(r, c) << ", ";
+            log_event(pose_stream.str());
+            // Prepare the Tcw matrix for sending
+            std::ostringstream oss;
+            oss << "Sending Tcw | State: " << track_state << " | Matrix: ";
+            for (int r = 0; r < 3; ++r) {
+                for (int c = 0; c < 4; ++c) {
+                    float val = Tcw.at<float>(r, c);
+                    if (std::isnan(val) || std::abs(val) < 1e-5)
+                        val = 0.0;
+                    oss << val << (r == 2 && c == 3 ? "" : ", ");
+                }
+            }
+
+            // ✅ Now append translation norm after the loop:
+            float tx_raw = Tcw.at<float>(0, 3);
+            float ty_raw = Tcw.at<float>(1, 3);
+            float tz_raw = Tcw.at<float>(2, 3);
+
+            // Clamp tiny noise to 0.0
+            float tx = std::abs(tx_raw) < 1e-5 ? 0.0f : tx_raw;
+            float ty = std::abs(ty_raw) < 1e-5 ? 0.0f : ty_raw;
+            float tz = std::abs(tz_raw) < 1e-5 ? 0.0f : tz_raw;
+
+            float motion = std::sqrt(tx*tx + ty*ty + tz*tz);
+
+            // Log it
+            log_event("Translation vector: " + std::to_string(tx) + ", " +
+                                            std::to_string(ty) + ", " +
+                                            std::to_string(tz));
+
+
+            oss << " | TranslationNorm=" << std::fixed << std::setprecision(6) << motion;
+            log_event(oss.str());
+
             if (send_pose(pose_sock, Tcw)) {
                 log_event("Pose sent to Python receiver.");
+
                 // Log the pose data to the dedicated pose log file
                 if (pose_log_stream.is_open()) {
                     pose_log_stream << std::fixed << std::setprecision(6);
@@ -401,3 +583,5 @@ int main(int argc, char **argv) {
     SLAM.Shutdown();
     return 0;
 }
+
+

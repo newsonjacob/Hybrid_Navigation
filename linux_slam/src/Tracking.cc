@@ -60,7 +60,6 @@ namespace ORB_SLAM2
 {
 
 #ifdef ENABLE_TRACKING_LOG
-#pragma message("ENABLE_TRACKING_LOG is defined in Tracking.cc")
 static std::mutex tlog_mutex;
 static std::unique_ptr<std::ofstream> tlog_stream;
 
@@ -609,6 +608,23 @@ void Tracking::Track()
 
         log_tracking_event("[TRACKING] Tracking lost at frame " + std::to_string(mCurrentFrame.mnId));
     }
+    // --- Debug: SLAM tracking state ---
+    if (mState == LOST)
+    {
+        std::cout << "[SLAM] Track lost — will try to relocalize." << std::endl;
+    }
+    else if (mState == OK)
+    {
+        std::cout << "[SLAM] Tracking OK — Pose is valid." << std::endl;
+    }
+    else if (mState == NO_IMAGES_YET)
+    {
+        std::cout << "[SLAM] No images yet." << std::endl;
+    }
+    else
+    {
+        std::cout << "[SLAM] Tracking State = " << mState << std::endl;
+    }
 
 }
 
@@ -1083,6 +1099,11 @@ bool Tracking::TrackLocalMap()
 
 bool Tracking::NeedNewKeyFrame()
 {
+    if (mState == OK && mCurrentFrame.mnId < 20) {
+        std::cout << "[DEBUG] Forcing keyframe insertion — early mapping bootstrap." << std::endl;
+        return true;
+    }
+
     if(mbOnlyTracking)
         return false;
 

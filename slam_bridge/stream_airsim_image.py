@@ -3,6 +3,7 @@ import os
 import argparse
 import logging
 from pathlib import Path
+from datetime import datetime
 
 # --- Robust import for configure_file_logger ---
 try:
@@ -138,7 +139,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    configure_file_logger("airsim_stream.log")
+    log_name = f"airsim_stream_{datetime.now():%Y%m%d_%H%M%S}.log"
+    configure_file_logger(log_name)
     Path("flags").mkdir(exist_ok=True)
     args = parse_args()
     streamer = ImageStreamer(args.host, args.port, args.retries)

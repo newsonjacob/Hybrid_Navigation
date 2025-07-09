@@ -57,7 +57,7 @@ def _timestamp_from_name(path: str) -> float:
         return os.path.getmtime(path)
 
 
-def retain_recent_logs(log_dir: str, keep: int = 1) -> None:
+def retain_recent_logs(log_dir: str, keep: int = 2) -> None:
     """
     Keep only the ``keep`` most recent logs for each log type in the logs folder.
     Handles: full_log_*.csv, launch_*.log, slam_server_debug_*.log, pose_log_*.txt
@@ -68,6 +68,7 @@ def retain_recent_logs(log_dir: str, keep: int = 1) -> None:
         "slam_*.log",
         "pose_*.txt",
         "pose_*.log",
+        "airsim_*.log",
     ]
     for pattern in log_patterns:
         try:
