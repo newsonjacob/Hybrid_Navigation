@@ -115,6 +115,8 @@ def main() -> None:
         ctx = setup_environment(args, client)
         start_perception_thread(ctx)
 
+        # navigator.settling check removed; loop always processes frames
+
         # ✅ Logging: startup debug
         logger = logging.getLogger(__name__)
         logger.info(f"🧭 Navigation loop starting with mode: {nav_mode}")
