@@ -1,0 +1,26 @@
+%YAML:1.0
+---
+Camera.fx: 517.3
+Camera.fy: 516.5
+Camera.cx: 318.6
+Camera.cy: 255.3
+Camera.k1: 0.1
+Camera.k2: 0.01
+Camera.p1: 0
+Camera.p2: 0
+Camera.width: 640
+Camera.height: 480
+Camera.bf: 376.0
+
+Camera.RGB: 1
+Camera.Depth: 1
+RGBD.ThDepth: 4.0
+
+
+ORBextractor.nFeatures: 1000
+ORBextractor.scaleFactor: 1.2
+ORBextractor.nLevels: 8
+ORBextractor.iniThFAST: 20
+ORBextractor.minThFAST: 7
+
+rgbd_dataset: /home/jacob/slam_ws/ORB_SLAM2_clean/app

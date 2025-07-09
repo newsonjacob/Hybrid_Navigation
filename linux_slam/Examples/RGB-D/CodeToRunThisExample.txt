@@ -1,0 +1,1 @@
+./custom/custom_slam ../Vocabulary/ORBvoc.txt ../Examples/RGB-D/TUM/rgbd_tum_settings.yaml ../Examples/RGB-D/TUM/rgbd_dataset_freiburg1_xyz/1305031453.359684.png ../Examples/RGB-D/TUM/rgbd_dataset_freiburg1_xyz/1305031453.374112.png

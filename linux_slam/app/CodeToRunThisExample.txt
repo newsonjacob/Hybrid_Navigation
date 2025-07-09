@@ -1,0 +1,37 @@
+My code:
+cd /mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/linux_slam/app$ ../build/app/custom_slam ../Vocabulary/ORBvoc.txt rgbd_settings.yaml associate.txt
+
+Example:
+./build/Examples/RGB-D/rgbd_tum ../Vocabulary/ORBvoc.txt ../Examples/RGB-D/TUM/rgbd_tum_settings.yaml ../Examples/RGB-D/TUM/rgbd_dataset_freiburg1_xyz ../Examples/RGB-D/TUM/rgbd_dataset_freiburg1_xyz/associate.txt
+
+Server example:
+./app/tcp_slam_server ../Vocabulary/ORBvoc.txt ../app/rgbd_settings.yaml
+
+
+./app/tcp_slam_server ../Vocabulary/ORBvoc.txt ../app/rgbd_settings.yaml > slam_output.log 2>&1 &
+
+
+./app/test_vocab_load ../Vocabulary/ORBvoc.txt
+
+
+
+
+python  h:/Documents/AirSimExperiments/Reactive_OpticalFlow2/slam_bridge/slam_receiver.py
+
+
+
+Integrate early → Test in sim → Debug & improve SLAM pose handling & communication → Finalize control integration
+
+Summary Before Full Integration:
+✅ Validate SLAM pose quality and consistency
+
+✅ Smooth/filter pose data if noisy
+
+✅ Robust network communication
+
+✅ Coordinate frame alignment
+
+✅ Rotation handling if needed
+
+✅ AirSim control readiness
+

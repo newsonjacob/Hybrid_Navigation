@@ -1,0 +1,13 @@
+build/
+*.zip
+*.bag
+*.log
+*.avi
+*.mp4
+*.png
+*.jpg
+*.npy
+*.bin
+
+Vocabulary/ORBvoc.txt
+Vocabulary/ORBvoc.txt
