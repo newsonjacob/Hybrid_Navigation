@@ -38,6 +38,11 @@ def main() -> None:
     config = load_app_config(args.config)
     settings_path = get_settings_path(args, config)
 
+    slam_server_host = args.slam_server_host or config.get("network", "slam_server_host", fallback="127.0.0.1")
+    slam_server_port = int(args.slam_server_port or config.get("network", "slam_server_port", fallback="6000"))
+    slam_receiver_host = args.slam_receiver_host or config.get("network", "slam_receiver_host", fallback="127.0.0.1")
+    slam_receiver_port = int(args.slam_receiver_port or config.get("network", "slam_receiver_port", fallback="6001"))
+
     # Add a nav_mode argument to your CLI parser (e.g., --nav-mode [slam|reactive])
     nav_mode = getattr(args, "nav_mode", "slam")  # Default to slam if not specified
 
@@ -64,7 +69,7 @@ def main() -> None:
     logging.info("[INFO] AirSim + camera ready — flag set")
 
     if nav_mode == "slam":
-        start_receiver()
+        start_receiver(slam_receiver_host, slam_receiver_port)
         wait_for_nav_trigger()
         client.enableApiControl(True)
         client.armDisarm(True)

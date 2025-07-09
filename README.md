@@ -85,7 +85,7 @@ pip install -e .
 
 4. Build your Unreal map and generate a packaged `.exe` (e.g. `Blocks.exe`).
 
-5. Edit `config.ini` to point to your AirSim `settings.json` and UE4 executables. These values will be used unless overridden on the command line.
+5. Edit `config.ini` to point to your AirSim `settings.json`, UE4 executables and the SLAM networking details. The `[network]` section controls the IP and port used by the image streamer and pose receiver.
 
 6. Run the system:
    ```bash
@@ -97,8 +97,13 @@ pip install -e .
    ```
    To load a different configuration file:
    ```bash
-   python main.py --config custom.ini
-   ```
+  python main.py --config custom.ini
+  ```
+  Network addresses can also be overridden:
+  ```bash
+  python main.py --slam-server-host 10.0.0.2 --slam-server-port 6000 \
+                 --slam-receiver-host 10.0.0.3 --slam-receiver-port 6001
+  ```
 
 ---
 
