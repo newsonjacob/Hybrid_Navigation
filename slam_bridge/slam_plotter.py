@@ -64,6 +64,17 @@ def save_interactive_plot():
         fig.add_trace(go.Scatter(y=x_vals, mode='lines', name='x'))
         fig.add_trace(go.Scatter(y=y_vals, mode='lines', name='y'))
         fig.add_trace(go.Scatter(y=z_vals, mode='lines', name='z'))
+
+        resets = []
+        prev = None
+        for idx, (x, y, z) in enumerate(zip(x_vals, y_vals, z_vals)):
+            if prev is not None and (
+                abs(x - prev[0]) > 1 or abs(y - prev[1]) > 1 or abs(z - prev[2]) > 1
+            ):
+                resets.append(idx)
+            prev = (x, y, z)
+        for r in resets:
+            fig.add_vline(x=r, line=dict(color="red", dash="dash"))
     fig.update_layout(
         title="SLAM Translation (x, y, z)",
         xaxis_title="Frame index",

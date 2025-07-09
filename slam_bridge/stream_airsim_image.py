@@ -21,6 +21,7 @@ class ImageStreamer:
         self.retries = retries
         self.sock: socket.socket | None = None
         self.client = airsim.MultirotorClient()
+        self.frame_index = 0
 
     def connect(self) -> None:
         for attempt in range(1, self.retries + 1):
@@ -51,12 +52,23 @@ class ImageStreamer:
             responses[1].height, responses[1].width
         )
 
+        synced = responses[0].time_stamp == responses[1].time_stamp
+        logging.info(
+            "Frame %d ts=%d sync=%s rgb=%s depth=%s",
+            self.frame_index,
+            responses[0].time_stamp,
+            synced,
+            rgb.shape,
+            depth.shape,
+        )
+
         header = struct.pack("!III", responses[0].height, responses[0].width, rgb.nbytes)
         self._send_all(header)
         self._send_all(rgb.tobytes())
         header = struct.pack("!III", responses[1].height, responses[1].width, depth.nbytes)
         self._send_all(header)
         self._send_all(depth.tobytes())
+        self.frame_index += 1
 
     def init_first_frame(self) -> None:
         logging.info("Waiting for valid image from AirSim...")
@@ -87,6 +99,9 @@ class ImageStreamer:
                 logging.warning("Received empty image frame, skipping")
                 time.sleep(0.1)
                 continue
+            logging.debug(
+                "Streaming frame %d ts=%d", self.frame_index, responses[0].time_stamp
+            )
             try:
                 self._send_frame(responses)
             except Exception as exc:

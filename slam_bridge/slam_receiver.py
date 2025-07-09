@@ -2,6 +2,8 @@ import socket
 import struct
 import time
 import threading
+from collections import deque
+import numpy as np
 
 HOST = "192.168.1.102"  # Default IP if not provided
 PORT = 6001
@@ -12,6 +14,9 @@ slam_pose = {
     'valid': False,
     'lock': threading.Lock()
 }
+
+pose_history = deque(maxlen=500)
+frame_counter = 0
 
 def recvall(conn, n):
     data = b''
@@ -36,16 +41,23 @@ def _recv_loop(host: str, port: int):
                     conn, addr = sock.accept()
                     print(f"[SLAM Receiver] ✅ Connected by {addr}")
                     with conn:
+                        global frame_counter
                         while True:
                             data = recvall(conn, 48) # 12 floats * 4 bytes each = 48 bytes
                             if data is None:
                                 print("[SLAM Receiver] Connection closed.")
                                 break
                             pose = struct.unpack('<12f', data) # Unpack 12 floats (3x4 matrix)
+                            matrix = np.array([pose[i*4:(i+1)*4] for i in range(3)], dtype=np.float32)
                             with slam_pose['lock']:
-                                slam_pose['pose_matrix'] = [pose[i*4:(i+1)*4] for i in range(3)]
+                                slam_pose['pose_matrix'] = matrix.tolist()
                                 slam_pose['timestamp'] = time.time()
                                 slam_pose['valid'] = True
+                            is_identity = np.allclose(matrix, np.eye(3,4), atol=1e-6)
+                            print(f"[SLAM Receiver] Frame {frame_counter} valid={not is_identity}")
+                            print(matrix)
+                            pose_history.append((frame_counter, slam_pose['timestamp'], matrix, not is_identity))
+                            frame_counter += 1
                 except socket.timeout:
                     pass
         except Exception as e:
@@ -63,6 +75,9 @@ def get_latest_pose():
             return (x, y, z)
         else:
             return None
+
+def get_pose_history():
+    return list(pose_history)
 
 if __name__ == "__main__":
     import argparse

@@ -42,6 +42,7 @@
 #include"PnPsolver.h"
 
 #include<iostream>
+#include<iomanip>
 
 #include<mutex>
 
@@ -460,7 +461,10 @@ void Tracking::Track()
         if(bOK)
             mState = OK;
         else
+        {
             mState=LOST;
+            std::cout << "[TRACKING] Lost tracking at frame " << mCurrentFrame.mnId << std::endl;
+        }
 
         // Update drawer
         mpFrameDrawer->Update(this);
@@ -536,21 +540,26 @@ void Tracking::Track()
     // Store frame pose information to retrieve the complete camera trajectory afterwards.
     if(!mCurrentFrame.mTcw.empty())
     {
-        // std::cout << "Sending pose..." << std::endl;
         SendPose(mCurrentFrame.mTcw);
         cv::Mat Tcr = mCurrentFrame.mTcw*mCurrentFrame.mpReferenceKF->GetPoseInverse();
         mlRelativeFramePoses.push_back(Tcr);
         mlpReferences.push_back(mpReferenceKF);
         mlFrameTimes.push_back(mCurrentFrame.mTimeStamp);
         mlbLost.push_back(mState==LOST);
+
+        std::cout << "[TRACKING] Frame " << mCurrentFrame.mnId
+                  << " | matches: " << mnMatchesInliers
+                  << " | keypoints: " << mCurrentFrame.N << std::endl;
+        std::cout << mCurrentFrame.mTcw << std::endl;
     }
     else
     {
-        // This can happen if tracking is lost
         mlRelativeFramePoses.push_back(mlRelativeFramePoses.back());
         mlpReferences.push_back(mlpReferences.back());
         mlFrameTimes.push_back(mlFrameTimes.back());
         mlbLost.push_back(mState==LOST);
+
+        std::cout << "[TRACKING] Tracking lost at frame " << mCurrentFrame.mnId << std::endl;
     }
 
 }
@@ -1554,7 +1563,7 @@ bool Tracking::Relocalization()
 void Tracking::Reset()
 {
 
-    // cout << "System Reseting" << endl;
+    std::cout << "[TRACKING] Resetting system" << std::endl;
     if(mpViewer)
     {
         mpViewer->RequestStop();
