@@ -8,7 +8,7 @@ from threading import Event
 exit_flag = Event()
 
 
-def launch_control_gui(param_refs):
+def launch_control_gui(param_refs, nav_mode="unknown"):
     """Launch the full control window using mutable parameter refs."""
     def on_stop():
         """Signal the main loop to terminate."""
@@ -23,12 +23,14 @@ def launch_control_gui(param_refs):
 
     root = tk.Tk()
     root.title("UAV Controller")
-    root.geometry("300x250")
+    root.geometry("300x280")
 
     l_val = tk.StringVar()
     c_val = tk.StringVar()
     r_val = tk.StringVar()
     state_val = tk.StringVar()
+
+    tk.Label(root, text=f"Navigation Mode: {nav_mode.upper()}", fg="blue", font=("Arial", 12, "bold")).pack(pady=(5, 0))
 
     tk.Button(
         root,
@@ -45,17 +47,9 @@ def launch_control_gui(param_refs):
     tk.Label(flow_frame, text="Left:").grid(row=0, column=0, sticky='e')
     tk.Label(flow_frame, textvariable=l_val).grid(row=0, column=1, sticky='w')
     tk.Label(flow_frame, text="Center:").grid(row=1, column=0, sticky='e')
-    tk.Label(flow_frame, textvariable=c_val).grid(
-        row=1,
-        column=1,
-        sticky='w',
-    )
+    tk.Label(flow_frame, textvariable=c_val).grid(row=1, column=1, sticky='w')
     tk.Label(flow_frame, text="Right:").grid(row=2, column=0, sticky='e')
-    tk.Label(flow_frame, textvariable=r_val).grid(
-        row=2,
-        column=1,
-        sticky='w',
-    )
+    tk.Label(flow_frame, textvariable=r_val).grid(row=2, column=1, sticky='w')
 
     tk.Label(root, text="Current State:").pack(pady=(10, 0))
     tk.Label(root, textvariable=state_val).pack()
@@ -64,7 +58,7 @@ def launch_control_gui(param_refs):
     root.mainloop()
 
 
-def start_gui(param_refs=None):
+def start_gui(param_refs=None, nav_mode="unknown"):
     """Start the GUI in a background thread."""
     if param_refs is None:
         Thread(
@@ -73,7 +67,7 @@ def start_gui(param_refs=None):
         ).start()
     else:
         Thread(
-            target=lambda: launch_control_gui(param_refs),
+            target=lambda: launch_control_gui(param_refs, nav_mode),
             daemon=True,
         ).start()
 
