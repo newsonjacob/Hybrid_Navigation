@@ -476,9 +476,9 @@ def navigation_loop(args, client, ctx):
             try: data = perception_queue.get(timeout=1.0)
             except Exception: continue
             prev_state = param_refs['state'][0]
-            if navigator.settling and time_now >= navigator.settle_end_time:
-                logger.info("Settle period over — resuming evaluation")
-                navigator.settling = False
+            # if navigator.settling and time_now >= navigator.settle_end_time:
+            #     logger.info("Settle period over — resuming evaluation")
+            #     navigator.settling = False
             if time_now - start_time >= MAX_SIM_DURATION:
                 logger.info("Time limit reached — landing and stopping."); break
             pos_goal, _, _ = get_drone_state(client)
