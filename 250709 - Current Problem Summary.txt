@@ -1,0 +1,17 @@
+🛠️ Current Problem Summary
+In an Unreal Engine + AirSim simulation, ORB-SLAM2 is being used with RGB-D input from a simulated OAK-D camera. The depth images have a 10m range, but SLAM frequently loses tracking after the drone starts moving. Logged poses show translation vectors near zero and Tcw often becomes invalid. The map environment includes long corridors and distant walls, resulting in mostly far-away features. This affects triangulation accuracy, reduces parallax, and weakens pose estimation.
+
+💡 Prompt for Codex or ChatGPT
+I'm using ORB-SLAM2 with RGB-D input (depth images up to 10m) in an Unreal Engine simulation of a drone using AirSim. The map contains long hallways and distant walls. I'm encountering tracking loss during motion — Tcw becomes invalid, translation is near zero, and SLAM fails to localize.
+
+Please help me:
+
+Filter or clamp the depth map before calling TrackRGBD to improve robustness
+
+Only use depth pixels with meaningful parallax (e.g. < 8m)
+
+Optionally mask out distant/flat areas before SLAM
+
+Suggest camera pathing strategies or map layout changes that favor stable tracking
+
+Also include a code snippet showing how to pre-process the depth image for ORB-SLAM2 input (clamping or thresholding depth to improve pose estimation).250709 - 

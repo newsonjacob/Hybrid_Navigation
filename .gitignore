@@ -22,6 +22,7 @@ flow_logs/
 
 linux_slam/app/data/
 linux_slam/custom/data/
+analysis/flight_view_*.html
 
 
 # IDE directories
