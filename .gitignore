@@ -23,7 +23,7 @@ flow_logs/
 linux_slam/app/data/
 linux_slam/custom/data/
 analysis/flight_view_*.html
-
+analysis/slam_traj_*.html
 
 # IDE directories
 .vscode/
