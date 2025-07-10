@@ -110,6 +110,16 @@ pip install -e .
 
 ## 📊 Logs and Visualisation
 
+### Enabling Logging
+
+Call `setup_logging()` to configure console output. Provide a file name to also
+store logs under `logs/`:
+
+```python
+from uav.logging_config import setup_logging
+setup_logging("run.log")  # also prints to stdout
+```
+
 - Flight logs are stored in `flow_logs/` as `.csv`
 - 3D trajectory plots are saved in `analysis/` as interactive `.html` files
 - Runtime messages are configured via `uav.logging_config.setup_logging` using the standard `logging` module
