@@ -59,7 +59,7 @@ def shutdown_all(main_proc=None, slam_proc=None, stream_proc=None, ffmpeg_proc=N
             slam_proc.kill()
 
     # --- CLEAN UP FFMPEG ---
-    if ffmpeg_proc is not None:
+    if isinstance(ffmpeg_proc, subprocess.Popen):
         logger.info("Terminating screen recording")
         ffmpeg_proc.terminate()
         try:
@@ -162,37 +162,46 @@ def launch_slam_backend(receiver_host: str, receiver_port: int):
 
 def record_slam_video(window_substring: str = "ORB-SLAM2", duration: int = 60):
     """Record the SLAM visualization window using ``ffmpeg``.
-
-    Returns a tuple of ``(process, video_path)``.
+    Returns a tuple of ``(process, video_path)`` or (None, None) if it fails.
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     video_path = f"analysis/slam_output_{timestamp}.mp4"
 
-    window_title = None
-    for title in gw.getAllTitles():
-        if window_substring in title:
-            window_title = title
-            break
+    try:
+        import time
+        import pygetwindow as gw
 
-    if not window_title:
-        raise RuntimeError(
-            f"Could not find window with title containing '{window_substring}'."
-        )
+        # Wait briefly in case the window isn't ready yet
+        time.sleep(1)
 
-    ffmpeg_cmd = [
-        "ffmpeg",
-        "-hide_banner", "-loglevel", "error",
-        "-y",
-        "-f", "gdigrab",
-        "-framerate", "30",
-        "-i", f"title={window_title}",
-        "-t", str(duration),
-        video_path,
-    ]
+        window_title = None
+        for title in gw.getAllTitles():
+            if window_substring in title:
+                window_title = title
+                break
 
-    proc = subprocess.Popen(ffmpeg_cmd)
-    logger.info("Started screen recording to %s", video_path)
-    return proc, video_path
+        if not window_title:
+            raise RuntimeError(f"Could not find window with title containing '{window_substring}'.")
+
+        ffmpeg_cmd = [
+            "ffmpeg",
+            "-hide_banner", "-loglevel", "error",
+            "-y",
+            "-f", "gdigrab",
+            "-framerate", "30",
+            "-i", f"title={window_title}",
+            "-t", str(duration),
+            video_path,
+        ]
+
+        proc = subprocess.Popen(ffmpeg_cmd)
+        logger.info("Started screen recording to %s", video_path)
+        return proc, video_path
+
+    except Exception as e:
+        logger.warning("⚠️ Screen recording failed to start: %s", e)
+        return None, None
+
 
 
 def wait_for_start_flag():

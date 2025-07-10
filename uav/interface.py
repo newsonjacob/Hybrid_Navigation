@@ -8,7 +8,6 @@ from threading import Event
 # Use a multiprocessing.Event to signal when the application should exit
 exit_flag = Event()
 
-
 def launch_control_gui(param_refs, nav_mode="unknown"):
     """Launch the full control window using mutable parameter refs."""
     def on_stop():
@@ -27,17 +26,17 @@ def launch_control_gui(param_refs, nav_mode="unknown"):
         Path("flags/start_nav.flag").touch()
 
     def update_labels():
-        l_val.set(f"{param_refs['L'][0]:.2f}")
-        c_val.set(f"{param_refs['C'][0]:.2f}")
-        r_val.set(f"{param_refs['R'][0]:.2f}")
-        state_val.set(param_refs['state'][0])
-        root.after(200, update_labels)
+        l_val.set(f"{param_refs['L'][0]:.2f}") # Flow magnitude label for left sensor
+        c_val.set(f"{param_refs['C'][0]:.2f}") # Flow magnitude label for center sensor
+        r_val.set(f"{param_refs['R'][0]:.2f}") # Flow magnitude label for right sensor
+        state_val.set(param_refs['state'][0]) # Current state of the UAV label
+        root.after(200, update_labels) # Update every 200ms
 
     def update_status_lights():
-        all_ready = True
+        all_ready = True 
         for name, flag_path in systems:
             if os.path.exists(flag_path):
-                status_labels[name].config(fg="green")
+                status_labels[name].config(fg="green") 
             else:
                 status_labels[name].config(fg="red")
                 if name in required_systems:
@@ -47,48 +46,50 @@ def launch_control_gui(param_refs, nav_mode="unknown"):
             start_nav_btn.config(state="normal")
         else:
             start_nav_btn.config(state="disabled")
-        root.after(500, update_status_lights)
+        root.after(500, update_status_lights) # Update every 500ms
 
-    root = tk.Tk()
-    root.title("UAV Controller")
-    root.geometry("340x420")
+    root = tk.Tk() # Create the main application window
+    root.title("Hybrid Navigation Simulation") # Set the window title
+    root.geometry("340x420") # Set the window size
 
-    l_val = tk.StringVar()
-    c_val = tk.StringVar()
-    r_val = tk.StringVar()
-    state_val = tk.StringVar()
+    l_val = tk.StringVar() # Flow magnitude for left sensor
+    c_val = tk.StringVar() # Flow magnitude for center sensor
+    r_val = tk.StringVar() # Flow magnitude for right sensor
+    state_val = tk.StringVar() # Current state of the UAV
 
-    tk.Label(root, text=f"Navigation Mode: {nav_mode.upper()}", fg="blue", font=("Arial", 12, "bold")).pack(pady=(5, 0))
+    # Set the initial state value
+    tk.Label(root, text=f"Navigation Mode: {nav_mode.upper()}", fg="blue", font=("Arial", 10, "bold")).pack(pady=(5, 0))
 
     # --- Traffic light indicators for all flags ---
-    status_frame = tk.Frame(root)
-    status_frame.pack(pady=10)
+    status_frame = tk.Frame(root) # Create a frame for status indicators
+    status_frame.pack(pady=10) # Add some padding around the frame
 
     systems = [
+        ("UE4 PID", "flags/ue4_sim.pid"),
         ("AirSim", "flags/airsim_ready.flag"),
         ("SLAM", "flags/slam_ready.flag"),
-        ("UE4 PID", "flags/ue4_sim.pid"),
-        # Removed Streamer and Main flags since they are not used elsewhere
     ]
     # List of system names that are required before navigation can start
-    required_systems = ["AirSim", "SLAM", "UE4 PID"]
+    required_systems = ["UE4 PID", "AirSim", "SLAM"]
 
-    status_labels = {}
+    status_labels = {} # Dictionary to hold references to status labels
+    # Create labels for each system status
     for idx, (name, _) in enumerate(systems):
-        tk.Label(status_frame, text=name + ":").grid(row=idx, column=0, sticky='e')
-        lbl = tk.Label(status_frame, text="●", font=("Arial", 18), fg="red")
-        lbl.grid(row=idx, column=1, sticky='w')
-        status_labels[name] = lbl
+        tk.Label(status_frame, text=name + ":").grid(row=idx, column=0, sticky='e') # Align label to the right
+        lbl = tk.Label(status_frame, text="●", font=("Arial", 18), fg="red") # Create a label for the status light
+        lbl.grid(row=idx, column=1, sticky='w') # Align label to the left
+        status_labels[name] = lbl # Store the label in the dictionary for later updates
 
     # Navigation mode selection
-    nav_modes = ["slam", "reactive", "other"]  # Add your modes here
-    nav_mode_var = tk.StringVar(value=nav_modes[0])
+    nav_modes = ["slam", "reactive", "other"]  # List of available navigation modes
+    nav_mode_var = tk.StringVar(value=nav_modes[0]) # Default to the first mode
 
     # Add dropdown and launch button to GUI
-    tk.Label(root, text="Select Navigation Mode:").pack(pady=(10, 0))
-    nav_mode_menu = tk.OptionMenu(root, nav_mode_var, *nav_modes)
-    nav_mode_menu.pack(pady=(0, 10))
+    tk.Label(root, text="Select Navigation Mode:").pack(pady=(10, 0)) # Label for dropdown
+    nav_mode_menu = tk.OptionMenu(root, nav_mode_var, *nav_modes) # Create a dropdown menu for navigation modes
+    nav_mode_menu.pack(pady=(0, 10)) # Add some padding below the dropdown
 
+    # Launch Simulation button
     launch_sim_btn = tk.Button(
         root,
         text="Launch Simulation",
@@ -109,6 +110,7 @@ def launch_control_gui(param_refs, nav_mode="unknown"):
     )
     start_nav_btn.pack(pady=5)
 
+    # Stop UAV button
     tk.Button(
         root,
         text="Stop UAV",
@@ -117,8 +119,10 @@ def launch_control_gui(param_refs, nav_mode="unknown"):
         fg='white',
     ).pack(pady=5)
 
+    # Flow magnitude labels
     tk.Label(root, text="Flow Magnitudes").pack(pady=5)
 
+    # Create a frame to hold the flow magnitude labels in a grid layout
     flow_frame = tk.Frame(root)
     flow_frame.pack()
     tk.Label(flow_frame, text="Left:").grid(row=0, column=0, sticky='e')
@@ -128,13 +132,13 @@ def launch_control_gui(param_refs, nav_mode="unknown"):
     tk.Label(flow_frame, text="Right:").grid(row=2, column=0, sticky='e')
     tk.Label(flow_frame, textvariable=r_val).grid(row=2, column=1, sticky='w')
 
+    # Current state label
     tk.Label(root, text="Current State:").pack(pady=(10, 0))
     tk.Label(root, textvariable=state_val).pack()
 
     update_labels()
     update_status_lights()
     root.mainloop()
-
 
 def start_gui(param_refs=None, nav_mode="unknown"):
     """Start the GUI in a background thread."""
@@ -148,7 +152,6 @@ def start_gui(param_refs=None, nav_mode="unknown"):
             target=lambda: launch_control_gui(param_refs, nav_mode),
             daemon=True,
         ).start()
-
 
 def gui_exit():
     """Display a minimal stop button for emergency exit."""

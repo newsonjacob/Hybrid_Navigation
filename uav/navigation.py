@@ -146,3 +146,19 @@ class Navigator:
         self.client.moveByVelocityAsync(0.5, 0, 0, 1)
         self.last_movement_time = time.time()
         return "timeout_nudge"
+    
+    def slam_to_goal(self, pose, goal, max_speed=1.5, threshold=0.5):
+        x, y, z = pose
+        gx, gy, gz = goal
+        dx = gx - x
+        dy = gy - y
+        dist = math.sqrt(dx**2 + dy**2)
+        if dist < threshold:
+            self.client.moveByVelocityAsync(0, 0, 0, 0.5)
+            return "slam_stop"
+        vx, vy = dx / dist * max_speed, dy / dist * max_speed
+        self.client.moveByVelocityAsync(vx, vy, 0, duration=1)
+        return "slam_nav"
+    
+    
+

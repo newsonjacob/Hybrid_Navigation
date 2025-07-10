@@ -541,6 +541,24 @@ def navigation_loop(args, client, ctx):
     except KeyboardInterrupt:
         logger.info("Interrupted.")
 
+def is_obstacle_ahead(client, depth_threshold=2.0, vehicle_name="UAV"):
+    from airsim import ImageRequest, ImageType
+    try:
+        responses = client.simGetImages([
+            ImageRequest("oakd_camera", ImageType.DepthPlanar, True)
+        ], vehicle_name=vehicle_name)
+        if not responses or responses[0].height == 0:
+            return False, None
+        depth_image = airsim.get_pfm_array(responses[0])
+        h, w = depth_image.shape
+        cx, cy = w // 2, h // 2
+        roi = depth_image[cy-20:cy+20, cx-20:cx+20]
+        mean_depth = np.nanmean(roi)
+        return mean_depth < depth_threshold, mean_depth
+    except Exception as e:
+        print(f"[Obstacle Check] Depth read failed: {e}")
+        return False, None
+
 def slam_navigation_loop(args, client, ctx):
     """
     Main navigation loop for SLAM-based navigation with basic obstacle avoidance.
@@ -556,6 +574,7 @@ def slam_navigation_loop(args, client, ctx):
     if ctx is not None:
         exit_flag = ctx.get("exit_flag", None)
 
+    # --- Initialize SLAM navigation parameters ---
     start_time = time.time()
     max_duration = getattr(args, "max_duration", 60)
     goal_x = getattr(args, "goal_x", 29)
@@ -570,24 +589,25 @@ def slam_navigation_loop(args, client, ctx):
                 logger.info("[SLAMNav] Stop flag detected. Landing and exiting navigation loop.")
                 client.landAsync().join()
                 break
-
+            # --- Get the latest SLAM pose ---
             pose = get_latest_pose()
-            if pose is None:
+            if pose is None: # No pose received, hover to recover
                 logger.warning("[SLAMNav] No pose received – hovering to recover.")
                 client.hoverAsync().join()
                 time.sleep(1.0)  # allow SLAM to reinitialize
                 continue
             else:
-                x, y, z = pose
+                x, y, z = pose # Unpack the pose
                 logger.info(f"[SLAMNav] Received pose: x={x:.2f}, y={y:.2f}, z={z:.2f}")
 
-                # Check for collision/obstacle
-                collision = client.simGetCollisionInfo()
-                if getattr(collision, "has_collided", False):
-                    logger.warning("[SLAMNav] Obstacle detected! Executing avoidance maneuver.")
-                    # Back up and try to move sideways
-                    client.moveByVelocityAsync(-1.0, 0, 0, 1).join()  # Back up
-                    client.moveByVelocityAsync(0, 1.0, 0, 1).join()   # Move right
+            # --- Check if we are close to the goal ---
+                is_close, mean_depth = is_obstacle_ahead(client, depth_threshold=2.0)
+                if is_close:
+                    logger.warning("[SLAMNav] Obstacle predicted ahead! Braking to avoid collision.")
+                    if mean_depth is not None:
+                        logger.debug(f"[Depth] Mean depth in ROI = {mean_depth:.2f} m")
+                    client.moveByVelocityAsync(0, 0, 0, 0.5)
+                    time.sleep(1.0)
                     continue
 
                 # Check if goal reached
@@ -597,15 +617,20 @@ def slam_navigation_loop(args, client, ctx):
                     client.landAsync().join()
                     break
 
-                # Move toward goal (simple proportional controller)
-                vx = 1.0 if x < goal_x - threshold else 0.0
-                vy = 1.0 if y < goal_y - threshold else 0.0
-                vz = 0.0  # Maintain altitude
-                if vx != 0.0 or vy != 0.0:
-                    logger.info(f"[SLAMNav] Moving toward goal with vx={vx}, vy={vy}")
-                    client.moveByVelocityAsync(vx, vy, vz, 1, drivetrain=airsim.DrivetrainType.ForwardOnly, yaw_mode=airsim.YawMode(False, 0))
-                else:
-                    logger.info("[SLAMNav] Holding position.")
+                # --- Check if we are close enough to the goal ---
+                navigator = ctx["navigator"] if ctx and "navigator" in ctx else Navigator(client)
+                state_str = navigator.slam_to_goal((x, y, z), (goal_x, goal_y, goal_z))
+                logger.info(f"[SLAMNav] Navigator state: {state_str}")
+
+                # Check for collision/obstacle
+                # TODO: Add proactive obstacle prediction using SLAM map or depth
+                collision = client.simGetCollisionInfo()
+                if getattr(collision, "has_collided", False):
+                    logger.warning("[SLAMNav] Obstacle detected! Executing avoidance maneuver.")
+                    # Back up and try to move sideways
+                    client.moveByVelocityAsync(-1.0, 0, 0, 1).join()  # Back up
+                    client.moveByVelocityAsync(0, 1.0, 0, 1).join()   # Move right
+                    continue
 
             # End condition
             if time.time() - start_time > max_duration:
