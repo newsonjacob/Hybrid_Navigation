@@ -572,7 +572,12 @@ def slam_navigation_loop(args, client, ctx):
                 break
 
             pose = get_latest_pose()
-            if pose is not None:
+            if pose is None:
+                logger.warning("[SLAMNav] No pose received – hovering to recover.")
+                client.hoverAsync().join()
+                time.sleep(1.0)  # allow SLAM to reinitialize
+                continue
+            else:
                 x, y, z = pose
                 logger.info(f"[SLAMNav] Received pose: x={x:.2f}, y={y:.2f}, z={z:.2f}")
 

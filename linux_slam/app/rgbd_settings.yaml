@@ -1,21 +1,20 @@
 %YAML:1.0
 ---
-Camera.fx: 517.3
-Camera.fy: 516.5
-Camera.cx: 318.6
-Camera.cy: 255.3
-Camera.k1: 0.1
-Camera.k2: 0.01
-Camera.p1: 0
-Camera.p2: 0
-Camera.width: 640
-Camera.height: 480
-Camera.bf: 376.0
+Camera.fx: 720.0
+Camera.fy: 720.0
+Camera.cx: 640.0
+Camera.cy: 360.0
+Camera.k1: 0.0
+Camera.k2: 0.0
+Camera.p1: 0.0
+Camera.p2: 0.0
+Camera.width: 1280
+Camera.height: 720
+Camera.bf: 376.0  # Can keep if needed for stereo SLAM
 
 Camera.RGB: 1
 Camera.Depth: 1
-RGBD.ThDepth: 4.0
-
+RGBD.ThDepth: 4.0  # Depth truncation at 4m (optional tweak later)
 
 ORBextractor.nFeatures: 1200
 ORBextractor.scaleFactor: 1.2
