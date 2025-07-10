@@ -14,7 +14,7 @@ This repository contains the implementation of a reactive obstacle avoidance sys
 - Compatible with a custom stereo camera setup (`oakd_camera`)
 - Works with auto-launched AirSim simulation
 - Receives SLAM poses via a `PoseReceiver` that can be started and stopped programmatically
-- Simple 3D frontier detection from SLAM map points
+- Integrated frontier-based exploration using SLAM map points
 
 ---
 
