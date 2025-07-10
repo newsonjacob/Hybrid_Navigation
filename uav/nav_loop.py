@@ -549,7 +549,8 @@ def slam_navigation_loop(args, client, ctx):
     logger = logging.getLogger(__name__)
     logger.info("[SLAMNav] Starting SLAM navigation loop with obstacle avoidance.")
 
-    from slam_bridge.slam_receiver import get_latest_pose
+    from slam_bridge.slam_receiver import get_latest_pose, get_pose_history
+    from slam_bridge.frontier_detection import detect_frontiers
 
     # --- Incorporate exit_flag from ctx for GUI stop button ---
     exit_flag = None
@@ -581,6 +582,23 @@ def slam_navigation_loop(args, client, ctx):
                 x, y, z = pose
                 logger.info(f"[SLAMNav] Received pose: x={x:.2f}, y={y:.2f}, z={z:.2f}")
 
+                # Detect exploration frontiers from accumulated SLAM poses
+                history = get_pose_history()
+                map_pts = np.array(
+                    [[m[0][3], m[1][3], m[2][3]] for _, m in history], dtype=float
+                )
+                frontiers = detect_frontiers(map_pts)
+                if frontiers.size:
+                    logger.debug(
+                        "[SLAMNav] Frontier voxels detected: %d", len(frontiers)
+                    )
+                    logger.debug(
+                        "[SLAMNav] Sample frontier: x=%.2f y=%.2f z=%.2f",
+                        frontiers[0][0],
+                        frontiers[0][1],
+                        frontiers[0][2],
+                    )
+
                 # Check for collision/obstacle
                 collision = client.simGetCollisionInfo()
                 if getattr(collision, "has_collided", False):
@@ -592,10 +610,18 @@ def slam_navigation_loop(args, client, ctx):
 
                 # Check if goal reached
                 if abs(x - goal_x) < threshold and abs(y - goal_y) < threshold:
-                    logger.info("[SLAMNav] Goal reached — landing.")
-                    client.moveToPositionAsync(x, y, goal_z, 1).join()
-                    client.landAsync().join()
-                    break
+                    if frontiers.size:
+                        goal_x, goal_y, _ = frontiers[0]
+                        logger.info(
+                            "[SLAMNav] Goal reached — switching to frontier at x=%.2f y=%.2f",
+                            goal_x,
+                            goal_y,
+                        )
+                    else:
+                        logger.info("[SLAMNav] Goal reached — landing.")
+                        client.moveToPositionAsync(x, y, goal_z, 1).join()
+                        client.landAsync().join()
+                        break
 
                 # Move toward goal (simple proportional controller)
                 vx = 1.0 if x < goal_x - threshold else 0.0
