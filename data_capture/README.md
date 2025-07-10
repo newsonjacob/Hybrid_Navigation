@@ -6,6 +6,7 @@ capture_airsim_data.py
 - Captures synchronized stereo images from cameras "0" and "1"
 - Records IMU data with timestamps
 - Saves images and IMU logs to the output/ folder
+- Runtime messages are logged via `uav.logging_config.setup_logging`
 
 Usage
 1. Ensure AirSim simulation is running with your drone and cameras set up.
