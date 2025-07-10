@@ -567,7 +567,8 @@ def slam_navigation_loop(args, client, ctx):
     logger = logging.getLogger(__name__)
     logger.info("[SLAMNav] Starting SLAM navigation loop with obstacle avoidance.")
 
-    from slam_bridge.slam_receiver import get_latest_pose
+    from slam_bridge.slam_receiver import get_latest_pose, get_pose_history
+    from slam_bridge.frontier_detection import detect_frontiers
 
     # --- Incorporate exit_flag from ctx for GUI stop button ---
     exit_flag = None
@@ -600,30 +601,24 @@ def slam_navigation_loop(args, client, ctx):
                 x, y, z = pose # Unpack the pose
                 logger.info(f"[SLAMNav] Received pose: x={x:.2f}, y={y:.2f}, z={z:.2f}")
 
-            # --- Check if we are close to the goal ---
-                is_close, mean_depth = is_obstacle_ahead(client, depth_threshold=2.0)
-                if is_close:
-                    logger.warning("[SLAMNav] Obstacle predicted ahead! Braking to avoid collision.")
-                    if mean_depth is not None:
-                        logger.debug(f"[Depth] Mean depth in ROI = {mean_depth:.2f} m")
-                    client.moveByVelocityAsync(0, 0, 0, 0.5)
-                    time.sleep(1.0)
-                    continue
-
-                # Check if goal reached
-                if abs(x - goal_x) < threshold and abs(y - goal_y) < threshold:
-                    logger.info("[SLAMNav] Goal reached — landing.")
-                    client.moveToPositionAsync(x, y, goal_z, 1).join()
-                    client.landAsync().join()
-                    break
-
-                # --- Check if we are close enough to the goal ---
-                navigator = ctx["navigator"] if ctx and "navigator" in ctx else Navigator(client)
-                state_str = navigator.slam_to_goal((x, y, z), (goal_x, goal_y, goal_z))
-                logger.info(f"[SLAMNav] Navigator state: {state_str}")
+                # Detect exploration frontiers from accumulated SLAM poses
+                history = get_pose_history()
+                map_pts = np.array(
+                    [[m[0][3], m[1][3], m[2][3]] for _, m in history], dtype=float
+                )
+                frontiers = detect_frontiers(map_pts)
+                if frontiers.size:
+                    logger.debug(
+                        "[SLAMNav] Frontier voxels detected: %d", len(frontiers)
+                    )
+                    logger.debug(
+                        "[SLAMNav] Sample frontier: x=%.2f y=%.2f z=%.2f",
+                        frontiers[0][0],
+                        frontiers[0][1],
+                        frontiers[0][2],
+                    )
 
                 # Check for collision/obstacle
-                # TODO: Add proactive obstacle prediction using SLAM map or depth
                 collision = client.simGetCollisionInfo()
                 if getattr(collision, "has_collided", False):
                     logger.warning("[SLAMNav] Obstacle detected! Executing avoidance maneuver.")
@@ -631,6 +626,31 @@ def slam_navigation_loop(args, client, ctx):
                     client.moveByVelocityAsync(-1.0, 0, 0, 1).join()  # Back up
                     client.moveByVelocityAsync(0, 1.0, 0, 1).join()   # Move right
                     continue
+
+                # Check if goal reached
+                if abs(x - goal_x) < threshold and abs(y - goal_y) < threshold:
+                    if frontiers.size:
+                        goal_x, goal_y, _ = frontiers[0]
+                        logger.info(
+                            "[SLAMNav] Goal reached — switching to frontier at x=%.2f y=%.2f",
+                            goal_x,
+                            goal_y,
+                        )
+                    else:
+                        logger.info("[SLAMNav] Goal reached — landing.")
+                        client.moveToPositionAsync(x, y, goal_z, 1).join()
+                        client.landAsync().join()
+                        break
+
+                # Move toward goal (simple proportional controller)
+                vx = 1.0 if x < goal_x - threshold else 0.0
+                vy = 1.0 if y < goal_y - threshold else 0.0
+                vz = 0.0  # Maintain altitude
+                if vx != 0.0 or vy != 0.0:
+                    logger.info(f"[SLAMNav] Moving toward goal with vx={vx}, vy={vy}")
+                    client.moveByVelocityAsync(vx, vy, vz, 1, drivetrain=airsim.DrivetrainType.ForwardOnly, yaw_mode=airsim.YawMode(False, 0))
+                else:
+                    logger.info("[SLAMNav] Holding position.")
 
             # End condition
             if time.time() - start_time > max_duration:
