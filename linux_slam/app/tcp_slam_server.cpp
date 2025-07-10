@@ -104,20 +104,21 @@ bool send_pose(int pose_sock, const cv::Mat& Tcw) {
 
 // ------- Main function to set up the TCP server, receive images, and process them with ORB-SLAM2 -------
 int main(int argc, char **argv) {
+    // Redirect stdout and stderr to log files
     freopen("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/slam_console.txt", "w", stdout);
     freopen("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/slam_console_err.txt", "w", stderr);
-
+    // Set the locale to C for consistent number formatting
     if (argc < 3) {
         cerr << "Usage: ./tcp_slam_server path_to_vocabulary path_to_settings [log_file_path]" << endl;
         return 1;
     }
-
+    // Create logs directory if it doesn't exist
     #ifdef _WIN32
         _mkdir("H:\\Documents\\AirSimExperiments\\Hybrid_Navigation\\logs");
     #else
         mkdir("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs", 0777);
     #endif
-
+    // Get vocabulary and settings file paths from command line arguments
     std::string vocab = argv[1];
     std::string settings = argv[2];
 
@@ -163,27 +164,27 @@ int main(int argc, char **argv) {
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;  // binds to 0.0.0.0 — all interfaces
     address.sin_port = htons(6000);
-
+    // Bind the socket to the address and port
     if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
         cerr << "Bind failed" << endl;
         close(server_fd);
         return 1;
     }
-
+    // Set the socket to listen for incoming connections
     if (listen(server_fd, 1) < 0) {
         cerr << "Listen failed" << endl;
         close(server_fd);
         return 1;
     }
-
     cout << "[INFO] Waiting for Python streamer on port 6000..." << endl;
 
+    // Log the event
     int addrlen = sizeof(address);
-
     log_event("Calling accept() and waiting for streamer...");
     std::cout << "[INFO] Calling accept() and waiting for streamer..." << std::endl;
     std::cout.flush();
 
+    // Accept a client connection
     int sock = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
     if (sock < 0) {
         log_event("[ERROR] Failed to accept() client connection.");
@@ -194,9 +195,9 @@ int main(int argc, char **argv) {
     log_event("✅ Client connection accepted");
     std::cout << "[BOOT] Client connection accepted" << std::endl;
     std::cout.flush();
-
     log_event("Client connection accepted, entering image receive loop.");
 
+    // Log the connection details
     if (sock < 0) {
         cerr << "Accept failed" << endl;
         close(server_fd);
@@ -204,6 +205,7 @@ int main(int argc, char **argv) {
     }
     cout << "[INFO] Connected to Python streamer!" << endl;
 
+    // --- Initialize SLAM ---
     bool slam_ready_flag_written = false;
     bool clean_exit = true;
     int frame_counter = 0;
@@ -229,12 +231,13 @@ int main(int argc, char **argv) {
         }
     }
 
+    // --- Main loop to receive images and process them with SLAM ---
     while (true) {
-        int snapshot_limit = 5;         // Declare at the top of the loop
-        float max_depth_m = 10.0f;      // Declare at the top of the loop
-
+        int snapshot_limit = 5;         
+        float max_depth_m = 10.0f;      
         log_event("----- Begin image receive loop -----");
 
+        // Log the loop start time
         double loop_timestamp = (double)cv::getTickCount() / cv::getTickFrequency();
         {
             std::ostringstream oss;
@@ -266,6 +269,7 @@ int main(int argc, char **argv) {
         log_event(oss.str());
         log_event("Received 12-byte RGB header.");
 
+        // Convert network byte order to host byte order
         memcpy(&net_height, rgb_header, 4);
         memcpy(&net_width,  rgb_header + 4, 4);
         memcpy(&net_bytes, rgb_header + 8, 4);
@@ -279,6 +283,7 @@ int main(int argc, char **argv) {
             log_event(oss.str());
         }
 
+        // Check if RGB bytes match expected size
         if (rgb_bytes != rgb_height * rgb_width * 3) {
             std::cerr << "[ERROR] RGB byte count mismatch. Expected: "
                       << (rgb_height * rgb_width * 3) << ", Got: " << rgb_bytes << std::endl;
@@ -287,6 +292,7 @@ int main(int argc, char **argv) {
             break;
         }
 
+        // --- Receive raw RGB data ---
         vector<uchar> rgb_buffer(rgb_bytes);
         if (!recv_all(sock, (char*)rgb_buffer.data(), rgb_bytes)) {
             log_event("Disconnect: Failed to receive full RGB image data.");
@@ -294,6 +300,7 @@ int main(int argc, char **argv) {
             break;
         }
 
+        // --- Check if SLAM server is ready to process images ---
         log_event("About to create slam_ready.flag (pre-check passed)");
         if (!slam_ready_flag_written) {
             std::ofstream flag_file("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/flags/slam_ready.flag");
@@ -309,6 +316,7 @@ int main(int argc, char **argv) {
             slam_ready_flag_written = true;
         }
 
+        // --- Convert raw RGB data to OpenCV Matrix (cv::Mat) ---
         cv::Mat imRGB(rgb_height, rgb_width, CV_8UC3, rgb_buffer.data());
         imRGB = imRGB.clone();
 
@@ -458,7 +466,7 @@ int main(int argc, char **argv) {
             log_event(oss.str());
         }
 
-        // ✅ NEW: count valid depth pixels instead of using center only
+        // Count valid depth pixels instead of using center only
         int valid_depth_pixels = cv::countNonZero(imD > 0.0f);
         log_event("[DEBUG] Valid depth pixels after filtering: " + std::to_string(valid_depth_pixels));
 
@@ -468,7 +476,7 @@ int main(int argc, char **argv) {
             continue;
         }
 
-
+        // --- Log frame count and timestamp ---
         double timestamp = (double)cv::getTickCount() / cv::getTickFrequency();
         // Log timestamp delta between frames
         static double last_ts = -1.0;
@@ -534,8 +542,7 @@ int main(int argc, char **argv) {
                 log_event("[WARN] Tcw appears to be an identity matrix — no motion detected. Count: " + std::to_string(identity_frame_count));
             }
 
-
-            // Defensive checks
+            // Defensive checks on Tcw_copy
             bool tcw_valid = true;
             if (Tcw_copy.empty() || Tcw_copy.rows != 4 || Tcw_copy.cols != 4) {
                 log_event("[WARN] Tcw_copy is empty or not 4x4.");
@@ -554,6 +561,7 @@ int main(int argc, char **argv) {
                 tcw_valid = false;
             }
 
+            // Log the Tcw_copy matrix
             if (tcw_valid) {
                 try {
                     cv::Mat Twc = Tcw_copy.inv();
@@ -573,7 +581,6 @@ int main(int argc, char **argv) {
             } else {
                 log_event("[WARN] Tcw_copy invalid — skipping pose log.");
             }
-
 
         } catch (const std::exception& ex) {
             std::ostringstream oss;
@@ -630,91 +637,52 @@ int main(int argc, char **argv) {
         cv::Mat Tcw = SLAM.GetTracker()->mCurrentFrame.mTcw;
         int track_state = SLAM.GetTracker()->mState;
 
-        if (pose_sock >= 0 && !Tcw.empty() &&
-            Tcw.rows == 4 && Tcw.cols == 4 &&
-            Tcw.type() == CV_32F &&
-            track_state >= ORB_SLAM2::Tracking::OK &&
-            cv::checkRange(Tcw)) {
+        // Use Twc (world camera pose) instead of Tcw
+        if (!Tcw.empty() && Tcw.rows == 4 && Tcw.cols == 4 && Tcw.type() == CV_32F) {
+            cv::Mat Twc = Tcw.inv();
+            float x = Twc.at<float>(0, 3);
+            float y = Twc.at<float>(1, 3);
+            float z = Twc.at<float>(2, 3);
 
-            // Ensure Tcw is a 4x4 matrix
-            std::ostringstream pose_stream;
-            pose_stream << "Raw Tcw values: ";
-            for (int r = 0; r < 3; ++r)
-                for (int c = 0; c < 4; ++c)
-                    pose_stream << Tcw.at<float>(r, c) << ", ";
-            log_event(pose_stream.str());
-            // Prepare the Tcw matrix for sending
-            std::ostringstream oss;
-            oss << "Sending Tcw | State: " << track_state << " | Matrix: ";
-            for (int r = 0; r < 3; ++r) {
-                for (int c = 0; c < 4; ++c) {
-                    float val = Tcw.at<float>(r, c);
-                    if (std::isnan(val) || std::abs(val) < 1e-5)
-                        val = 0.0;
-                    oss << val << (r == 2 && c == 3 ? "" : ", ");
-                }
-            }
-
-            // ✅ Now append translation norm after the loop:
-            float tx_raw = Tcw.at<float>(0, 3);
-            float ty_raw = Tcw.at<float>(1, 3);
-            float tz_raw = Tcw.at<float>(2, 3);
-
-            // Clamp tiny noise to 0.0
-            float tx = std::abs(tx_raw) < 1e-5 ? 0.0f : tx_raw;
-            float ty = std::abs(ty_raw) < 1e-5 ? 0.0f : ty_raw;
-            float tz = std::abs(tz_raw) < 1e-5 ? 0.0f : tz_raw;
-
-            float motion = std::sqrt(tx*tx + ty*ty + tz*tz);
-
-            // Log the translation vector components
             std::ostringstream vec_log;
-            vec_log << "[DEBUG] Translation vector components — ΔX: " << tx
-                    << ", ΔY: " << ty
-                    << ", ΔZ: " << tz;
+            vec_log << "[FIXED] Twc (world position) — X: " << x
+                    << ", Y: " << y
+                    << ", Z: " << z;
             log_event(vec_log.str());
 
+            // HACK: Simulate fake motion by modifying Twc translation
+            // This simulates a forward motion of 0.05 meters per frame
+            static int fake_motion_counter = 0;
+            fake_motion_counter++;
+            Twc.at<float>(0, 3) = 0.05f * fake_motion_counter;  // Move along X
 
+            // Send Twc instead of Tcw if tracking is good
+            if (pose_sock >= 0 && track_state >= ORB_SLAM2::Tracking::OK && cv::checkRange(Twc)) {
+                cv::Mat Twc_send;
+                Twc.convertTo(Twc_send, CV_32F); // ensure float32
+                if (send_pose(pose_sock, Twc_send)) {
+                    log_event("Pose (Twc) sent to Python receiver.");
 
-            oss << " | TranslationNorm=" << std::fixed << std::setprecision(6) << motion;
-            log_event(oss.str());
-
-            if (send_pose(pose_sock, Tcw)) {
-                log_event("Pose sent to Python receiver.");
-
-                // Log the pose data to the dedicated pose log file
-                if (pose_log_stream.is_open()) {
-                    pose_log_stream << std::fixed << std::setprecision(6);
-                    pose_log_stream << "Frame #" << frame_counter << " | ";
-                    pose_log_stream << "Tcw: ";
-                    for (int r = 0; r < 3; ++r)
-                        for (int c = 0; c < 4; ++c)
-                            pose_log_stream << Tcw.at<float>(r, c) << (r == 2 && c == 3 ? "" : ", ");
-                    pose_log_stream << std::endl;
-                    pose_log_stream.flush();
+                    // Log to trajectory file
+                    if (pose_log_stream.is_open()) {
+                        pose_log_stream << std::fixed << std::setprecision(6);
+                        pose_log_stream << "Frame #" << frame_counter << " | Twc: ";
+                        for (int r = 0; r < 3; ++r)
+                            for (int c = 0; c < 4; ++c)
+                                pose_log_stream << Twc.at<float>(r, c) << (r == 2 && c == 3 ? "" : ", ");
+                        pose_log_stream << std::endl;
+                        pose_log_stream.flush();
+                    }
+                } else {
+                    log_event("[WARN] Failed to send Twc to Python receiver.");
                 }
-            } else {
-                log_event("[WARN] Failed to send pose to Python receiver.");
             }
         }
 
         frame_counter++;
-        // Log translation norm even if Tcw is invalid or tracking lost
-        if (!Tcw.empty() && Tcw.rows == 4 && Tcw.cols == 4 && Tcw.type() == CV_32F) {
-            float tx = Tcw.at<float>(0, 3);
-            float ty = Tcw.at<float>(1, 3);
-            float tz = Tcw.at<float>(2, 3);
-            float motion = std::sqrt(tx * tx + ty * ty + tz * tz);
-
-            std::ostringstream fallback_log;
-            fallback_log << "[INFO] Pose (regardless of track state): tx=" << tx
-                        << ", ty=" << ty << ", tz=" << tz
-                        << " | Norm=" << std::fixed << std::setprecision(6) << motion;
-            log_event(fallback_log.str());
-        }
-
     }
 
+    // --- Cleanup and exit ---
     if (clean_exit) {
         log_event("Image receive loop exited cleanly (no error).");
         std::cout << "[INFO] Image receive loop exited cleanly (no error)." << std::endl;

@@ -480,6 +480,12 @@ def navigation_loop(args, client, ctx):
                 break
             frame_count += 1
             time_now = time.time()
+
+            # ✅ Print real drone position from AirSim
+            pose = client.simGetVehiclePose("UAV")
+            pos = pose.position
+            logger.info("[UAV Pose] x=%.2f, y=%.2f, z=%.2f", pos.x_val, pos.y_val, pos.z_val)
+
             if not startup_grace_over:
                 if time_now - start_time < GRACE_PERIOD_SEC:
                     param_refs['state'][0] = "startup_grace"
