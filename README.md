@@ -15,6 +15,7 @@ This repository contains the implementation of a reactive obstacle avoidance sys
 - Works with auto-launched AirSim simulation
 - Receives SLAM poses via a `PoseReceiver` that can be started and stopped programmatically
 - Integrated frontier-based exploration using SLAM map points
+- SLAM loop checks depth ahead and dodges obstacles before advancing
 
 ---
 
