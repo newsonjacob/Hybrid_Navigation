@@ -1,6 +1,10 @@
 from typing import Optional, Tuple
 
 from .pose_receiver import PoseReceiver
+import logging
+from uav.logging_config import setup_logging
+
+logger = logging.getLogger(__name__)
 
 HOST = "192.168.1.102"  # Default IP if not provided
 PORT = 6001
@@ -37,8 +41,7 @@ def get_pose_history():
 if __name__ == "__main__":
     import argparse
     import time
-    import logging
-    logging.basicConfig(level=logging.INFO)
+    setup_logging(None)
 
     parser = argparse.ArgumentParser(description="SLAM pose receiver")
     parser.add_argument("--host", default=HOST)

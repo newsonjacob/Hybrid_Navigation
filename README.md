@@ -112,7 +112,7 @@ pip install -e .
 
 - Flight logs are stored in `flow_logs/` as `.csv`
 - 3D trajectory plots are saved in `analysis/` as interactive `.html` files
-- Runtime messages are emitted via the standard `logging` module
+- Runtime messages are configured via `uav.logging_config.setup_logging` using the standard `logging` module
 - SLAM pose and feature debugging is printed to stdout and stored in `logs/`
 
 ---

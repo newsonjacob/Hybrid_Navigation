@@ -1,5 +1,8 @@
 import logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
+from uav.logging_config import setup_logging
+
+setup_logging(None)
+logger = logging.getLogger(__name__)
 
 import threading
 import time
@@ -38,10 +41,10 @@ def get_settings_path(args, config):
         return SETTINGS_PATH
 
 def wait_for_nav_trigger():
-    logging.info("[INFO] Waiting for navigation start flag...")
+    logger.info("[INFO] Waiting for navigation start flag...")
     while not START_FLAG_PATH.exists():
         time.sleep(1)
-    logging.info("[INFO] Navigation start flag found. Beginning nav logic...")
+    logger.info("[INFO] Navigation start flag found. Beginning nav logic...")
 
 def main() -> None:
     args = parse_args()
@@ -68,15 +71,15 @@ def main() -> None:
             client.confirmConnection()
             break
         except Exception as e:
-            logging.info(f"Waiting for simulator to be ready... (attempt {attempt+1}/{max_attempts})")
+            logger.info(f"Waiting for simulator to be ready... (attempt {attempt+1}/{max_attempts})")
             time.sleep(2)
     else:
-        logging.error("Failed to connect to AirSim simulator after multiple attempts.")
+        logger.error("Failed to connect to AirSim simulator after multiple attempts.")
         cleanup(None, sim_process, None)
         return
 
     (flags_dir / "airsim_ready.flag").touch()
-    logging.info("[INFO] AirSim + camera ready — flag set")
+    logger.info("[INFO] AirSim + camera ready — flag set")
 
     if nav_mode == "slam":
         start_receiver(slam_receiver_host, slam_receiver_port)
@@ -116,7 +119,6 @@ def main() -> None:
         start_perception_thread(ctx)
 
         # ✅ Logging: startup debug
-        logger = logging.getLogger(__name__)
         logger.info(f"🧭 Navigation loop starting with mode: {nav_mode}")
         logger.info(f"📌 Navigator object: {ctx['navigator']}")
         logger.info(f"🗺️  Initial state: {ctx['param_refs']['state'][0]}")
@@ -145,7 +147,7 @@ def main() -> None:
 
 
     else:
-        logging.error(f"Unknown navigation mode: {nav_mode}")
+        logger.error(f"Unknown navigation mode: {nav_mode}")
         cleanup(client, sim_process, None)
 
 if __name__ == "__main__":
