@@ -572,8 +572,10 @@ def slam_navigation_loop(args, client, ctx):
 
     # --- Incorporate exit_flag from ctx for GUI stop button ---
     exit_flag = None
+    navigator = None
     if ctx is not None:
         exit_flag = ctx.get("exit_flag", None)
+        navigator = ctx.get("navigator", None)
 
     # --- Initialize SLAM navigation parameters ---
     start_time = time.time()
@@ -625,6 +627,19 @@ def slam_navigation_loop(args, client, ctx):
                     # Back up and try to move sideways
                     client.moveByVelocityAsync(-1.0, 0, 0, 1).join()  # Back up
                     client.moveByVelocityAsync(0, 1.0, 0, 1).join()   # Move right
+                    continue
+
+                # Depth-based obstacle check before moving toward the goal
+                ahead, depth = is_obstacle_ahead(client)
+                if ahead:
+                    msg = "[SLAMNav] Depth obstacle detected"
+                    if depth is not None:
+                        msg += f" at {depth:.2f}m"
+                    logger.warning(msg)
+                    if navigator is not None:
+                        navigator.dodge(0, 0, 0, direction="right")
+                    else:
+                        client.hoverAsync().join()
                     continue
 
                 # Check if goal reached
