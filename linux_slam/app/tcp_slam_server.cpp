@@ -104,6 +104,9 @@ bool send_pose(int pose_sock, const cv::Mat& Tcw) {
 
 // ------- Main function to set up the TCP server, receive images, and process them with ORB-SLAM2 -------
 int main(int argc, char **argv) {
+    freopen("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/slam_console.txt", "w", stdout);
+    freopen("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/slam_console_err.txt", "w", stderr);
+
     if (argc < 3) {
         cerr << "Usage: ./tcp_slam_server path_to_vocabulary path_to_settings [log_file_path]" << endl;
         return 1;
@@ -227,6 +230,9 @@ int main(int argc, char **argv) {
     }
 
     while (true) {
+        int snapshot_limit = 5;         // Declare at the top of the loop
+        float max_depth_m = 10.0f;      // Declare at the top of the loop
+
         log_event("----- Begin image receive loop -----");
 
         double loop_timestamp = (double)cv::getTickCount() / cv::getTickFrequency();
@@ -306,6 +312,18 @@ int main(int argc, char **argv) {
         cv::Mat imRGB(rgb_height, rgb_width, CV_8UC3, rgb_buffer.data());
         imRGB = imRGB.clone();
 
+        // --- Check if images are changing ---
+        static cv::Mat prev_rgb;
+        if (!prev_rgb.empty()) {
+            cv::Mat diff;
+            cv::absdiff(imRGB, prev_rgb, diff);
+            double frame_diff = cv::sum(diff)[0] / (imRGB.rows * imRGB.cols * 3);  // Normalize by total pixels * channels
+            std::ostringstream motion_msg;
+            motion_msg << "[DEBUG] RGB frame difference (mean): " << frame_diff;
+            log_event(motion_msg.str());
+        }
+        prev_rgb = imRGB.clone();
+
         // --- Receive Depth image ---
         uint32_t d_height, d_width, d_bytes;
         if (!recv_all(sock, (char*)&d_height, 4)) {
@@ -324,6 +342,7 @@ int main(int argc, char **argv) {
             break;
         }
 
+        // Convert network byte order to host byte order
         d_height = ntohl(d_height);
         d_width  = ntohl(d_width);
         d_bytes  = ntohl(d_bytes);
@@ -334,6 +353,7 @@ int main(int argc, char **argv) {
             log_event(oss.str());
         }
 
+        // Check if depth bytes match expected size
         if (d_bytes != d_height * d_width * 4) {
             std::ostringstream oss;
             oss << "Disconnect: Depth byte count mismatch. Expected: "
@@ -343,6 +363,7 @@ int main(int argc, char **argv) {
             break;
         }
 
+        // --- Receive raw depth data ---
         std::vector<char> raw_depth(d_bytes);
         if (!recv_all(sock, raw_depth.data(), d_bytes)) {
             log_event("Disconnect: Failed to receive full depth image data.");
@@ -350,18 +371,34 @@ int main(int argc, char **argv) {
             break;
         }
 
+        // --- Convert raw depth data to OpenCV Matrix (cv::Mat) ---
         float* float_ptr = reinterpret_cast<float*>(raw_depth.data());
         cv::Mat imD_raw(d_height, d_width, CV_32F, float_ptr);
         cv::Mat imD = imD_raw.clone();  // clone from raw buffer
+        
+        // --- Add a histogram log to check depth spread ---
+        double hist_min, hist_max;
+        cv::minMaxLoc(imD_raw, &hist_min, &hist_max);
+        std::ostringstream hist_msg;
+        hist_msg << "[DEBUG] Raw depth stats — min: " << hist_min << ", max: " << hist_max;
+        log_event(hist_msg.str());
+
+        // --- Save raw depth image for debugging ---
+        if (frame_counter % 25 == 0) {
+            std::ostringstream raw_depth_filename;
+            raw_depth_filename << "/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/frame_depth_raw_" << frame_counter << ".png";
+
+            cv::Mat raw_depth_vis;
+            imD_raw.convertTo(raw_depth_vis, CV_8U, 255.0 / max_depth_m); // Now max_depth_m is in scope
+            cv::imwrite(raw_depth_filename.str(), raw_depth_vis);
+        }
 
         // Clamp depth to max range (e.g. 5m or 10m)
-        float max_depth_m = 10.0f;
         cv::Mat imD_clipped;
         cv::threshold(imD, imD_clipped, max_depth_m, max_depth_m, cv::THRESH_TRUNC);
 
         // Save visualization for debug
-        int snapshot_limit = 5;
-        if (frame_counter < snapshot_limit) {
+        if (frame_counter % 25 == 0) {
             std::ostringstream depth_filename;
             depth_filename << "/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/frame_depth_" << frame_counter << ".png";
 
@@ -370,12 +407,47 @@ int main(int argc, char **argv) {
             cv::imwrite(depth_filename.str(), depth_vis);
         }
 
+        // --- Apply depth filtering to reduce tracking issues from flat or far geometry ---
 
-        // Replace original imD with clipped for SLAM
-        imD = imD_clipped;
+        // Replace invalid or unhelpful depth (e.g. very near or very far)
+        cv::Mat imD_filtered = imD_clipped.clone();
+        const float min_depth = 0.1f;
+        const float max_depth = 8.0f;
+        for (int y = 0; y < imD_filtered.rows; ++y) {
+            float* row = imD_filtered.ptr<float>(y);
+            for (int x = 0; x < imD_filtered.cols; ++x) {
+                float d = row[x];
+                if (d < min_depth || d > max_depth || std::isnan(d))
+                    row[x] = 0.0f; // ORB-SLAM2 treats 0 as invalid
+            }
+        }
 
+        // Optional: filter out flat areas (low gradient)
+        cv::Mat grad_x, grad_y;
+        cv::Sobel(imD_filtered, grad_x, CV_32F, 1, 0, 3);
+        cv::Sobel(imD_filtered, grad_y, CV_32F, 0, 1, 3);
+        cv::Mat grad_mag;
+        cv::magnitude(grad_x, grad_y, grad_mag);
 
-        // Log depth value at center pixel
+        // Zero out pixels with almost no depth change (flat walls/floors)
+        float flat_thresh = 0.001f;
+        for (int y = 0; y < grad_mag.rows; ++y) {
+            float* d_row = imD_filtered.ptr<float>(y);
+            const float* g_row = grad_mag.ptr<float>(y);
+            for (int x = 0; x < grad_mag.cols; ++x) {
+                if (g_row[x] < flat_thresh)
+                    d_row[x] = 0.0f;
+            }
+        }
+
+        imD = imD_filtered;
+        if (frame_counter % 25 == 0) {
+            cv::Mat debug_vis;
+            imD.convertTo(debug_vis, CV_8U, 255.0 / max_depth);  // Scale for viewing
+            cv::imwrite("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/frame_depth_filtered_" + std::to_string(frame_counter) + ".png", debug_vis);
+        }
+
+        // Log depth value at center pixel (optional, but not used for logic anymore)
         int cx = d_width / 2;
         int cy = d_height / 2;
         float center_depth = imD.at<float>(cy, cx);
@@ -386,7 +458,34 @@ int main(int argc, char **argv) {
             log_event(oss.str());
         }
 
+        // ✅ NEW: count valid depth pixels instead of using center only
+        int valid_depth_pixels = cv::countNonZero(imD > 0.0f);
+        log_event("[DEBUG] Valid depth pixels after filtering: " + std::to_string(valid_depth_pixels));
+
+        if (valid_depth_pixels < 300) {
+            log_event("[WARN] Too few valid depth pixels — skipping SLAM update.");
+            frame_counter++;
+            continue;
+        }
+
+
         double timestamp = (double)cv::getTickCount() / cv::getTickFrequency();
+        // Log timestamp delta between frames
+        static double last_ts = -1.0;
+        if (last_ts >= 0.0) {
+            double dt = timestamp - last_ts;
+            std::ostringstream delta_log;
+            delta_log << "[DEBUG] Timestamp delta: " << std::fixed << std::setprecision(6) << dt << " seconds";
+            log_event(delta_log.str());
+        }
+        last_ts = timestamp;
+
+        {
+            std::ostringstream ts_msg;
+            ts_msg << "[DEBUG] Timestamp at Frame #" << frame_counter << ": " << std::fixed << std::setprecision(6) << timestamp;
+            log_event(ts_msg.str());
+        }
+
 
         // --- Process with SLAM ---
         {
@@ -402,13 +501,40 @@ int main(int argc, char **argv) {
             d_stats << "Depth image stats — min: " << min_val << ", max: " << max_val;
             log_event(d_stats.str());
 
-            
+            // Log the depth image size
             SLAM.TrackRGBD(imRGB, imD, timestamp);
-
+            
+            if (SLAM.GetTracker()->mState == ORB_SLAM2::Tracking::LOST) {
+                log_event("[WARN] SLAM tracking lost — resetting system.");
+                SLAM.Reset();
+            }
+            
+            // Log the current frame's timestamp
             cv::Mat Tcw_copy = SLAM.GetTracker()->mCurrentFrame.mTcw.clone();
+            static cv::Mat prev_Tcw;
+            if (!prev_Tcw.empty() && prev_Tcw.size() == Tcw_copy.size()) {
+                cv::Mat diff = Tcw_copy - prev_Tcw;
+                double delta = cv::norm(diff, cv::NORM_L2);
+                std::ostringstream pose_msg;
+                pose_msg << "[DEBUG] Pose matrix difference from previous frame: " << delta;
+                log_event(pose_msg.str());
+            }
+            prev_Tcw = Tcw_copy.clone();
+
             log_event("Tcw_copy rows: " + std::to_string(Tcw_copy.rows) +
                     ", cols: " + std::to_string(Tcw_copy.cols) +
                     ", type: " + std::to_string(Tcw_copy.type()));
+            cv::Mat identity = cv::Mat::eye(4, 4, Tcw_copy.type());
+
+            // Check if Tcw_copy is close to identity matrix
+            double frobenius_norm = cv::norm(Tcw_copy - identity, cv::NORM_L2);
+            if (frobenius_norm < 1e-3) {
+                static int identity_frame_count = 0;
+                identity_frame_count++;
+                log_event("[WARN] Tcw appears to be an identity matrix — no motion detected. Count: " + std::to_string(identity_frame_count));
+            }
+
+
             // Defensive checks
             bool tcw_valid = true;
             if (Tcw_copy.empty() || Tcw_copy.rows != 4 || Tcw_copy.cols != 4) {
@@ -460,7 +586,7 @@ int main(int argc, char **argv) {
         }
 
         // Save first N frames for visual inspection
-        if (frame_counter < snapshot_limit) {
+        if (frame_counter % 25 == 0) {
             std::ostringstream rgb_filename, depth_filename;
             rgb_filename << "/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/frame_rgb_" << frame_counter << ".png";
             depth_filename << "/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/frame_depth_" << frame_counter << ".png";
@@ -490,7 +616,7 @@ int main(int argc, char **argv) {
         }
 
         // Optional: save ORB keypoints on RGB image
-        if (frame_counter < snapshot_limit) {
+        if (frame_counter % 25 == 0) {
             std::vector<cv::KeyPoint> orb_kps = tracker->mCurrentFrame.mvKeys;
             cv::Mat rgb_kp;
             cv::drawKeypoints(imRGB, orb_kps, rgb_kp);
@@ -504,7 +630,12 @@ int main(int argc, char **argv) {
         cv::Mat Tcw = SLAM.GetTracker()->mCurrentFrame.mTcw;
         int track_state = SLAM.GetTracker()->mState;
 
-        if (pose_sock >= 0 && !Tcw.empty() && track_state >= ORB_SLAM2::Tracking::OK) {
+        if (pose_sock >= 0 && !Tcw.empty() &&
+            Tcw.rows == 4 && Tcw.cols == 4 &&
+            Tcw.type() == CV_32F &&
+            track_state >= ORB_SLAM2::Tracking::OK &&
+            cv::checkRange(Tcw)) {
+
             // Ensure Tcw is a 4x4 matrix
             std::ostringstream pose_stream;
             pose_stream << "Raw Tcw values: ";
@@ -536,10 +667,13 @@ int main(int argc, char **argv) {
 
             float motion = std::sqrt(tx*tx + ty*ty + tz*tz);
 
-            // Log it
-            log_event("Translation vector: " + std::to_string(tx) + ", " +
-                                            std::to_string(ty) + ", " +
-                                            std::to_string(tz));
+            // Log the translation vector components
+            std::ostringstream vec_log;
+            vec_log << "[DEBUG] Translation vector components — ΔX: " << tx
+                    << ", ΔY: " << ty
+                    << ", ΔZ: " << tz;
+            log_event(vec_log.str());
+
 
 
             oss << " | TranslationNorm=" << std::fixed << std::setprecision(6) << motion;
@@ -565,6 +699,20 @@ int main(int argc, char **argv) {
         }
 
         frame_counter++;
+        // Log translation norm even if Tcw is invalid or tracking lost
+        if (!Tcw.empty() && Tcw.rows == 4 && Tcw.cols == 4 && Tcw.type() == CV_32F) {
+            float tx = Tcw.at<float>(0, 3);
+            float ty = Tcw.at<float>(1, 3);
+            float tz = Tcw.at<float>(2, 3);
+            float motion = std::sqrt(tx * tx + ty * ty + tz * tz);
+
+            std::ostringstream fallback_log;
+            fallback_log << "[INFO] Pose (regardless of track state): tx=" << tx
+                        << ", ty=" << ty << ", tz=" << tz
+                        << " | Norm=" << std::fixed << std::setprecision(6) << motion;
+            log_event(fallback_log.str());
+        }
+
     }
 
     if (clean_exit) {
@@ -583,5 +731,3 @@ int main(int argc, char **argv) {
     SLAM.Shutdown();
     return 0;
 }
-
-
