@@ -9,6 +9,7 @@ This repository contains the implementation of a reactive obstacle avoidance sys
 
 - Real-time optical flow tracking using Lucas-Kanade method
 - Zone-based obstacle avoidance using vector summation
+- Modular helpers for obstacle detection and side safety
 - Logs flight data to CSV for post-flight analysis
 - Visualises 3D flight paths with interactive HTML output
 - Compatible with a custom stereo camera setup (`oakd_camera`)
