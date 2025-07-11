@@ -1,9 +1,3 @@
-import logging
-from uav.logging_config import setup_logging
-
-setup_logging(None)
-logger = logging.getLogger(__name__)
-
 import threading
 import time
 import os
@@ -14,12 +8,35 @@ import cv2
 
 from uav.cli import parse_args
 from uav.sim_launcher import launch_sim
-from uav.nav_loop import setup_environment, start_perception_thread, navigation_loop, slam_navigation_loop, cleanup
 import airsim
 from uav.utils import FLOW_STD_MAX
 from uav.config import load_app_config
-from slam_bridge.slam_receiver import start_receiver
-from slam_bridge.slam_plotter import plot_slam_trajectory
+import logging
+import argparse
+import sys
+from uav.logging_config import setup_logging
+
+# Parse the timestamp early for logging
+parser = argparse.ArgumentParser()
+parser.add_argument("--log-timestamp", type=str, default=None)
+args, remaining_argv = parser.parse_known_args()
+timestamp = args.log_timestamp or datetime.now().strftime('%Y%m%d_%H%M%S')
+
+# Set up logging just like in launch_all.py
+module_logs = {
+    "uav.nav_loop": f"uav_nav_loop_{timestamp}.log",
+    "uav.slam_bridge": f"uav_slam_bridge_{timestamp}.log",
+    "uav.slam_navigation": f"uav_slam_navigation_{timestamp}.log"
+}
+setup_logging(log_file=f"launch_{timestamp}.log", module_logs=module_logs, level=logging.DEBUG)
+print(f"[main.py] Logging configured. Writing to logs/launch_{timestamp}.log and module logs...")
+
+# Fix sys.argv so parse_args still works
+sys.argv = [sys.argv[0]] + remaining_argv
+
+# Then import the rest
+logger = logging.getLogger(__name__)
+
 
 # --- Flag paths ---
 flags_dir = Path("flags")
@@ -47,9 +64,25 @@ def wait_for_nav_trigger():
     logger.info("[INFO] Navigation start flag found. Beginning nav logic...")
 
 def main() -> None:
+    # Refresh logger after logging setup in launch_all
+    logger_name = __name__
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(logging.DEBUG)  # or INFO if preferred
+
+    # Safety: check that logger has a handler
+    if not logger.handlers:
+        from uav.logging_config import setup_logging
+        setup_logging(log_file="fallback_main.log", module_logs={logger_name: "fallback_module.log"})
+        logger.warning("Logger was missing handlers. Reconfigured logging as fallback.")
+
+    from uav.nav_loop import setup_environment, start_perception_thread, navigation_loop, slam_navigation_loop, cleanup
+    from slam_bridge.slam_receiver import start_receiver
+    from slam_bridge.slam_plotter import plot_slam_trajectory
     args = parse_args()
     config = load_app_config(args.config)
     settings_path = get_settings_path(args, config)
+
+    
 
     slam_server_host = args.slam_server_host or config.get("network", "slam_server_host", fallback="127.0.0.1")
     slam_server_port = int(args.slam_server_port or config.get("network", "slam_server_port", fallback="6000"))
@@ -81,6 +114,7 @@ def main() -> None:
     (flags_dir / "airsim_ready.flag").touch()
     logger.info("[INFO] AirSim + camera ready — flag set")
 
+    logger.info("[TEST] nav_loop logger test")
     if nav_mode == "slam":
         start_receiver(slam_receiver_host, slam_receiver_port)
         wait_for_nav_trigger()

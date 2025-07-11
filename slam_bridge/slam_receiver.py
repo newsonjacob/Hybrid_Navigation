@@ -2,7 +2,6 @@ from typing import Optional, Tuple
 
 from .pose_receiver import PoseReceiver
 import logging
-from uav.logging_config import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +40,6 @@ def get_pose_history():
 if __name__ == "__main__":
     import argparse
     import time
-    setup_logging(None)
 
     parser = argparse.ArgumentParser(description="SLAM pose receiver")
     parser.add_argument("--host", default=HOST)

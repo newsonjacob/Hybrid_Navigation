@@ -1,44 +1,42 @@
 # slam_plotter.py
 import sys
+import time
+import logging
+import threading
 from pathlib import Path
+import plotly.graph_objects as go
+
+# --- Add project root to sys.path ---
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from slam_bridge.slam_receiver import get_latest_pose
-import time
-import plotly.graph_objects as go
-import logging
-from uav.logging_config import setup_logging
 
-setup_logging("slam_plotter.log")
+# --- Global logger for this module ---
 logger = logging.getLogger(__name__)
-logger.info("Script started.")
+logger.info("SLAM plotter script started.")
 
-# Configure logging for plotting
-log_dir = Path("logs")
-log_dir.mkdir(exist_ok=True)
-timestamp = time.strftime("%Y%m%d_%H%M%S")
-logfile = log_dir / f"pose_log_{timestamp}.txt"
+# --- Optional pose-specific log file ---
+pose_log_dir = Path("logs")
+pose_log_dir.mkdir(exist_ok=True)
+pose_log_path = pose_log_dir / f"pose_log_{time.strftime('%Y%m%d_%H%M%S')}.txt"
 
-# Remove all handlers associated with the root logger object.
-for handler in logging.root.handlers[:]:
-    logging.root.removeHandler(handler)
+pose_logger = logging.getLogger("slam_plotter.pose_log")
+pose_logger.setLevel(logging.INFO)
 
-# Create a dedicated logger for plot logging
-plot_logger = logging.getLogger("plot_logger")
-plot_logger.setLevel(logging.INFO)
-plot_handler = logging.FileHandler(logfile, mode='a', encoding='utf-8')
-plot_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s: %(message)s"))
-plot_logger.addHandler(plot_handler)
-plot_logger.propagate = False  # Prevents double logging to root logger
+pose_handler = logging.FileHandler(pose_log_path, mode="a", encoding="utf-8")
+pose_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s: %(message)s"))
 
-import threading
+pose_logger.addHandler(pose_handler)
+pose_logger.propagate = False  # Don't propagate to root
+
+# --- Trajectory buffers ---
 x_vals, y_vals, z_vals = [], [], []
 pose_lock = threading.Lock()
 
+
 def plot_slam_trajectory():
-    logger.info("Starting SLAM pose collection...")
+    logger.info("SLAM trajectory collection started.")
     try:
-        logger.info("Script is running...")
         while True:
             pose = get_latest_pose()
             if pose is not None:
@@ -47,19 +45,20 @@ def plot_slam_trajectory():
                     x_vals.append(x)
                     y_vals.append(y)
                     z_vals.append(z)
-                # Log the pose data
-                plot_logger.info(f"Pose received: x={x}, y={y}, z={z}") 
+                pose_logger.info(f"Pose received: x={x:.2f}, y={y:.2f}, z={z:.2f}")
             time.sleep(0.05)
     except KeyboardInterrupt:
-        pass
+        logger.info("SLAM plotter interrupted by user.")
     finally:
         save_interactive_plot()
 
+
 def save_interactive_plot():
+    logger.info("Saving SLAM trajectory plot...")
     plot_dir = Path("analysis")
     plot_dir.mkdir(exist_ok=True)
     timestamp = time.strftime("%Y%m%d_%H%M%S")
-    filename = plot_dir / f"slam_traj_{timestamp}.html"
+    plot_path = plot_dir / f"slam_traj_{timestamp}.html"
 
     fig = go.Figure()
     with pose_lock:
@@ -67,22 +66,18 @@ def save_interactive_plot():
         fig.add_trace(go.Scatter(y=y_vals, mode='lines', name='y'))
         fig.add_trace(go.Scatter(y=z_vals, mode='lines', name='z'))
 
-        resets = []
+        # Detect large resets in pose to mark potential SLAM resets
         prev = None
-        for idx, (x, y, z) in enumerate(zip(x_vals, y_vals, z_vals)):
-            if prev is not None and (
-                abs(x - prev[0]) > 1 or abs(y - prev[1]) > 1 or abs(z - prev[2]) > 1
-            ):
-                resets.append(idx)
+        for i, (x, y, z) in enumerate(zip(x_vals, y_vals, z_vals)):
+            if prev and any(abs(a - b) > 1.0 for a, b in zip((x, y, z), prev)):
+                fig.add_vline(x=i, line=dict(color="red", dash="dash"))
             prev = (x, y, z)
-        for r in resets:
-            fig.add_vline(x=r, line=dict(color="red", dash="dash"))
+
     fig.update_layout(
         title="SLAM Translation (x, y, z)",
-        xaxis_title="Frame index",
+        xaxis_title="Frame Index",
         yaxis_title="Position (m)",
         template="plotly_dark"
     )
-    fig.write_html(str(filename))
-    logger.info("Saved interactive plot to %s", filename)
-
+    fig.write_html(str(plot_path))
+    logger.info(f"Trajectory plot saved to: {plot_path}")

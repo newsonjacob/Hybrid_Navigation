@@ -5,8 +5,6 @@ import logging
 from pathlib import Path
 from datetime import datetime
 
-from uav.logging_config import setup_logging
-
 import socket
 import struct
 import time
@@ -16,6 +14,7 @@ from typing import List
 import airsim
 import numpy as np
 
+logger = logging.getLogger(__name__)
 
 class ImageStreamer:
     """Stream RGB and depth frames from AirSim to a TCP server."""
@@ -33,10 +32,10 @@ class ImageStreamer:
             try:
                 self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.sock.connect((self.host, self.port))
-                logging.info("Connected to SLAM server at %s:%s", self.host, self.port)
+                logger.info("Connected to SLAM server at %s:%s", self.host, self.port)
                 return
             except socket.error as exc:
-                logging.warning("Connection attempt %s failed: %s", attempt, exc)
+                logger.warning("Connection attempt %s failed: %s", attempt, exc)
                 time.sleep(1)
         raise ConnectionRefusedError(f"Could not connect to {self.host}:{self.port}")
 
@@ -58,7 +57,7 @@ class ImageStreamer:
         )
 
         synced = responses[0].time_stamp == responses[1].time_stamp
-        logging.info(
+        logger.info(
             "Frame %d ts=%d sync=%s rgb=%s depth=%s",
             self.frame_index,
             responses[0].time_stamp,
@@ -76,7 +75,7 @@ class ImageStreamer:
         self.frame_index += 1
 
     def init_first_frame(self) -> None:
-        logging.info("Waiting for valid image from AirSim...")
+        logger.info("Waiting for valid image from AirSim...")
         for _ in range(10):
             responses = self.client.simGetImages(
                 [
@@ -86,9 +85,9 @@ class ImageStreamer:
             )
             if responses and responses[0].height > 0 and responses[1].height > 0:
                 self._send_frame(responses)
-                logging.info("First frame sent")
+                logger.info("First frame sent")
                 return
-            logging.warning("No valid image yet...")
+            logger.warning("No valid image yet...")
             time.sleep(1)
         raise RuntimeError("No valid image received from AirSim")
 
@@ -101,16 +100,16 @@ class ImageStreamer:
                 ]
             )
             if not responses or responses[0].height == 0 or responses[1].height == 0:
-                logging.warning("Received empty image frame, skipping")
+                logger.warning("Received empty image frame, skipping")
                 time.sleep(0.1)
                 continue
-            logging.debug(
+            logger.debug(
                 "Streaming frame %d ts=%d", self.frame_index, responses[0].time_stamp
             )
             try:
                 self._send_frame(responses)
             except Exception as exc:
-                logging.exception("Failed to send frame: %s", exc)
+                logger.exception("Failed to send frame: %s", exc)
                 break
             time.sleep(0.05)
 
@@ -134,7 +133,6 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     log_name = f"airsim_stream_{datetime.now():%Y%m%d_%H%M%S}.log"
-    setup_logging(log_name)
     Path("flags").mkdir(exist_ok=True)
     args = parse_args()
     streamer = ImageStreamer(args.host, args.port, args.retries)

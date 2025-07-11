@@ -6,9 +6,7 @@ from collections import deque
 from typing import Optional, Tuple, List
 
 import logging
-from uav.logging_config import setup_logging
 
-setup_logging("pose_receiver.log")
 logger = logging.getLogger(__name__)
 
 

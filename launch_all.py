@@ -7,22 +7,49 @@ import sys
 from datetime import datetime
 import webbrowser
 import logging
-from uav.cli import parse_args
-from uav.config import load_app_config
 from uav.logging_config import setup_logging
 
+def init_logging_and_flags():
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    launch_log = f"launch_{timestamp}.log"
+    modules_with_dedicated_logs = [
+        "uav.nav_loop",
+        "uav.slam_bridge",
+        "uav.slam_navigation"
+    ]
+    module_logs = {
+        mod: f"{mod.replace('.', '_')}_{timestamp}.log"
+        for mod in modules_with_dedicated_logs
+    }
+
+    setup_logging(log_file=launch_log, module_logs=module_logs, level=logging.DEBUG)
+
+    # 🔍 Debug: Show logger state
+    print("=== LOGGER DEBUG INFO ===")
+    for name in logging.root.manager.loggerDict:
+        logger = logging.getLogger(name)
+        print(f"[DEBUG] Logger: {name}, handlers={logger.handlers}, propagate={logger.propagate}")
+    print("=== END DEBUG INFO ===")
+    
+    logger = logging.getLogger("main")
+    logger.info(f"Logging to logs/{launch_log}")
+
+    flags_dir = Path("flags")
+    flags_dir.mkdir(exist_ok=True)
+
+    return logger, launch_log, module_logs, timestamp
+
+# === CALL LOGGING INIT FIRST ===
+logger, launch_log, module_logs, timestamp = init_logging_and_flags()
+
+# Now safe to import other logging-based modules
+from uav.cli import parse_args
+from uav.config import load_app_config
 import pygetwindow as gw
-
-# --- Add GUI import ---
 from uav.interface import start_gui
-
-# --- Logging setup ---
-log_dir = Path("logs")
-log_dir.mkdir(exist_ok=True)
-logfile = log_dir / f"launch_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-setup_logging(logfile.name)
-logger = logging.getLogger(__name__)
-logger.info(f"Logging to {logfile}")
 
 # --- Flag paths ---
 flags_dir = Path("flags")
@@ -135,16 +162,22 @@ def wait_for_flag(flag_path, timeout=15):
 
 def start_streamer(host: str, port: int):
     """Start the Python image streamer used for SLAM communication."""
+    import os
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.getcwd()  # Ensure current repo root is on PYTHONPATH
+
     proc = subprocess.Popen([
         "python",
         "slam_bridge/stream_airsim_image.py",
         "--host", host,
         "--port", str(port),
-    ])
+    ], env=env)
+    
     logger.info("Started SLAM image streamer")
-    # Give the streamer a moment to send the first frame
     time.sleep(2)
     return proc
+
 
 
 def launch_slam_backend(receiver_host: str, receiver_port: int):
@@ -217,7 +250,7 @@ def wait_for_start_flag():
     logger.info("Signaling navigation to begin...")
     return True
 
-def main():
+def main(timestamp):
     args = parse_args()
     config = load_app_config(args.config)
     slam_server_host = args.slam_server_host or config.get("network", "slam_server_host", fallback="127.0.0.1")
@@ -236,6 +269,7 @@ def main():
             "--slam-server-port", str(slam_server_port),
             "--slam-receiver-host", slam_receiver_host,
             "--slam-receiver-port", str(slam_receiver_port),
+            "--log-timestamp", timestamp,
         ])
 
         logger.info("Started Unreal Engine + main script (idle)")
@@ -325,4 +359,4 @@ if __name__ == "__main__":
     logger.info(f"User selected navigation mode: {selected_nav_mode}")
 
     # --- NOW CALL MAIN() TO LAUNCH THE SIMULATION ---
-    main()
+    main(timestamp)

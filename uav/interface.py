@@ -76,7 +76,7 @@ def launch_control_gui(param_refs, nav_mode="unknown"):
         root.after(500, update_status_lights) # Update every 500ms
 
     root = tk.Tk() # Create the main application window
-    root.title("Hybrid Navigation Simulation") # Set the window title
+    root.title("Hybrid Navigation Simulator") # Set the window title
     root.geometry("340x420") # Set the window size
 
     l_val = tk.StringVar() # Flow magnitude for left sensor

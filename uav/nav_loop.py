@@ -33,7 +33,10 @@ from uav.utils import (
 from uav.utils import retain_recent_files, retain_recent_views
 from uav import config
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uav.nav_loop")
+print(f"[DEBUG] nav_loop logger handlers: {logger.handlers}")
+logger.info("This is a test log from nav_loop")
+
 
 # Grace period duration (seconds) after dodge/brake actions
 NAV_GRACE_PERIOD_SEC = 0.5
@@ -53,18 +56,54 @@ def perception_loop(tracker, image):
 
 # === Navigation Helpers ===
 
-def detect_obstacle(smooth_C, delta_C, center_count, brake_thres):
-    """Return True if optical flow indicates an obstacle ahead."""
-    sudden_rise = delta_C > 1 and center_count >= 20
-    center_blocked = smooth_C > brake_thres and center_count >= 20
-    if sudden_rise or center_blocked or (
-        center_count > 100 and (smooth_C > brake_thres * 0.5 or delta_C > 0.5)
-    ):
-        return True
-    if delta_C > 0.5 and smooth_C > brake_thres * 0.5 and center_count > 50:
-        return True
-    return False
+def detect_obstacle(
+    smooth_C=None,
+    delta_C=None,
+    center_count=None,
+    brake_thres=None,
+    mode="reactive",
+    depth=None,
+    depth_threshold=2.0,
+    pose=None,
+    pose_goal=None,
+    pose_threshold=0.5
+):
+    """
+    Detect obstacle ahead using either optical flow (reactive) or SLAM/depth (slam).
+    Returns True if an obstacle is detected.
+    Parameters:
+        mode: "reactive" or "slam"
+        For reactive: smooth_C, delta_C, center_count, brake_thres required
+        For slam: depth or pose required
+    """
+    if mode == "reactive":
+        if smooth_C is None or delta_C is None or center_count is None or brake_thres is None:
+            raise ValueError("Reactive mode requires smooth_C, delta_C, center_count, brake_thres")
+        sudden_rise = delta_C > 1 and center_count >= 20
+        center_blocked = smooth_C > brake_thres and center_count >= 20
+        if sudden_rise or center_blocked or (
+            center_count > 100 and (smooth_C > brake_thres * 0.5 or delta_C > 0.5)
+        ):
+            return True
+        if delta_C > 0.5 and smooth_C > brake_thres * 0.5 and center_count > 50:
+            return True
+        return False
 
+    elif mode == "slam":
+        # Depth-based obstacle detection
+        if depth is not None:
+            return depth < depth_threshold
+        # Pose-based (goal proximity) obstacle detection
+        if pose is not None and pose_goal is not None:
+            dx = pose[0] - pose_goal[0]
+            dy = pose[1] - pose_goal[1]
+            dz = pose[2] - pose_goal[2]
+            dist = (dx**2 + dy**2 + dz**2) ** 0.5
+            return dist < pose_threshold
+        return False
+
+    else:
+        raise ValueError("Unknown mode for detect_obstacle: %s" % mode)
 
 def determine_side_safety(
     smooth_L,
@@ -560,7 +599,7 @@ def navigation_loop(args, client, ctx):
             frame_count += 1
             time_now = time.time()
 
-            # ✅ Print real drone position from AirSim
+            # Print real drone position from AirSim
             pose = client.simGetVehiclePose("UAV")
             pos = pose.position
             logger.info("[UAV Pose] x=%.2f, y=%.2f, z=%.2f", pos.x_val, pos.y_val, pos.z_val)
@@ -642,9 +681,8 @@ def slam_navigation_loop(args, client, ctx):
     """
     Main navigation loop for SLAM-based navigation with basic obstacle avoidance.
     """
-    import logging
-    logger = logging.getLogger(__name__)
     logger.info("[SLAMNav] Starting SLAM navigation loop with obstacle avoidance.")
+    logger.debug("[SLAMNav] Starting SLAM navigation loop with obstacle avoidance.")
 
     from slam_bridge.slam_receiver import get_latest_pose, get_pose_history
     from slam_bridge.frontier_detection import detect_frontiers

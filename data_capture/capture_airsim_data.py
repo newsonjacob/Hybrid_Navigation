@@ -1,5 +1,4 @@
 import logging
-from uav.logging_config import setup_logging
 import airsim
 import os
 import cv2
@@ -72,5 +71,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    setup_logging(None)
     main()

@@ -19,4 +19,5 @@ def parse_args():
     parser.add_argument("--slam-server-port", type=int, default=None, help="SLAM server TCP port")
     parser.add_argument("--slam-receiver-host", default=None, help="Pose receiver IP")
     parser.add_argument("--slam-receiver-port", type=int, default=None, help="Pose receiver TCP port")
+    parser.add_argument("--log-timestamp", type=str, help="Timestamp used to sync logging across modules")
     return parser.parse_args()
