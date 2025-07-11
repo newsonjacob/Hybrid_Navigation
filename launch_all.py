@@ -8,6 +8,7 @@ from datetime import datetime
 import webbrowser
 import logging
 from uav.logging_config import setup_logging
+from uav.utils import retain_recent_logs
 
 def init_logging_and_flags():
     log_dir = Path("logs")
@@ -26,13 +27,6 @@ def init_logging_and_flags():
     }
 
     setup_logging(log_file=launch_log, module_logs=module_logs, level=logging.DEBUG)
-
-    # 🔍 Debug: Show logger state
-    print("=== LOGGER DEBUG INFO ===")
-    for name in logging.root.manager.loggerDict:
-        logger = logging.getLogger(name)
-        print(f"[DEBUG] Logger: {name}, handlers={logger.handlers}, propagate={logger.propagate}")
-    print("=== END DEBUG INFO ===")
     
     logger = logging.getLogger("main")
     logger.info(f"Logging to logs/{launch_log}")
@@ -359,3 +353,4 @@ if __name__ == "__main__":
 
     # --- NOW CALL MAIN() TO LAUNCH THE SIMULATION ---
     main(timestamp)
+    retain_recent_logs("logs")

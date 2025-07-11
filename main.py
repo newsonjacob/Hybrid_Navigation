@@ -44,13 +44,6 @@ flags_dir.mkdir(exist_ok=True)
 START_FLAG_PATH = flags_dir / "start_nav.flag"
 SETTINGS_PATH = r"C:\Users\Jacob\OneDrive\Documents\AirSim\settings.json"
 
-class DummyWriter:
-    def write(self, *args, **kwargs):
-        pass
-
-    def release(self):
-        pass
-
 def get_settings_path(args, config):
     try:
         return args.settings_path or config.get("paths", "settings")

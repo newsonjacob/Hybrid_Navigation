@@ -34,8 +34,6 @@ from uav.utils import retain_recent_files, retain_recent_views
 from uav import config
 
 logger = logging.getLogger("uav.nav_loop")
-logger.info("This is a test log from nav_loop")
-
 
 # Grace period duration (seconds) after dodge/brake actions
 NAV_GRACE_PERIOD_SEC = 0.5
@@ -601,7 +599,7 @@ def navigation_loop(args, client, ctx):
             # Print real drone position from AirSim
             pose = client.simGetVehiclePose("UAV")
             pos = pose.position
-            logger.info("[UAV Pose] x=%.2f, y=%.2f, z=%.2f", pos.x_val, pos.y_val, pos.z_val)
+            logger.debug("[UAV Pose] x=%.2f, y=%.2f, z=%.2f", pos.x_val, pos.y_val, pos.z_val)
 
             if not startup_grace_over:
                 if time_now - start_time < GRACE_PERIOD_SEC:
@@ -675,6 +673,22 @@ def is_obstacle_ahead(client, depth_threshold=2.0, vehicle_name="UAV"):
     except Exception as e:
         logger.error("[Obstacle Check] Depth read failed: %s", e)
         return False, None
+
+import subprocess
+
+def generate_pose_comparison_plot():
+    try:
+        result = subprocess.run(
+            ["python", "analysis/pose_comparison_plotter.py"],
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        print("[Plotting] Pose comparison plot generated.")
+        print(result.stdout)
+    except subprocess.CalledProcessError as e:
+        print("[Plotting] Failed to generate plot:")
+        print(e.stderr)
 
 def slam_navigation_loop(args, client, ctx):
     """
@@ -792,6 +806,7 @@ def slam_navigation_loop(args, client, ctx):
         client.landAsync().join()
     finally:
         logger.info("[SLAMNav] SLAM navigation loop finished.")
+        generate_pose_comparison_plot()
     return last_action
 
 def cleanup(client, sim_process, ctx):
