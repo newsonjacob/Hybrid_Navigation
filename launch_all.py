@@ -164,15 +164,14 @@ def start_streamer(host: str, port: int):
     """Start the Python image streamer used for SLAM communication."""
     import os
 
-    env = os.environ.copy()
-    env["PYTHONPATH"] = os.getcwd()  # Ensure current repo root is on PYTHONPATH
+    os.environ["PYTHONPATH"] = os.getcwd()  # Ensure current repo root is on PYTHONPATH
 
     proc = subprocess.Popen([
         "python",
         "slam_bridge/stream_airsim_image.py",
         "--host", host,
         "--port", str(port),
-    ], env=env)
+    ])
     
     logger.info("Started SLAM image streamer")
     time.sleep(2)
