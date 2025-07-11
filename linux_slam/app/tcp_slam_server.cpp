@@ -658,12 +658,20 @@ int main(int argc, char **argv) {
 
             // Send Twc instead of Tcw if tracking is good
             if (pose_sock >= 0 && track_state >= ORB_SLAM2::Tracking::OK && cv::checkRange(Twc)) {
+                std::ostringstream pose_dbg;
+                pose_dbg << "Sending Twc: ";
+                for (int r = 0; r < 3; ++r)
+                    for (int c = 0; c < 4; ++c)
+                        pose_dbg << Twc.at<float>(r, c) << (r == 2 && c == 3 ? "" : ", ");
+                log_event(pose_dbg.str());
+
                 cv::Mat Twc_send;
                 Twc.convertTo(Twc_send, CV_32F); // ensure float32
+
                 if (send_pose(pose_sock, Twc_send)) {
                     log_event("Pose (Twc) sent to Python receiver.");
+                    log_event("[DEBUG] Pose bytes sent: 48 / 48");
 
-                    // Log to trajectory file
                     if (pose_log_stream.is_open()) {
                         pose_log_stream << std::fixed << std::setprecision(6);
                         pose_log_stream << "Frame #" << frame_counter << " | Twc: ";
@@ -677,7 +685,9 @@ int main(int argc, char **argv) {
                     log_event("[WARN] Failed to send Twc to Python receiver.");
                 }
             }
-        }
+            } else {
+                log_event("[WARN] Tcw is invalid or not 4x4 matrix — skipping pose send.");
+            }
 
         frame_counter++;
     }

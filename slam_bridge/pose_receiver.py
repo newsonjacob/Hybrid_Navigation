@@ -9,7 +9,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
 class PoseReceiver:
     """TCP server that receives 3x4 pose matrices and stores the latest pose."""
 
@@ -56,35 +55,50 @@ class PoseReceiver:
 
     def get_latest_pose(self) -> Optional[Tuple[float, float, float]]:
         with self._lock:
+            logger.debug(f"[PoseReceiver] Latest pose raw: {self._latest_pose}")
             if self._latest_pose is None:
                 return None
-            x = self._latest_pose[0][3]
-            y = self._latest_pose[1][3]
-            z = self._latest_pose[2][3]
-            return (x, y, z)
+            try:
+                x = self._latest_pose[0][3]
+                y = self._latest_pose[1][3]
+                z = self._latest_pose[2][3]
+                return (x, y, z)
+            except Exception as e:
+                logger.error(f"[PoseReceiver] Pose extraction failed: {e}")
+                return None
+
 
     def get_pose_history(self):
         return list(self._history)
 
-    def _recv_loop(self) -> None:
+    # Receives a 3x4 pose matrix in binary format (12 floats, little-endian)
+    def _recv_loop(self) -> None: 
         assert self._sock is not None
         while not self._stop_event.is_set():
             try:
                 try:
                     conn, _ = self._sock.accept()
+                    logger.info("[PoseReceiver] Client connected.")
                 except socket.timeout:
                     continue
-                conn.settimeout(1)
-                with conn:
+                conn.settimeout(1) 
+                with conn: 
                     while not self._stop_event.is_set():
                         data = self._recvall(conn, 48)
+                        logger.debug(f"[PoseReceiver] Raw pose bytes received: {data}")
                         if not data:
                             break
                         pose = struct.unpack('<12f', data)
+                        logger.debug(f"[PoseReceiver] Decoded pose: {pose}")
                         matrix = [list(pose[i*4:(i+1)*4]) for i in range(3)]
                         with self._lock:
                             self._latest_pose = matrix
                             self._history.append((time.time(), matrix))
+
+                        # Log the received translation for debugging
+                        tx, ty, tz = matrix[0][3], matrix[1][3], matrix[2][3]
+                        logger.debug(f"[PoseReceiver] Received Tcw translation: ({tx:.3f}, {ty:.3f}, {tz:.3f})")
+
             except OSError:
                 break
             except Exception as e:

@@ -6,6 +6,7 @@ import argparse
 import csv
 from pathlib import Path
 import threading
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,8 @@ pose_log_file = None
 airsim_client = None
 log_thread_running = False
 
-def start_receiver(host: str = HOST, port: int = PORT) -> None:
+# Start the global PoseReceiver and begin logging SLAM vs GT poses.
+def start_receiver(host: str = HOST, port: int = PORT) -> None: 
     """Start the global PoseReceiver and begin logging SLAM vs GT poses."""
     global _receiver, pose_writer, pose_log_file, airsim_client, log_thread_running
 
@@ -53,9 +55,17 @@ def _log_pose_loop():
     global log_thread_running, airsim_client, pose_writer, pose_log_file
     while log_thread_running:
         slam_pose = get_latest_pose()
+
         if slam_pose is None:
+            logger.warning("[PoseLogger] get_latest_pose() returned None")
             time.sleep(0.05)
             continue
+
+        if not isinstance(slam_pose, (list, tuple, np.ndarray)) or len(slam_pose) != 3:
+            logger.error(f"[PoseLogger] Invalid SLAM pose format: {slam_pose}")
+            time.sleep(0.05)
+            continue
+
         try:
             gt_pose = airsim_client.simGetVehiclePose().position
             timestamp = time.time()
@@ -63,13 +73,14 @@ def _log_pose_loop():
             slam_x, slam_y, slam_z = slam_pose
             gt_x, gt_y, gt_z = gt_pose.x_val, gt_pose.y_val, gt_pose.z_val
 
-            logger.debug(f"[SLAMReceiver] SLAM: {slam_pose} | GT: ({gt_x:.2f}, {gt_y:.2f}, {gt_z:.2f})")
+            logger.debug(f"[PoseLogger] SLAM: ({slam_x:.2f}, {slam_y:.2f}, {slam_z:.2f}) | GT: ({gt_x:.2f}, {gt_y:.2f}, {gt_z:.2f})")
 
             pose_writer.writerow([timestamp, slam_x, slam_y, slam_z, gt_x, gt_y, gt_z])
             pose_log_file.flush()
         except Exception as e:
-            logger.warning(f"[SLAMReceiver] Error while logging poses: {e}")
+            logger.warning(f"[PoseLogger] Error while logging poses: {e}")
         time.sleep(0.05)
+
 
 
 def stop_receiver() -> None:

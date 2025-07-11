@@ -8,7 +8,6 @@ import logging
 from datetime import datetime
 from queue import Queue
 from threading import Thread
-from uav.utils import retain_recent_files
 
 # === AirSim Imports ===
 import airsim
@@ -27,9 +26,7 @@ from uav.perception import OpticalFlowTracker, FlowHistory
 from uav.navigation import Navigator
 from uav.state_checks import in_grace_period
 from uav.scoring import compute_region_stats
-from uav.utils import (
-    FLOW_STD_MAX, get_drone_state, retain_recent_logs, should_flat_wall_dodge
-)
+from uav.utils import (get_drone_state, retain_recent_logs)
 from uav.utils import retain_recent_files, retain_recent_views
 from uav import config
 

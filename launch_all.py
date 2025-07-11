@@ -352,5 +352,8 @@ if __name__ == "__main__":
     logger.info(f"User selected navigation mode: {selected_nav_mode}")
 
     # --- NOW CALL MAIN() TO LAUNCH THE SIMULATION ---
-    main(timestamp)
-    retain_recent_logs("logs")
+    try:
+        main(timestamp)
+    finally:
+        retain_recent_logs("logs")
+    
