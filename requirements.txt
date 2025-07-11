@@ -1,5 +1,6 @@
 opencv-python
 numpy
+airsim
 msgpack-rpc-python
 msgpack
 pandas

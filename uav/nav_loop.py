@@ -676,7 +676,7 @@ import subprocess
 def generate_pose_comparison_plot():
     try:
         result = subprocess.run(
-            ["python", "analysis/pose_comparison_plotter.py"],
+            ["python", "slam_bridge/pose_comparison_plotter.py"],
             check=True,
             capture_output=True,
             text=True
@@ -691,6 +691,12 @@ def slam_navigation_loop(args, client, ctx):
     """
     Main navigation loop for SLAM-based navigation with basic obstacle avoidance.
     """
+    from uav.navigation_slam_boot import run_slam_bootstrap
+
+    # After drone takeoff and camera ready
+    run_slam_bootstrap(client, duration=8.0)  # you can tune this
+    time.sleep(1.0)  # Let SLAM settle after bootstrap
+
     logger.info("[SLAMNav] Starting SLAM navigation loop with obstacle avoidance.")
     logger.debug("[SLAMNav] Starting SLAM navigation loop with obstacle avoidance.")
 

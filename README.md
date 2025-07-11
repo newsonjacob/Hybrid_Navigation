@@ -93,21 +93,47 @@ pip install -e .
 
 6. Run the system:
    ```bash
-   python main.py
+   hybrid-nav
    ```
    You can override paths at runtime:
    ```bash
-   python main.py --settings-path C:\path\to\settings.json --ue4-path C:\path\to\Blocks.exe
+   python hybrid-nav --settings-path C:\path\to\settings.json --ue4-path C:\path\to\Blocks.exe
    ```
    To load a different configuration file:
    ```bash
-  python main.py --config custom.ini
-  ```
-  Network addresses can also be overridden:
-  ```bash
-  python main.py --slam-server-host 10.0.0.2 --slam-server-port 6000 \
-                 --slam-receiver-host 10.0.0.3 --slam-receiver-port 6001
-  ```
+  hybrid-nav --config custom.ini
+   ```
+   Network addresses can also be overridden:
+   ```bash
+  hybrid-nav --slam-server-host 10.0.0.2 --slam-server-port 6000 \
+             --slam-receiver-host 10.0.0.3 --slam-receiver-port 6001
+   ```
+
+### Command Line Interface
+
+The `hybrid-nav` entry point exposes several options:
+
+| Option | Description |
+| ------ | ----------- |
+| `--manual-nudge` | Enable manual nudge at frame 5 for testing |
+| `--map {reactive, deliberative, hybrid}` | Which map to load |
+| `--ue4-path PATH` | Override the path to the Unreal Engine executable |
+| `--settings-path PATH` | Path to the AirSim `settings.json` file |
+| `--config FILE` | Path to configuration file (default: `config.ini`) |
+| `--goal-x INT` | Distance from start to goal on the X axis |
+| `--max-duration INT` | Maximum simulation duration in seconds |
+| `--nav-mode {slam, reactive}` | Navigation mode to run |
+| `--slam-server-host HOST` | SLAM server IP or hostname |
+| `--slam-server-port PORT` | SLAM server TCP port |
+| `--slam-receiver-host HOST` | Pose receiver IP address |
+| `--slam-receiver-port PORT` | Pose receiver TCP port |
+| `--log-timestamp STR` | Timestamp used to sync logging across modules |
+
+Example quick start:
+
+```bash
+hybrid-nav --ue4-path /path/to/Blocks.exe --settings-path ~/Documents/AirSim/settings.json --nav-mode slam
+```
 
 ### GUI and Flag Files
 
