@@ -652,9 +652,9 @@ int main(int argc, char **argv) {
 
             // HACK: Simulate fake motion by modifying Twc translation
             // This simulates a forward motion of 0.05 meters per frame
-            static int fake_motion_counter = 0;
-            fake_motion_counter++;
-            Twc.at<float>(0, 3) = 0.05f * fake_motion_counter;  // Move along X
+            // static int fake_motion_counter = 0;
+            // fake_motion_counter++;
+            // Twc.at<float>(0, 3) = 0.05f * fake_motion_counter;  // Move along X
 
             // Send Twc instead of Tcw if tracking is good
             if (pose_sock >= 0 && track_state >= ORB_SLAM2::Tracking::OK && cv::checkRange(Twc)) {

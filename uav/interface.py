@@ -1,5 +1,22 @@
 # uav/interface.py
-"""Simple Tkinter GUI utilities for controlling the simulation."""
+"""GUI helpers used to start and stop the UAV simulation.
+
+The application uses a very small communication mechanism based on flag
+files written to the ``flags/`` directory.  The main navigation loop polls
+for these files and reacts accordingly:
+
+``nav_mode.flag``
+    Created when the user selects a navigation mode and clicks *Launch
+    Simulation*.  ``main.py`` reads this to know which mode to run.
+``start_nav.flag``
+    Indicates that all systems are ready and navigation may begin.
+``stop.flag``
+    Signals an immediate shutdown of the navigation loop.
+
+The GUI exposes buttons that create these files and provides a minimal STOP
+window used during testing.  The :data:`exit_flag` event is also set by the
+minimal window so that loops can be terminated gracefully from threads.
+"""
 import os
 import tkinter as tk
 from threading import Thread
@@ -9,7 +26,17 @@ from threading import Event
 exit_flag = Event()
 
 def launch_control_gui(param_refs, nav_mode="unknown"):
-    """Launch the full control window using mutable parameter refs."""
+    """Display the main control window.
+
+    Parameters
+    ----------
+    param_refs : dict
+        Dictionary of mutable lists used by the navigation loop to expose
+        real-time values such as optical flow magnitudes and the current state.
+        These values are shown in the GUI and updated periodically.
+    nav_mode : str, optional
+        Name of the navigation mode to pre-select in the dropdown menu.
+        """
     def on_stop():
         """Signal the main loop to terminate by creating a stop flag file."""
         from pathlib import Path
@@ -141,7 +168,12 @@ def launch_control_gui(param_refs, nav_mode="unknown"):
     root.mainloop()
 
 def start_gui(param_refs=None, nav_mode="unknown"):
-    """Start the GUI in a background thread."""
+    """Launch the GUI on a daemon thread.
+    When ``param_refs`` is provided the full control window is shown;
+    otherwise a small STOP window (:func:`gui_exit`) is displayed.  The
+    function returns immediately so that the caller can proceed with the
+    simulation startup while the GUI runs in the background.
+    """
     if param_refs is None:
         Thread(
             target=gui_exit,
@@ -154,7 +186,12 @@ def start_gui(param_refs=None, nav_mode="unknown"):
         ).start()
 
 def gui_exit():
-    """Display a minimal stop button for emergency exit."""
+    """Show a small window with a single STOP button.
+
+    Clicking the button sets :data:`exit_flag` which the navigation loops check
+    periodically.  This fallback interface is used when the full GUI is not
+    started yet but we still want a way to terminate the simulation safely.
+    """
     root = tk.Tk()
     root.title("Stop UAV")
     root.geometry("200x100")

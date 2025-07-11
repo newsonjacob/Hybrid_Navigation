@@ -9,6 +9,7 @@ This repository contains the implementation of a reactive obstacle avoidance sys
 
 - Real-time optical flow tracking using Lucas-Kanade method
 - Zone-based obstacle avoidance using vector summation
+- Modular helpers for obstacle detection and side safety
 - Logs flight data to CSV for post-flight analysis
 - Visualises 3D flight paths with interactive HTML output
 - Compatible with a custom stereo camera setup (`oakd_camera`)
@@ -107,6 +108,16 @@ pip install -e .
   python main.py --slam-server-host 10.0.0.2 --slam-server-port 6000 \
                  --slam-receiver-host 10.0.0.3 --slam-receiver-port 6001
   ```
+
+### GUI and Flag Files
+
+The Tkinter GUI writes small flag files under `flags/` which the main loop
+monitors to coordinate the run. Selecting a mode and pressing *Launch
+Simulation* writes `nav_mode.flag`. Once all systems report ready, clicking
+*Start Navigation* creates `start_nav.flag` which unblocks the navigation loop.
+Pressing the stop button touches `stop.flag` so the running process can safely
+land and exit.
+
 
 ---
 
