@@ -109,6 +109,16 @@ pip install -e .
                  --slam-receiver-host 10.0.0.3 --slam-receiver-port 6001
   ```
 
+### GUI and Flag Files
+
+The Tkinter GUI writes small flag files under `flags/` which the main loop
+monitors to coordinate the run. Selecting a mode and pressing *Launch
+Simulation* writes `nav_mode.flag`. Once all systems report ready, clicking
+*Start Navigation* creates `start_nav.flag` which unblocks the navigation loop.
+Pressing the stop button touches `stop.flag` so the running process can safely
+land and exit.
+
+
 ---
 
 ## 📊 Logs and Visualisation

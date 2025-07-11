@@ -652,6 +652,7 @@ def slam_navigation_loop(args, client, ctx):
     # --- Incorporate exit_flag from ctx for GUI stop button ---
     exit_flag = None
     navigator = None
+    last_action = "none"
     if ctx is not None:
         exit_flag = ctx.get("exit_flag", None)
         navigator = ctx.get("navigator", None)
@@ -736,15 +737,11 @@ def slam_navigation_loop(args, client, ctx):
                         client.landAsync().join()
                         break
 
-                # Move toward goal (simple proportional controller)
-                vx = 1.0 if x < goal_x - threshold else 0.0
-                vy = 1.0 if y < goal_y - threshold else 0.0
-                vz = 0.0  # Maintain altitude
-                if vx != 0.0 or vy != 0.0:
-                    logger.info(f"[SLAMNav] Moving toward goal with vx={vx}, vy={vy}")
-                    client.moveByVelocityAsync(vx, vy, vz, 1, drivetrain=airsim.DrivetrainType.ForwardOnly, yaw_mode=airsim.YawMode(False, 0))
-                else:
-                    logger.info("[SLAMNav] Holding position.")
+                # Move toward goal using Navigator helper
+                if navigator is None:
+                    navigator = Navigator(client)
+                last_action = navigator.slam_to_goal(pose, (goal_x, goal_y, goal_z))
+                logger.info("[SLAMNav] Action: %s", last_action)
 
             # End condition
             if time.time() - start_time > max_duration:
@@ -758,6 +755,7 @@ def slam_navigation_loop(args, client, ctx):
         client.landAsync().join()
     finally:
         logger.info("[SLAMNav] SLAM navigation loop finished.")
+    return last_action
 
 def cleanup(client, sim_process, ctx):
     """Clean up resources and land the drone."""
