@@ -5,13 +5,7 @@ import logging
 from pathlib import Path
 from datetime import datetime
 
-# --- Robust import for configure_file_logger ---
-try:
-    from slam_bridge.logging_helper import configure_file_logger
-except ModuleNotFoundError:
-    # Fallback: add parent directory to sys.path and try again
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from slam_bridge.logging_helper import configure_file_logger
+from uav.logging_config import setup_logging
 
 import socket
 import struct
@@ -140,7 +134,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     log_name = f"airsim_stream_{datetime.now():%Y%m%d_%H%M%S}.log"
-    configure_file_logger(log_name)
+    setup_logging(log_name)
     Path("flags").mkdir(exist_ok=True)
     args = parse_args()
     streamer = ImageStreamer(args.host, args.port, args.retries)
