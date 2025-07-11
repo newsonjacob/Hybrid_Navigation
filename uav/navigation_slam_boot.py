@@ -37,7 +37,11 @@ def run_slam_bootstrap(client, duration=8.0, vehicle_name="UAV"):
 
         # Send yaw command (optional — adds angular variation)
         yaw_rad = math.radians(yaw)
-        client.rotateToYawAsync(math.degrees(yaw_rad), vehicle_name=vehicle_name)
+        if hasattr(client, "rotateToYawAsync"):
+            client.rotateToYawAsync(math.degrees(yaw_rad), vehicle_name=vehicle_name)
+        else:
+            # Older stubs used in tests may not implement this method
+            logger.debug("rotateToYawAsync not available on client stub")
 
         time.sleep(0.1)
 

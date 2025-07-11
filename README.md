@@ -22,7 +22,10 @@ This repository contains the implementation of a reactive obstacle avoidance sys
 
 ## Installation
 
+Install the pinned dependencies and the package:
+
 ```bash
+pip install -r requirements.txt
 pip install -e .
 ```
 
@@ -44,7 +47,7 @@ pip install -e .
    cd ReactiveOptical_Flow
    ```
 
-2. Install required Python packages:
+2. Install required Python packages using the pinned versions:
    ```bash
    pip install -r requirements.txt
    pip install -e .

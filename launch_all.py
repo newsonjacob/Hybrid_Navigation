@@ -9,6 +9,14 @@ import webbrowser
 import logging
 from uav.logging_config import setup_logging
 from uav.utils import retain_recent_logs
+from uav.cli import parse_args
+
+args = parse_args()
+
+# --- Set default stream mode based on nav mode ---
+if not hasattr(args, "stream_mode") or args.stream_mode is None:
+    args.stream_mode = "stereo"  # Force stereo as default for all modes
+
 
 def init_logging_and_flags():
     log_dir = Path("logs")
@@ -154,7 +162,7 @@ def wait_for_flag(flag_path, timeout=15):
     return True
 
 
-def start_streamer(host: str, port: int):
+def start_streamer(host: str, port: int, stream_mode: str = "stereo"):
     """Start the Python image streamer used for SLAM communication."""
     import os
 
@@ -165,6 +173,7 @@ def start_streamer(host: str, port: int):
         "slam_bridge/stream_airsim_image.py",
         "--host", host,
         "--port", str(port),
+        "--mode", stream_mode
     ])
     
     logger.info("Started SLAM image streamer")
@@ -275,7 +284,7 @@ def main(timestamp):
 
         if args.nav_mode == "slam":
             # --- STEP 3: Launch image streamer BEFORE waiting for slam_ready.flag
-            stream_proc = start_streamer(slam_server_host, slam_server_port)
+            stream_proc = start_streamer(slam_server_host, slam_server_port, args.stream_mode)
 
             # --- STEP 4: Launch SLAM backend in WSL ---
             slam_proc = launch_slam_backend(slam_receiver_host, slam_receiver_port)

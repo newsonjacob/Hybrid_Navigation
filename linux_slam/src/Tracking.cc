@@ -63,34 +63,30 @@ namespace ORB_SLAM2
 static std::mutex tlog_mutex;
 static std::unique_ptr<std::ofstream> tlog_stream;
 
+// Call this ONCE at the start of each simulation
+static void init_tracking_log(const std::string& run_id)
+{
+    std::lock_guard<std::mutex> lock(tlog_mutex);
+#ifdef _WIN32
+    _mkdir("H:\\Documents\\AirSimExperiments\\Hybrid_Navigation\\logs");
+    std::string log_path = "H:\\Documents\\AirSimExperiments\\Hybrid_Navigation\\logs\\tracking_" + run_id + ".log";
+#else
+    mkdir("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs", 0777);
+    std::string log_path = "/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/tracking_" + run_id + ".log";
+#endif
+    tlog_stream = std::make_unique<std::ofstream>(log_path, std::ios::app);
+}
+
+// Call this for every log event
 static void log_tracking_event(const std::string& msg)
 {
     std::lock_guard<std::mutex> lock(tlog_mutex);
-    if(!tlog_stream)
+    if (tlog_stream && tlog_stream->is_open())
     {
-#ifdef _WIN32
-        _mkdir("H:\\Documents\\AirSimExperiments\\Hybrid_Navigation\\logs");
-        tlog_stream = std::make_unique<std::ofstream>(
-            "H:\\Documents\\AirSimExperiments\\Hybrid_Navigation\\logs\\tracking.log", std::ios::app);
-#else
-        mkdir("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs", 0777);
-        tlog_stream = std::make_unique<std::ofstream>(
-            "/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/tracking.log", std::ios::app);
-#endif
-    }
-    if(tlog_stream && tlog_stream->is_open())
-    {
-        std::time_t t = std::time(nullptr);
-        (*tlog_stream) << "[" << std::put_time(std::localtime(&t), "%F %T") << "] " << msg << std::endl;
+        (*tlog_stream) << msg << std::endl;
         tlog_stream->flush();
     }
-    else {
-        std::cerr << "Failed to open tracking.log" << std::endl;
-    }
 }
-#else
-#pragma message("ENABLE_TRACKING_LOG is NOT defined in Tracking.cc")
-static inline void log_tracking_event(const std::string&) {}
 #endif
 
     void SendPose(const cv::Mat& Tcw)
@@ -362,6 +358,21 @@ void Tracking::Track()
     }
 
     mLastProcessedState=mState;
+
+    #ifdef ENABLE_TRACKING_LOG
+    static bool tracking_log_initialized = false;
+    if (!tracking_log_initialized)
+    {
+        auto t = std::chrono::system_clock::now();
+        std::time_t now = std::chrono::system_clock::to_time_t(t);
+        std::stringstream ss;
+        ss << std::put_time(std::localtime(&now), "%Y%m%d_%H%M%S");
+
+        init_tracking_log(ss.str());
+        tracking_log_initialized = true;
+        log_tracking_event("[TRACKING] Log initialized");
+    }
+    #endif
 
     // Get Map Mutex -> Map cannot be changed
     unique_lock<mutex> lock(mpMap->mMutexMapUpdate);

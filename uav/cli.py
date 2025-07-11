@@ -15,6 +15,12 @@ def parse_args():
         default="slam",
         help="Navigation mode: 'slam' for SLAM-based, 'reactive' for optical flow/reactive navigation (default: slam)"
     )
+    parser.add_argument(
+        "--stream-mode",
+        choices=["rgbd", "stereo"],
+        default="rgbd",
+        help="Image streaming mode: 'rgbd' (RGB + Depth) or 'stereo' (Left + Right RGB)"
+    )
     parser.add_argument("--slam-server-host", default=None, help="SLAM server IP or hostname")
     parser.add_argument("--slam-server-port", type=int, default=None, help="SLAM server TCP port")
     parser.add_argument("--slam-receiver-host", default=None, help="Pose receiver IP")
