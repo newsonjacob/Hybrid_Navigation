@@ -34,7 +34,6 @@ from uav.utils import retain_recent_files, retain_recent_views
 from uav import config
 
 logger = logging.getLogger("uav.nav_loop")
-print(f"[DEBUG] nav_loop logger handlers: {logger.handlers}")
 logger.info("This is a test log from nav_loop")
 
 
@@ -674,7 +673,7 @@ def is_obstacle_ahead(client, depth_threshold=2.0, vehicle_name="UAV"):
         mean_depth = np.nanmean(roi)
         return mean_depth < depth_threshold, mean_depth
     except Exception as e:
-        print(f"[Obstacle Check] Depth read failed: {e}")
+        logger.error("[Obstacle Check] Depth read failed: %s", e)
         return False, None
 
 def slam_navigation_loop(args, client, ctx):
@@ -840,7 +839,7 @@ def cleanup(client, sim_process, ctx):
 
         try:
             html_output = f"analysis/flight_view_{timestamp}.html"
-            subprocess.run(["python3", "-m", "analysis.flight_path_viewer", html_output])
+            subprocess.run(["python3", "-m", "analysis.visualize_flight", html_output])
             logger.info("Flight path analysis saved to %s", html_output)
         except Exception as e:
             logger.error("Error generating flight path analysis: %s", e)
