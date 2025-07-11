@@ -7,9 +7,10 @@ from slam_bridge.slam_receiver import get_latest_pose
 import time
 import plotly.graph_objects as go
 import logging
-from slam_bridge.logging_helper import configure_file_logger
+from uav.logging_config import setup_logging
 
-logger = configure_file_logger("slam_plotter.log")
+setup_logging("slam_plotter.log")
+logger = logging.getLogger(__name__)
 logger.info("Script started.")
 
 # Configure logging for plotting

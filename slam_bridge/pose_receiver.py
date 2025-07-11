@@ -5,9 +5,11 @@ import time
 from collections import deque
 from typing import Optional, Tuple, List
 
-from .logging_helper import configure_file_logger
+import logging
+from uav.logging_config import setup_logging
 
-logger = configure_file_logger("pose_receiver.log")
+setup_logging("pose_receiver.log")
+logger = logging.getLogger(__name__)
 
 
 class PoseReceiver:
