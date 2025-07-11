@@ -162,10 +162,3 @@ def should_flat_wall_dodge(
         return False
 
     return probe_mag < 0.5 and center_mag > 0.7
-
-import os
-import fnmatch
-
-
-
-
