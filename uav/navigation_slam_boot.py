@@ -3,7 +3,7 @@ import time
 import math
 import logging
 
-logger = logging.getLogger("uav.navigation_slam_boot")
+logger = logging.getLogger(__name__)
 
 def run_slam_bootstrap(client, duration=8.0, vehicle_name="UAV"):
     """

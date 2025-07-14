@@ -13,6 +13,10 @@ def main():
         print(f"[ERROR] CSV file not found: {log_path}")
         sys.exit(1)
 
+    if log_path.stat().st_size == 0:
+        print(f"[ERROR] CSV file is empty: {log_path}")
+        sys.exit(1)
+
     df = pd.read_csv(log_path)
     if df.empty or df.isnull().all().all():
         print(f"[ERROR] CSV file is empty or contains only null values.")

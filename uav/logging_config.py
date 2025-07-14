@@ -96,3 +96,38 @@ def setup_logging(
 
     logging.config.dictConfig(logging_config)
 
+    # === Force per-module loggers to have correct handlers ===
+    if module_logs:
+        for mod, fname in module_logs.items():
+            logger = logging.getLogger(mod)
+            logger.setLevel(level)
+            logger.propagate = False
+
+            expected_path = str(log_dir / fname)
+            attached_files = {
+                getattr(h, 'baseFilename', None)
+                for h in logger.handlers
+                if isinstance(h, logging.FileHandler)
+            }
+
+            if expected_path not in attached_files:
+                handler = logging.FileHandler(expected_path, mode="w", encoding="utf-8")
+                formatter = logging.Formatter("%(asctime)s %(levelname)s [%(name)s]: %(message)s")
+                handler.setFormatter(formatter)
+                logger.addHandler(handler)
+
+
+    for mod in module_logs or {}:
+        logger = logging.getLogger(mod)
+        for h in logger.handlers:
+            print(f"[CHECK] Handler for {mod}: {h.baseFilename if hasattr(h, 'baseFilename') else h}")
+
+    # === Optional: Print active loggers and handlers for debugging ===
+    for name, obj in logging.root.manager.loggerDict.items():
+        if isinstance(obj, logging.Logger):
+            print(f"[LOGGER] {name} — handlers: {obj.handlers}")
+        else:
+            print(f"[PLACEHOLDER] {name}")
+
+
+

@@ -30,6 +30,7 @@ bool recv_all(int sock, char* buffer, int len) {
         int received = recv(sock, buffer + total, len - total, 0);
 
         if (received == 0 && total == 0 && retries < 1) {
+            log_event("recv() returned 0 on first attempt — retrying once...");
             std::cerr << "[WARN] recv() returned 0 on first attempt — retrying once..." << std::endl;
             retries++;
             sleep(1); // brief pause to wait for client
@@ -37,8 +38,9 @@ bool recv_all(int sock, char* buffer, int len) {
         }
 
         if (received <= 0) {
+            log_event("recv() returned " + std::to_string(received) + " at byte " + std::to_string(total) + " of " + std::to_string(len));
             std::cerr << "[ERROR] recv() returned " << received << " at byte " << total << " of " << len << std::endl;
-            std::ostringstream oss;
+            std::ostringstream oss; // Create a string stream to format the error message
             oss << "recv_all failed: received=" << received << ", total=" << total << ", expected=" << len;
             log_event(oss.str());
             return false;
@@ -61,6 +63,7 @@ static void log_event(const std::string& msg) {
 
     if (g_log_file_path.empty()) {
         if (!warned) {
+            log_event("[WARN] Logging is disabled because g_log_file_path is empty.");
             std::cerr << "[WARN] Logging is disabled because g_log_file_path is empty." << std::endl;
             warned = true;
         }
@@ -73,6 +76,7 @@ static void log_event(const std::string& msg) {
     if (!log_stream) {
         log_stream = std::make_unique<std::ofstream>(g_log_file_path, std::ios::app);
         if (!log_stream->is_open() && !warned) {
+            log_event("[WARN] Could not open log file: " + g_log_file_path);
             std::cerr << "[WARN] Could not open log file: " << g_log_file_path << std::endl;
             warned = true;
         }
@@ -86,21 +90,54 @@ static void log_event(const std::string& msg) {
     }
 }
 
-const char* POSE_RECEIVER_IP = "192.168.1.102"; // Python receiver IP
-const int   POSE_RECEIVER_PORT = 6001;      // Python receiver port
+const char* POSE_RECEIVER_IP = getenv("POSE_RECEIVER_IP") ? getenv("POSE_RECEIVER_IP") : "192.168.1.103"; // Python receiver IP
+const int POSE_RECEIVER_PORT = getenv("POSE_RECEIVER_PORT") ? atoi(getenv("POSE_RECEIVER_PORT")) : 6001; // Python receiver port
 
 // Helper to send pose as 12 floats (row-major 3x4 matrix)
 bool send_pose(int pose_sock, const cv::Mat& Tcw) {
-    if (Tcw.empty() || Tcw.rows != 4 || Tcw.cols != 4)
+    std::cout << "[DEBUG] send_pose() CALLED" << std::endl;
+    log_event("[DEBUG] Attempting to send pose to Python receiver.");
+
+    // Validate the pose matrix dimensions
+    if (Tcw.empty() || Tcw.rows != 4 || Tcw.cols != 4) {
+        log_event("[ERROR] Pose matrix is invalid — empty or wrong size.");
         return false;
+    }
+
+    // Convert the pose matrix to a 12-element float array (3x4 matrix)
     float data[12];
     for (int r = 0; r < 3; ++r)
         for (int c = 0; c < 4; ++c)
             data[r * 4 + c] = Tcw.at<float>(r, c);
+
+    // Log the matrix being sent
+    std::ostringstream log_msg;
+    log_msg << "[POSE] Sending 3x4 pose matrix: ";
+    for (int i = 0; i < 12; ++i) {
+        log_msg << data[i];
+        if (i < 11) log_msg << ", ";
+    }
+    log_event(log_msg.str());
+
     int bytes = 12 * sizeof(float);
     int sent = send(pose_sock, reinterpret_cast<char*>(data), bytes, 0);
+
+    std::ostringstream dbg;
+    dbg << "[DEBUG] send() returned " << sent << " of " << bytes << " bytes.";
+    log_event(dbg.str());
+
+    if (sent != bytes) {
+        std::ostringstream oss;
+        oss << "[ERROR] send_pose failed: sent " << sent << " of " << bytes << " bytes.";
+        log_event(oss.str());
+    } else {
+        log_event("[DEBUG] send_pose succeeded: 48 bytes sent to Python receiver.");
+    }
+
     return sent == bytes;
 }
+
+
 
 // ------- Main function to set up the TCP server, receive images, and process them with ORB-SLAM2 -------
 int main(int argc, char **argv) {
@@ -144,26 +181,26 @@ int main(int argc, char **argv) {
     std::ofstream pose_log_stream(pose_log_file_path, std::ios::app);
 
     log_event("=== SLAM TCP Server launched ===");
-    std::cout << "[BOOT] SLAM TCP Server launched" << std::endl;
 
     // Initialize ORB-SLAM2
-    ORB_SLAM2::System SLAM(vocab, settings, ORB_SLAM2::System::RGBD, true);
-    cout << "[INFO] SLAM system initialized." << endl;
+    ORB_SLAM2::System SLAM(vocab, settings, ORB_SLAM2::System::STEREO, true);
+    log_event("[INFO] SLAM system initialized.");
 
-    // -- Setup TCP server --
+    // -- Setup TCP server for receiving AirSim images --
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd == -1) {
-        cerr << "Socket creation failed" << endl;
+        log_event("Socket creation failed");
         return 1;
     }
     // Set socket options to allow reuse of the address and port
     int opt = 1;
-    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt));
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)); // Allow reuse of address and port
 
-    sockaddr_in address;
-    address.sin_family = AF_INET;
+    sockaddr_in address; // Define the address structure
+    address.sin_family = AF_INET; // Use IPv4
     address.sin_addr.s_addr = INADDR_ANY;  // binds to 0.0.0.0 — all interfaces
     address.sin_port = htons(6000);
+    
     // Bind the socket to the address and port
     if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
         cerr << "Bind failed" << endl;
@@ -181,7 +218,7 @@ int main(int argc, char **argv) {
     // Log the event
     int addrlen = sizeof(address);
     log_event("Calling accept() and waiting for streamer...");
-    std::cout << "[INFO] Calling accept() and waiting for streamer..." << std::endl;
+    log_event("[INFO] Calling accept() and waiting for streamer...");
     std::cout.flush();
 
     // Accept a client connection
@@ -211,30 +248,59 @@ int main(int argc, char **argv) {
     int frame_counter = 0;
 
     // --- Setup pose sender socket ---
+    // Initialize pose sender socket
     int pose_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (pose_sock < 0) {
         log_event("[ERROR] Could not create pose sender socket.");
         pose_sock = -1;
     } else {
+        log_event("[DEBUG] Pose sender socket created successfully.");
+
         sockaddr_in pose_addr;
         pose_addr.sin_family = AF_INET;
         pose_addr.sin_port = htons(POSE_RECEIVER_PORT);
         inet_pton(AF_INET, POSE_RECEIVER_IP, &pose_addr.sin_addr);
+
+        // Log IP and port information
+        char ip_str[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &pose_addr.sin_addr, ip_str, INET_ADDRSTRLEN);
+        std::ostringstream sockinfo;
+        sockinfo << "[DEBUG] Attempting connection to pose receiver at "
+                << ip_str << ":" << ntohs(pose_addr.sin_port);
+        log_event(sockinfo.str());
+
         log_event("Connecting to Python pose receiver...");
-        int pose_conn = connect(pose_sock, (struct sockaddr*)&pose_addr, sizeof(pose_addr));
-        if (pose_conn < 0) {
-            log_event("[ERROR] Could not connect to Python pose receiver.");
+        bool connected = false;
+        for (int attempt = 0; attempt < 10; ++attempt) {
+            int pose_conn = connect(pose_sock, (struct sockaddr*)&pose_addr, sizeof(pose_addr));
+            if (pose_conn >= 0) {
+                connected = true;
+                log_event("✅ Connected to Python pose receiver.");
+                break;
+            } else {
+                std::ostringstream retry_msg;
+                retry_msg << "[WARN] Attempt " << (attempt + 1)
+                        << " failed to connect to Python pose receiver — retrying in 1s...";
+                log_event(retry_msg.str());
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+        }
+
+        if (!connected) {
+            log_event("[ERROR] Failed to connect to Python pose receiver after 10 attempts.");
             close(pose_sock);
             pose_sock = -1;
-        } else {
-            log_event("Connected to Python pose receiver.");
         }
     }
 
+
+
     // --- Main loop to receive images and process them with SLAM ---
+    cv::Mat imLeft, imRight;
+    cv::Mat imLeftGray, imRightGray;
+
     while (true) {
-        int snapshot_limit = 5;         
-        float max_depth_m = 10.0f;      
+        int snapshot_limit = 5;             
         log_event("----- Begin image receive loop -----");
 
         // Log the loop start time
@@ -244,237 +310,114 @@ int main(int argc, char **argv) {
             oss << "Frame #" << frame_counter << " | Loop timestamp: " << std::fixed << std::setprecision(6) << loop_timestamp;
             log_event(oss.str());
         }
-
-        // --- Receive RGB image ---
-        char rgb_header[12];
         uint32_t net_height, net_width, net_bytes;
         uint32_t rgb_height, rgb_width, rgb_bytes;
 
-        log_event("Waiting to receive 12-byte RGB header...");
-        bool got_header = recv_all(sock, rgb_header, 12);
-        if (!got_header) {
-            std::cerr << "[ERROR] Failed to receive full 12-byte RGB header." << std::endl;
-            log_event("Failed to receive full 12-byte RGB header. Closing connection (likely client disconnect or crash).");
-            std::ofstream fail_flag("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/flags/slam_failed.flag");
-            if (fail_flag.is_open()) fail_flag.close();
-            clean_exit = false;
-            break;
-        }
-        std::ostringstream oss;
-        oss << "Raw RGB header bytes: ";
-        for (int i = 0; i < 12; ++i) {
-            oss << std::hex << std::uppercase << std::setw(2) << std::setfill('0')
-                << (static_cast<unsigned int>(static_cast<unsigned char>(rgb_header[i]))) << " ";
-        }
-        log_event(oss.str());
-        log_event("Received 12-byte RGB header.");
-
-        // Convert network byte order to host byte order
-        memcpy(&net_height, rgb_header, 4);
-        memcpy(&net_width,  rgb_header + 4, 4);
-        memcpy(&net_bytes, rgb_header + 8, 4);
+        // --- Receive Left RGB Image ---
+        char left_header[12];
+        if (!recv_all(sock, left_header, 12)) break;
+        memcpy(&net_height, left_header, 4);
+        memcpy(&net_width,  left_header + 4, 4);
+        memcpy(&net_bytes, left_header + 8, 4);
         rgb_height = ntohl(net_height);
         rgb_width  = ntohl(net_width);
         rgb_bytes  = ntohl(net_bytes);
-        
+
+        vector<uchar> left_buffer(rgb_bytes);
+        if (!recv_all(sock, (char*)left_buffer.data(), rgb_bytes)) break; // Receive the image data
+        cv::Mat left_rgb(rgb_height, rgb_width, CV_8UC3, left_buffer.data()); // Create Mat from buffer
+        log_event("Received Left image: height=" + std::to_string(left_rgb.rows) + ", width=" + std::to_string(left_rgb.cols));
+        imLeft = left_rgb.clone();  // save for snapshot + debug
+        cv::cvtColor(imLeft, imLeftGray, cv::COLOR_RGB2GRAY); // Convert to grayscale
+
+        // --- DEBUG: Log right image properties ---
         {
-            std::ostringstream oss;
-            oss << "Decoded RGB image resolution: " << rgb_width << " x " << rgb_height << " (" << rgb_bytes << " bytes)";
-            log_event(oss.str());
-        }
+            std::ostringstream log;
+            log << "[DEBUG] Left image received: "
+                << "height=" << left_rgb.rows
+                << ", width=" << left_rgb.cols
+                << ", expected bytes=" << rgb_bytes
+                << ", actual buffer size=" << left_buffer.size();
+            log_event(log.str());
 
-        // Check if RGB bytes match expected size
-        if (rgb_bytes != rgb_height * rgb_width * 3) {
-            std::cerr << "[ERROR] RGB byte count mismatch. Expected: "
-                      << (rgb_height * rgb_width * 3) << ", Got: " << rgb_bytes << std::endl;
-            log_event("Disconnect: RGB byte count mismatch.");
-            clean_exit = false;
-            break;
-        }
-
-        // --- Receive raw RGB data ---
-        vector<uchar> rgb_buffer(rgb_bytes);
-        if (!recv_all(sock, (char*)rgb_buffer.data(), rgb_bytes)) {
-            log_event("Disconnect: Failed to receive full RGB image data.");
-            clean_exit = false;
-            break;
-        }
-
-        // --- Check if SLAM server is ready to process images ---
-        log_event("About to create slam_ready.flag (pre-check passed)");
-        if (!slam_ready_flag_written) {
-            std::ofstream flag_file("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/flags/slam_ready.flag");
-            if (flag_file.is_open()) {
-                log_event("slam_ready.flag opened successfully for writing.");
-                flag_file.close();
-                std::cout << "[INFO] Created slam_ready.flag — SLAM server ready." << std::endl;
-                log_event("Created slam_ready.flag — SLAM server ready.");
-            } else {
-                std::cerr << "[WARN] Could not create slam_ready.flag." << std::endl;
-                log_event("Could not create slam_ready.flag.");
+            // Check image for being empty
+            if (imLeft.empty()) {
+                log_event("[ERROR] Left image is EMPTY after decoding!");
             }
-            slam_ready_flag_written = true;
+
+            // Optional: verify pixel structure
+            if (imLeft.type() != CV_8UC3) {
+                std::ostringstream tmsg;
+                tmsg << "[WARN] Left image has unexpected type: " << imLeft.type();
+                log_event(tmsg.str());
+            }
+
+            // Optional: pixel checksum
+            int checksum = cv::sum(imLeft.reshape(1))[0];
+            std::ostringstream csmsg;
+            csmsg << "[DEBUG] Left image checksum: " << checksum;
+            log_event(csmsg.str());
         }
 
-        // --- Convert raw RGB data to OpenCV Matrix (cv::Mat) ---
-        cv::Mat imRGB(rgb_height, rgb_width, CV_8UC3, rgb_buffer.data());
-        imRGB = imRGB.clone();
+        // --- Receive Right RGB Image ---
+        char right_header[12];
+        if (!recv_all(sock, right_header, 12)) break;
+        memcpy(&net_height, right_header, 4);
+        memcpy(&net_width,  right_header + 4, 4);
+        memcpy(&net_bytes, right_header + 8, 4);
+        rgb_height = ntohl(net_height);
+        rgb_width  = ntohl(net_width);
+        rgb_bytes  = ntohl(net_bytes);
 
-        // --- Check if images are changing ---
-        static cv::Mat prev_rgb;
-        if (!prev_rgb.empty()) {
-            cv::Mat diff;
-            cv::absdiff(imRGB, prev_rgb, diff);
-            double frame_diff = cv::sum(diff)[0] / (imRGB.rows * imRGB.cols * 3);  // Normalize by total pixels * channels
-            std::ostringstream motion_msg;
-            motion_msg << "[DEBUG] RGB frame difference (mean): " << frame_diff;
-            log_event(motion_msg.str());
-        }
-        prev_rgb = imRGB.clone();
+        vector<uchar> right_buffer(rgb_bytes); // Allocate buffer for right image
+        if (!recv_all(sock, (char*)right_buffer.data(), rgb_bytes)) break; // Receive the image data
+        cv::Mat right_rgb(rgb_height, rgb_width, CV_8UC3, right_buffer.data()); // Create Mat from buffer
+        log_event("Received Right image: height=" + std::to_string(right_rgb.rows) + ", width=" + std::to_string(right_rgb.cols));
+        imRight = right_rgb.clone();  // save for snapshot + debug
+        cv::cvtColor(imRight, imRightGray, cv::COLOR_RGB2GRAY); // Convert to grayscale
 
-        // --- Receive Depth image ---
-        uint32_t d_height, d_width, d_bytes;
-        if (!recv_all(sock, (char*)&d_height, 4)) {
-            log_event("Disconnect: Failed to receive depth height.");
-            clean_exit = false;
-            break;
-        }
-        if (!recv_all(sock, (char*)&d_width, 4)) {
-            log_event("Disconnect: Failed to receive depth width.");
-            clean_exit = false;
-            break;
-        }
-        if (!recv_all(sock, (char*)&d_bytes, 4)) {
-            log_event("Disconnect: Failed to receive depth bytes.");
-            clean_exit = false;
-            break;
-        }
 
-        // Convert network byte order to host byte order
-        d_height = ntohl(d_height);
-        d_width  = ntohl(d_width);
-        d_bytes  = ntohl(d_bytes);
-
+        // --- DEBUG: Log right image properties ---
         {
-            std::ostringstream oss;
-            oss << "Depth header: height=" << d_height << ", width=" << d_width << ", bytes=" << d_bytes;
-            log_event(oss.str());
-        }
+            std::ostringstream log;
+            log << "[DEBUG] Right image received: "
+                << "height=" << rgb_height
+                << ", width=" << rgb_width
+                << ", expected bytes=" << rgb_bytes
+                << ", actual buffer size=" << right_buffer.size();
+            log_event(log.str());
 
-        // Check if depth bytes match expected size
-        if (d_bytes != d_height * d_width * 4) {
-            std::ostringstream oss;
-            oss << "Disconnect: Depth byte count mismatch. Expected: "
-                << (d_height * d_width * 4) << ", Got: " << d_bytes;
-            log_event(oss.str());
-            clean_exit = false;
-            break;
-        }
-
-        // --- Receive raw depth data ---
-        std::vector<char> raw_depth(d_bytes);
-        if (!recv_all(sock, raw_depth.data(), d_bytes)) {
-            log_event("Disconnect: Failed to receive full depth image data.");
-            clean_exit = false;
-            break;
-        }
-
-        // --- Convert raw depth data to OpenCV Matrix (cv::Mat) ---
-        float* float_ptr = reinterpret_cast<float*>(raw_depth.data());
-        cv::Mat imD_raw(d_height, d_width, CV_32F, float_ptr);
-        cv::Mat imD = imD_raw.clone();  // clone from raw buffer
-        
-        // --- Add a histogram log to check depth spread ---
-        double hist_min, hist_max;
-        cv::minMaxLoc(imD_raw, &hist_min, &hist_max);
-        std::ostringstream hist_msg;
-        hist_msg << "[DEBUG] Raw depth stats — min: " << hist_min << ", max: " << hist_max;
-        log_event(hist_msg.str());
-
-        // --- Save raw depth image for debugging ---
-        if (frame_counter % 25 == 0) {
-            std::ostringstream raw_depth_filename;
-            raw_depth_filename << "/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/frame_depth_raw_" << frame_counter << ".png";
-
-            cv::Mat raw_depth_vis;
-            imD_raw.convertTo(raw_depth_vis, CV_8U, 255.0 / max_depth_m); // Now max_depth_m is in scope
-            cv::imwrite(raw_depth_filename.str(), raw_depth_vis);
-        }
-
-        // Clamp depth to max range (e.g. 5m or 10m)
-        cv::Mat imD_clipped;
-        cv::threshold(imD, imD_clipped, max_depth_m, max_depth_m, cv::THRESH_TRUNC);
-
-        // Save visualization for debug
-        if (frame_counter % 25 == 0) {
-            std::ostringstream depth_filename;
-            depth_filename << "/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/frame_depth_" << frame_counter << ".png";
-
-            cv::Mat depth_vis;
-            imD_clipped.convertTo(depth_vis, CV_8U, 255.0 / max_depth_m);
-            cv::imwrite(depth_filename.str(), depth_vis);
-        }
-
-        // --- Apply depth filtering to reduce tracking issues from flat or far geometry ---
-
-        // Replace invalid or unhelpful depth (e.g. very near or very far)
-        cv::Mat imD_filtered = imD_clipped.clone();
-        const float min_depth = 0.1f;
-        const float max_depth = 8.0f;
-        for (int y = 0; y < imD_filtered.rows; ++y) {
-            float* row = imD_filtered.ptr<float>(y);
-            for (int x = 0; x < imD_filtered.cols; ++x) {
-                float d = row[x];
-                if (d < min_depth || d > max_depth || std::isnan(d))
-                    row[x] = 0.0f; // ORB-SLAM2 treats 0 as invalid
+            // Check image for being empty
+            if (imRight.empty()) {
+                log_event("[ERROR] Right image is EMPTY after decoding!");
             }
-        }
 
-        // Optional: filter out flat areas (low gradient)
-        cv::Mat grad_x, grad_y;
-        cv::Sobel(imD_filtered, grad_x, CV_32F, 1, 0, 3);
-        cv::Sobel(imD_filtered, grad_y, CV_32F, 0, 1, 3);
-        cv::Mat grad_mag;
-        cv::magnitude(grad_x, grad_y, grad_mag);
-
-        // Zero out pixels with almost no depth change (flat walls/floors)
-        float flat_thresh = 0.001f;
-        for (int y = 0; y < grad_mag.rows; ++y) {
-            float* d_row = imD_filtered.ptr<float>(y);
-            const float* g_row = grad_mag.ptr<float>(y);
-            for (int x = 0; x < grad_mag.cols; ++x) {
-                if (g_row[x] < flat_thresh)
-                    d_row[x] = 0.0f;
+            // Optional: verify pixel structure
+            if (imRight.type() != CV_8UC3) {
+                std::ostringstream tmsg;
+                tmsg << "[WARN] Right image has unexpected type: " << imRight.type();
+                log_event(tmsg.str());
             }
+
+            // Optional: pixel checksum
+            int checksum = cv::sum(imRight.reshape(1))[0];
+            std::ostringstream csmsg;
+            csmsg << "[DEBUG] Right image checksum: " << checksum;
+            log_event(csmsg.str());
         }
 
-        imD = imD_filtered;
-        if (frame_counter % 25 == 0) {
-            cv::Mat debug_vis;
-            imD.convertTo(debug_vis, CV_8U, 255.0 / max_depth);  // Scale for viewing
-            cv::imwrite("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/frame_depth_filtered_" + std::to_string(frame_counter) + ".png", debug_vis);
+
+        if (frame_counter % 10 == 0) {
+            std::ostringstream fname_left, fname_right;
+            fname_left << "logs/debug_left_" << frame_counter << ".png";
+            fname_right << "logs/debug_right_" << frame_counter << ".png";
+            cv::imwrite(fname_left.str(), imLeft);
+            cv::imwrite(fname_right.str(), imRight);
         }
 
-        // Log depth value at center pixel (optional, but not used for logic anymore)
-        int cx = d_width / 2;
-        int cy = d_height / 2;
-        float center_depth = imD.at<float>(cy, cx);
-        {
-            std::ostringstream oss;
-            oss << "Depth at center (" << cx << ", " << cy << ") = "
-                << std::fixed << std::setprecision(3) << center_depth << " meters";
-            log_event(oss.str());
-        }
-
-        // Count valid depth pixels instead of using center only
-        int valid_depth_pixels = cv::countNonZero(imD > 0.0f);
-        log_event("[DEBUG] Valid depth pixels after filtering: " + std::to_string(valid_depth_pixels));
-
-        if (valid_depth_pixels < 300) {
-            log_event("[WARN] Too few valid depth pixels — skipping SLAM update.");
-            frame_counter++;
-            continue;
-        }
+        cv::imshow("Stereo Left", imLeftGray);
+        cv::imshow("Stereo Right", imRightGray);
+        cv::waitKey(1);  // Non-blocking; press Esc in the future to close if needed
 
         // --- Log frame count and timestamp ---
         double timestamp = (double)cv::getTickCount() / cv::getTickFrequency();
@@ -498,19 +441,51 @@ int main(int argc, char **argv) {
         // --- Process with SLAM ---
         {
             std::ostringstream oss;
-            oss << "Calling SLAM.TrackRGBD at timestamp=" << std::fixed << std::setprecision(6) << timestamp
+            oss << "Calling SLAM.TrackStereo at timestamp=" << std::fixed << std::setprecision(6) << timestamp
                 << " | Frame #" << frame_counter;
             log_event(oss.str());
         }
         try {
-            double min_val, max_val;
-            cv::minMaxLoc(imD, &min_val, &max_val);
-            std::ostringstream d_stats;
-            d_stats << "Depth image stats — min: " << min_val << ", max: " << max_val;
-            log_event(d_stats.str());
 
-            // Log the depth image size
-            SLAM.TrackRGBD(imRGB, imD, timestamp);
+            // BEFORE calling TrackStereo:
+            log_event("Calling SLAM.TrackStereo...");
+
+            // Validate
+            if (imLeftGray.empty() || imRightGray.empty()) {
+                log_event("[FATAL] Empty grayscale image detected.");
+                continue;
+            }
+            if (imLeftGray.type() != CV_8UC1 || imRightGray.type() != CV_8UC1) {
+                log_event("[FATAL] Grayscale image not CV_8UC1 — left=" + std::to_string(imLeftGray.type()) +
+                        ", right=" + std::to_string(imRightGray.type()));
+                continue;
+            }
+
+            // Clone them before sending (defensive copy)
+            cv::Mat left_input = imLeftGray.clone();
+            cv::Mat right_input = imRightGray.clone();
+
+            // Final check
+            if (left_input.empty() || right_input.empty()) {
+                log_event("[FATAL] Clone operation failed.");
+                continue;
+            }
+
+            // Now call SLAM
+            log_event("[DEBUG] Calling SLAM.TrackStereo...");
+
+            cv::Mat Tcw;
+            try {
+                Tcw = SLAM.TrackStereo(left_input, right_input, timestamp);
+                log_event("[DEBUG] SLAM.TrackStereo completed.");
+            } catch (const std::exception& e) {
+                log_event(std::string("[FATAL] SLAM.TrackStereo threw std::exception: ") + e.what());
+                continue;
+            } catch (...) {
+                log_event("[FATAL] SLAM.TrackStereo threw unknown exception.");
+                continue;
+            }
+
             
             if (SLAM.GetTracker()->mState == ORB_SLAM2::Tracking::LOST) {
                 log_event("[WARN] SLAM tracking lost — resetting system.");
@@ -518,7 +493,8 @@ int main(int argc, char **argv) {
             }
             
             // Log the current frame's timestamp
-            cv::Mat Tcw_copy = SLAM.GetTracker()->mCurrentFrame.mTcw.clone();
+            cv::Mat Tcw_copy = Tcw.clone();
+
             static cv::Mat prev_Tcw;
             if (!prev_Tcw.empty() && prev_Tcw.size() == Tcw_copy.size()) {
                 cv::Mat diff = Tcw_copy - prev_Tcw;
@@ -548,6 +524,16 @@ int main(int argc, char **argv) {
                 log_event("[WARN] Tcw_copy is empty or not 4x4.");
                 tcw_valid = false;
             }
+            std::ostringstream tcw_info;
+            tcw_info << "[DEBUG] Tcw_copy rows=" << Tcw_copy.rows
+                    << ", cols=" << Tcw_copy.cols
+                    << ", type=" << Tcw_copy.type()
+                    << ", isEmpty=" << Tcw_copy.empty();
+            log_event(tcw_info.str());
+            std::ostringstream matrix_stream;
+            matrix_stream << Tcw_copy;
+            log_event("[DEBUG] Tcw_copy contents:\n" + matrix_stream.str());
+
             if (tcw_valid && (Tcw_copy.type() != CV_32F && Tcw_copy.type() != CV_64F)) {
                 log_event("[WARN] Tcw_copy is not CV_32F or CV_64F.");
                 tcw_valid = false;
@@ -584,26 +570,12 @@ int main(int argc, char **argv) {
 
         } catch (const std::exception& ex) {
             std::ostringstream oss;
-            oss << "Exception in SLAM.TrackRGBD: " << ex.what();
+            oss << "Exception in SLAM.TrackStereo: " << ex.what();
             log_event(oss.str());
-            std::cerr << "[ERROR] Exception in SLAM.TrackRGBD: " << ex.what() << std::endl;
+            std::cerr << "[ERROR] Exception in SLAM.TrackStereo: " << ex.what() << std::endl;
         } catch (...) {
-            log_event("Unknown exception in SLAM.TrackRGBD.");
-            std::cerr << "[ERROR] Unknown exception in SLAM.TrackRGBD." << std::endl;
-        }
-
-        // Save first N frames for visual inspection
-        if (frame_counter % 25 == 0) {
-            std::ostringstream rgb_filename, depth_filename;
-            rgb_filename << "/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/frame_rgb_" << frame_counter << ".png";
-            depth_filename << "/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/frame_depth_" << frame_counter << ".png";
-
-            cv::imwrite(rgb_filename.str(), imRGB);
-
-            // Save depth visualization that was already clamped earlier (imD is already imD_clipped)
-            cv::Mat depth_vis;
-            imD.convertTo(depth_vis, CV_8U, 255.0 / max_depth_m);
-            cv::imwrite(depth_filename.str(), depth_vis);
+            log_event("Unknown exception in SLAM.TrackStereo.");
+            std::cerr << "[ERROR] Unknown exception in SLAM.TrackStereo." << std::endl;
         }
 
         // Add map tracking state logs
@@ -622,23 +594,69 @@ int main(int argc, char **argv) {
             log_event(oss.str());
         }
 
+        // Create images directory if it doesn't exist
+        #ifdef _WIN32
+            _mkdir("H:\\Documents\\AirSimExperiments\\Hybrid_Navigation\\images");
+        #else
+            mkdir("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/images", 0777);
+        #endif
+
         // Optional: save ORB keypoints on RGB image
         if (frame_counter % 25 == 0) {
             std::vector<cv::KeyPoint> orb_kps = tracker->mCurrentFrame.mvKeys;
             cv::Mat rgb_kp;
-            cv::drawKeypoints(imRGB, orb_kps, rgb_kp);
+            cv::drawKeypoints(imLeft, orb_kps, rgb_kp);
             std::ostringstream kp_filename;
-            kp_filename << "/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/frame_rgb_kp_" << frame_counter << ".png";
+            kp_filename << "/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/images/frame_rgb_kp_" << frame_counter << ".png";
             cv::imwrite(kp_filename.str(), rgb_kp);
         }
 
 
-        // --- After SLAM.TrackRGBD ---
+        // --- After SLAM.TrackStereo ---
         cv::Mat Tcw = SLAM.GetTracker()->mCurrentFrame.mTcw;
+        if (!Tcw.empty() && Tcw.rows == 4 && Tcw.cols == 4 && Tcw.type() == CV_32F) {
+            // Log and send pose to the Python receiver
+            log_event("[DEBUG] Sending pose matrix to Python receiver...");
+            if (pose_sock >= 0) {
+                send_pose(pose_sock, Tcw);
+            } else {
+                log_event("[ERROR] Pose socket is not valid.");
+            }
+        }
+
+
         int track_state = SLAM.GetTracker()->mState;
+        
+        // Diagnostic: Log the tracking state
+        std::ostringstream pose_check;
+        pose_check << "[DEBUG] Checking Tcw validity: "
+                << "empty=" << Tcw.empty()
+                << ", rows=" << Tcw.rows
+                << ", cols=" << Tcw.cols
+                << ", type=" << Tcw.type()
+                << " (expect CV_32F = 5)";
+        log_event(pose_check.str());
 
         // Use Twc (world camera pose) instead of Tcw
         if (!Tcw.empty() && Tcw.rows == 4 && Tcw.cols == 4 && Tcw.type() == CV_32F) {
+            if (!(Tcw.type() == CV_32F)) {
+                log_event("[WARN] Tcw.type() != CV_32F — skipping pose send.");
+            }
+
+            // Write the slam_ready.flag only once, after SLAM becomes valid
+            if (!slam_ready_flag_written) {
+                std::string flag_path = "/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/flags/slam_ready.flag";
+                std::ofstream flag_file(flag_path);
+                if (flag_file.is_open()) {
+                    flag_file << "SLAM_READY" << std::endl;
+                    flag_file.close();
+                    slam_ready_flag_written = true;
+                    log_event("[INFO] slam_ready.flag created.");
+                } else {
+                    log_event("[ERROR] Could not create slam_ready.flag.");
+                }
+            }
+
             cv::Mat Twc = Tcw.inv();
             float x = Twc.at<float>(0, 3);
             float y = Twc.at<float>(1, 3);
@@ -657,34 +675,38 @@ int main(int argc, char **argv) {
             // Twc.at<float>(0, 3) = 0.05f * fake_motion_counter;  // Move along X
 
             // Send Twc instead of Tcw if tracking is good
-            if (pose_sock >= 0 && track_state >= ORB_SLAM2::Tracking::OK && cv::checkRange(Twc)) {
-                std::ostringstream pose_dbg;
-                pose_dbg << "Sending Twc: ";
-                for (int r = 0; r < 3; ++r)
-                    for (int c = 0; c < 4; ++c)
-                        pose_dbg << Twc.at<float>(r, c) << (r == 2 && c == 3 ? "" : ", ");
-                log_event(pose_dbg.str());
+            // if (pose_sock >= 0 && track_state >= ORB_SLAM2::Tracking::OK && cv::checkRange(Twc)) {
+            log_event("[CHECK] About to test pose_sock condition in main().");
+
+            std::ostringstream live_sock_check;
+            live_sock_check << "[CHECK] At pose send time, pose_sock=" << pose_sock;
+            log_event(live_sock_check.str());
+
+            if (true) {
+                log_event("[DEBUG] Entering pose send block unconditionally for testing.");
+
+                // Diagnostic: Confirm matrix validity
+                std::ostringstream status;
+                status << "[DEBUG] Checking pose send condition: "
+                    << "pose_sock=" << pose_sock
+                    << ", Tcw.empty()=" << Twc.empty()
+                    << ", Tcw.rows=" << Twc.rows
+                    << ", Tcw.cols=" << Twc.cols
+                    << ", Tcw.type()=" << Twc.type();
+                log_event(status.str());
+
+                log_event("[DEBUG] Calling send_pose(...) with Twc_send matrix");
 
                 cv::Mat Twc_send;
                 Twc.convertTo(Twc_send, CV_32F); // ensure float32
 
                 if (send_pose(pose_sock, Twc_send)) {
                     log_event("Pose (Twc) sent to Python receiver.");
-                    log_event("[DEBUG] Pose bytes sent: 48 / 48");
-
-                    if (pose_log_stream.is_open()) {
-                        pose_log_stream << std::fixed << std::setprecision(6);
-                        pose_log_stream << "Frame #" << frame_counter << " | Twc: ";
-                        for (int r = 0; r < 3; ++r)
-                            for (int c = 0; c < 4; ++c)
-                                pose_log_stream << Twc.at<float>(r, c) << (r == 2 && c == 3 ? "" : ", ");
-                        pose_log_stream << std::endl;
-                        pose_log_stream.flush();
-                    }
                 } else {
-                    log_event("[WARN] Failed to send Twc to Python receiver.");
+                    log_event("[WARN] send_pose() returned false.");
                 }
             }
+
             } else {
                 log_event("[WARN] Tcw is invalid or not 4x4 matrix — skipping pose send.");
             }

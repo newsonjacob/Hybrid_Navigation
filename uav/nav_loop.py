@@ -33,7 +33,8 @@ from uav.logging_helpers import log_frame_data, write_video_frame, write_frame_o
 from uav.perception_loop import perception_loop, start_perception_thread, process_perception_data
 from uav.navigation_core import detect_obstacle, determine_side_safety, handle_obstacle, navigation_step, apply_navigation_decision
 
-logger = logging.getLogger("uav.nav_loop")
+logger = logging.getLogger("nav_loop")
+logger.warning("[TEST] __name__ = %s | handlers = %s", __name__, logger.handlers)
 
 # Grace period duration (seconds) after dodge/brake actions
 NAV_GRACE_PERIOD_SEC = 0.5
@@ -397,7 +398,7 @@ def cleanup(client, sim_process, ctx):
     except Exception as e:
         logger.error("Landing error: %s", e)
 
-    # ✅ Wait after landing for graceful shutdown if early exit
+    # Wait after landing for graceful shutdown if early exit
     if client and ctx is not None and ctx.get("exit_flag", None) and ctx["exit_flag"].is_set():
         logger.info("🕒 Pausing briefly after landing for graceful shutdown...")
         for _ in range(30):  # Wait up to 3 seconds
@@ -414,16 +415,9 @@ def cleanup(client, sim_process, ctx):
         # Wait until the drone is landed or until a timeout (e.g., 15 seconds)
         if client and ctx is not None and ctx.get("exit_flag", None) and ctx["exit_flag"].is_set():
             logger.info("🕒 Waiting for drone to land for graceful shutdown...")
-            max_wait = 15  # seconds
+            max_wait = 7  # seconds
             start_wait = time.time()
             while True:
-                try:
-                    state = client.getMultirotorState()
-                    if state.landed_state == LandedState.Landed:
-                        logger.info("Drone is landed (LandedState.Landed).")
-                        break
-                except Exception:
-                    break
                 if time.time() - start_wait > max_wait:
                     logger.warning("Timeout waiting for drone to land.")
                     break

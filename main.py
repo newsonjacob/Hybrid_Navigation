@@ -22,21 +22,22 @@ parser.add_argument("--log-timestamp", type=str, default=None)
 args, remaining_argv = parser.parse_known_args()
 timestamp = args.log_timestamp or datetime.now().strftime('%Y%m%d_%H%M%S')
 
-# Set up logging just like in launch_all.py
-module_logs = {
-    "uav.nav_loop": f"uav_nav_loop_{timestamp}.log",
-    "uav.slam_bridge": f"uav_slam_bridge_{timestamp}.log",
-    "uav.slam_navigation": f"uav_slam_navigation_{timestamp}.log"
-}
-setup_logging(log_file=f"launch_{timestamp}.log", module_logs=module_logs, level=logging.DEBUG)
-print(f"[main.py] Logging configured. Writing to logs/launch_{timestamp}.log and module logs...")
-
 # Fix sys.argv so parse_args still works
 sys.argv = [sys.argv[0]] + remaining_argv
 
-# Then import the rest
-logger = logging.getLogger(__name__)
+# Set up logging just like in launch_all.py
+module_logs = {
+    "nav_loop": f"nav_loop_{timestamp}.log",
+    "slam_receiver": f"slam_receiver_{timestamp}.log",
+    "pose_receiver": f"pose_receiver_{timestamp}.log",
+    "slam_plotter": f"slam_plotter_{timestamp}.log",
+    "pose_plotter": f"pose_plotter_{timestamp}.log"
+}
+setup_logging(log_file=f"main_{timestamp}.log", module_logs=module_logs, level=logging.DEBUG)
+print(f"[main.py] Logging configured. Writing to logs/main_{timestamp}.log and module logs...")
 
+# Then import the rest
+logger = logging.getLogger("main")
 
 # --- Flag paths ---
 flags_dir = Path("flags")
@@ -57,15 +58,12 @@ def wait_for_nav_trigger():
     logger.info("[INFO] Navigation start flag found. Beginning nav logic...")
 
 def main() -> None:
-    # Refresh logger after logging setup in launch_all
-    logger_name = __name__
-    logger = logging.getLogger(logger_name)
-    logger.setLevel(logging.DEBUG)  # or INFO if preferred
-
-    # Safety: check that logger has a handler
-    if not logger.handlers:
+    # Safety: fallback logging if nothing is configured
+    logger = logging.getLogger(__name__)
+    if not logger.hasHandlers():
         from uav.logging_config import setup_logging
-        setup_logging(log_file="fallback_main.log", module_logs={logger_name: "fallback_module.log"})
+        setup_logging(log_file="fallback_main.log", module_logs={__name__: "fallback_module.log"})
+        logger = logging.getLogger(__name__)
         logger.warning("Logger was missing handlers. Reconfigured logging as fallback.")
 
     from uav.nav_loop import setup_environment, start_perception_thread, navigation_loop, slam_navigation_loop, cleanup
@@ -75,11 +73,11 @@ def main() -> None:
     config = load_app_config(args.config)
     settings_path = get_settings_path(args, config)
 
-    
-
     slam_server_host = args.slam_server_host or config.get("network", "slam_server_host", fallback="127.0.0.1")
     slam_server_port = int(args.slam_server_port or config.get("network", "slam_server_port", fallback="6000"))
-    slam_receiver_host = args.slam_receiver_host or config.get("network", "slam_receiver_host", fallback="127.0.0.1")
+    slam_receiver_host = "127.0.0.1"
+    print(f"[main.py] SLAM receiver host resolved to: {slam_receiver_host}")
+
     slam_receiver_port = int(args.slam_receiver_port or config.get("network", "slam_receiver_port", fallback="6001"))
 
     # Add a nav_mode argument to your CLI parser (e.g., --nav-mode [slam|reactive])
@@ -109,7 +107,8 @@ def main() -> None:
 
     logger.info("[TEST] nav_loop logger test")
     if nav_mode == "slam":
-        start_receiver(slam_receiver_host, slam_receiver_port)
+        receiver_thread = start_receiver(slam_receiver_host, slam_receiver_port)
+        time.sleep(1) # Give the receiver time to start
         wait_for_nav_trigger()
         client.enableApiControl(True)
         client.armDisarm(True)
@@ -127,6 +126,10 @@ def main() -> None:
             ctx = setup_environment(args, client)
             start_perception_thread(ctx)
             slam_navigation_loop(args, client, ctx)
+            if receiver_thread:
+                logger.info("[main.py] Waiting for SLAM receiver to finish...")
+                receiver_thread.join()
+                logger.info("[main.py] SLAM receiver thread joined successfully.")
         finally:
             for flag in [flags_dir / "airsim_ready.flag", flags_dir / "start_nav.flag"]:
                 try:

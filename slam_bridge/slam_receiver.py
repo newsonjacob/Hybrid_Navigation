@@ -10,9 +10,12 @@ from pathlib import Path
 import threading
 import numpy as np
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("slam_receiver")
+logger.warning("[TEST] __name__ = %s | handlers = %s", __name__, logger.handlers)
+logger.info("[TEST] This is a dedicated log line.")
 
-HOST = "192.168.1.102"  # Default IP if not provided
+
+HOST = "192.168.1.103"  # Default IP if not provided
 PORT = 6001
 
 
@@ -34,6 +37,8 @@ class SlamReceiver:
     def start(self) -> None:
         if self.receiver is not None:
             self.receiver.start()
+            logger.info("[SLAMReceiver] PoseReceiver started.")
+            (Path("flags") / "pose_receiver_ready.flag").touch()
 
             log_dir = Path("analysis")
             log_dir.mkdir(exist_ok=True)
@@ -134,12 +139,12 @@ class SlamReceiver:
 _manager: Optional[SlamReceiver] = None
 
 
-def start_receiver(host: str = HOST, port: int = PORT) -> None:
-    """Create the global :class:`SlamReceiver` instance and start it."""
+def start_receiver(host: str = HOST, port: int = PORT) -> Optional[threading.Thread]:
     global _manager
     if _manager is None:
         _manager = SlamReceiver(host, port)
         _manager.start()
+    return _manager._log_thread
 
 
 def stop_receiver() -> None:

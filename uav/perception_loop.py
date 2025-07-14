@@ -35,7 +35,7 @@ def start_perception_thread(ctx):
         nonlocal last_vis_img
         local_client = airsim.MultirotorClient()
         local_client.confirmConnection()
-        request = [ImageRequest("oakd_camera", ImageType.Scene, False, True)]
+        request = [ImageRequest("0", ImageType.Scene, False, True)]
         while not exit_flag.is_set():
             t0 = time.time()
             responses = local_client.simGetImages(request, vehicle_name="UAV")

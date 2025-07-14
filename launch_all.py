@@ -25,9 +25,11 @@ def init_logging_and_flags():
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     launch_log = f"launch_{timestamp}.log"
     modules_with_dedicated_logs = [
-        "uav.nav_loop",
-        "uav.slam_bridge",
-        "uav.slam_navigation"
+        "nav_loop",
+        "slam_receiver",
+        "slam_plotter",
+        "utils",
+        "pose_receiver"
     ]
     module_logs = {
         mod: f"{mod.replace('.', '_')}_{timestamp}.log"
@@ -36,7 +38,7 @@ def init_logging_and_flags():
 
     setup_logging(log_file=launch_log, module_logs=module_logs, level=logging.DEBUG)
     
-    logger = logging.getLogger("main")
+    logger = logging.getLogger("Launch")
     logger.info(f"Logging to logs/{launch_log}")
 
     flags_dir = Path("flags")
@@ -173,25 +175,58 @@ def start_streamer(host: str, port: int, stream_mode: str = "stereo"):
         "slam_bridge/stream_airsim_image.py",
         "--host", host,
         "--port", str(port),
-        "--mode", stream_mode
+        "--mode", stream_mode,
+        "--log-timestamp", timestamp
     ])
     
     logger.info("Started SLAM image streamer")
     time.sleep(2)
     return proc
 
+def wait_for_port(host: str, port: int, timeout: float = 5.0):
+    logger.info(f"[wait_for_port] Waiting for {host}:{port} to become available...")
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            with socket.create_connection((host, port), timeout=1):
+                logger.info(f"[wait_for_port] {host}:{port} is now accepting connections.")
+                return True
+        except OSError:
+            time.sleep(0.2)
+    logger.error(f"[wait_for_port] Timeout: {host}:{port} did not become ready.")
+    return False
 
+import psutil
 
 def launch_slam_backend(receiver_host: str, receiver_port: int):
     """Launch the SLAM backend via WSL and return the process handle."""
+
+    def kill_port(port: int):
+        killed = 0
+        for conn in psutil.net_connections(kind='inet'):
+            if conn.laddr.port == port and conn.status == psutil.CONN_ESTABLISHED:
+                try:
+                    psutil.Process(conn.pid).kill()
+                    logger.warning(f"[launch_slam_backend] Killed process {conn.pid} using port {port}")
+                    killed += 1
+                except Exception as e:
+                    logger.error(f"[launch_slam_backend] Failed to kill process on port {port}: {e}")
+        if killed == 0:
+            logger.info(f"[launch_slam_backend] No established connections found on port {port}")
+
+    # Ensure port 6001 is not blocked by old connection
+    kill_port(receiver_port)
+
     slam_cmd = [
         "wsl", "bash", "-c",
         f"export POSE_RECEIVER_IP={receiver_host}; "
         f"export POSE_RECEIVER_PORT={receiver_port}; "
-        "cd /mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/linux_slam/build && ./app/tcp_slam_server ../Vocabulary/ORBvoc.txt ../app/rgbd_settings.yaml",
+        "cd /mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/linux_slam/build && "
+        "./app/tcp_slam_server ../Vocabulary/ORBvoc.txt ../app/rgbd_settings.yaml"
     ]
+
     proc = subprocess.Popen(slam_cmd)
-    logger.info("Started SLAM backend in WSL")
+    logger.info("[launch_slam_backend] Started SLAM backend in WSL")
     return proc
 
 
@@ -287,6 +322,14 @@ def main(timestamp):
             stream_proc = start_streamer(slam_server_host, slam_server_port, args.stream_mode)
 
             # --- STEP 4: Launch SLAM backend in WSL ---
+            # Start receiver
+            from slam_bridge.slam_receiver import start_receiver
+            start_receiver("127.0.0.1", 6001)
+
+            # Wait for receiver to be ready
+            wait_for_port("127.0.0.1", 6001)
+
+            # Launch SLAM backend
             slam_proc = launch_slam_backend(slam_receiver_host, slam_receiver_port)
 
             # --- STEP 4c: Wait for slam_ready.flag (now that streamer can talk to SLAM)

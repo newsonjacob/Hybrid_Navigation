@@ -80,13 +80,9 @@ def retain_recent_logs(log_dir: str, keep: int = 2) -> None:
         except FileNotFoundError:
             logger.warning("\u26A0\uFE0F Log directory '%s' not found.", log_dir)
             continue
-
         files.sort(key=_timestamp_from_name, reverse=True)
-        logger.info("\U0001F9F9 [%s] Found %d logs, keeping %d most recent.", pattern, len(files), keep)
-
         for old_file in files[keep:]: # Keep the most recent `keep` files
             try:
-                logger.info("\U0001F5D1\uFE0F Deleting old log: %s", old_file)
                 os.remove(old_file)
             except OSError as e:
                 logger.warning("\u26A0\uFE0F Could not delete %s: %s", old_file, e)

@@ -7,12 +7,12 @@ from typing import Optional, Tuple, List
 
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("pose_receiver")
 
 class PoseReceiver:
     """TCP server that receives 3x4 pose matrices and stores the latest pose."""
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 6001, history_size: int = 500) -> None:
+    def __init__(self, host: str = "0.0.0.0", port: int = 6001, history_size: int = 500) -> None:
         self.host = host
         self.port = port
         self.history_size = history_size
@@ -22,6 +22,8 @@ class PoseReceiver:
         self._lock = threading.Lock()
         self._latest_pose: Optional[List[List[float]]] = None
         self._history = deque(maxlen=history_size)
+        self._conn: Optional[socket.socket] = None
+
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -30,16 +32,22 @@ class PoseReceiver:
         self._stop_event.clear()
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        logger.info(f"[PoseReceiver] Preparing to bind to {(self.host, self.port)}")
         self._sock.bind((self.host, self.port))
+        logger.info(f"[PoseReceiver] Bound successfully on {(self.host, self.port)}")
         self.port = self._sock.getsockname()[1]
         self._sock.listen(1)
         self._sock.settimeout(1)
+
+        logger.info(f"[PoseReceiver] Listening on {self.host}:{self.port}...")
+    
         self._thread = threading.Thread(target=self._recv_loop, daemon=True)
         self._thread.start()
 
-    def stop(self) -> None:
-        self._stop_event.set()
-        if self._sock:
+    def stop(self) -> None: # Stop the receiver and clear resources.
+        logger.info("[PoseReceiver] Stopping receiver...")
+        self._stop_event.set() # Signal the thread to stop.
+        if self._sock: # Close the socket if it exists.
             try:
                 # Wake accept() by connecting then close the socket
                 try:
@@ -50,12 +58,18 @@ class PoseReceiver:
             except OSError:
                 pass
             self._sock = None
-        if self._thread:
+        if self._thread: # Wait for the thread to finish
             self._thread.join(timeout=1)
 
     def get_latest_pose(self) -> Optional[Tuple[float, float, float]]:
-        with self._lock:
-            logger.debug(f"[PoseReceiver] Latest pose raw: {self._latest_pose}")
+        """
+        Returns the translation (x, y, z) from the latest received 3x4 pose matrix.
+
+        Returns:
+            Optional[Tuple[float, float, float]]: The translation components (x, y, z) if available, otherwise None.
+        """
+        with self._lock: # Ensure thread-safe access to the latest pose
+            logger.info(f"[PoseReceiver] Latest pose raw: {self._latest_pose}")
             if self._latest_pose is None:
                 return None
             try:
@@ -67,42 +81,48 @@ class PoseReceiver:
                 logger.error(f"[PoseReceiver] Pose extraction failed: {e}")
                 return None
 
-
     def get_pose_history(self):
         return list(self._history)
 
     # Receives a 3x4 pose matrix in binary format (12 floats, little-endian)
-    def _recv_loop(self) -> None: 
-        assert self._sock is not None
+    def _recv_loop(self) -> None:
+        logger.info("[PoseReceiver] Starting receive loop...")
+        assert self._sock is not None  # Ensure the socket is initialized
+        logger.info(f"[PoseReceiver] Listening on {self.host}:{self.port}")
+
         while not self._stop_event.is_set():
             try:
-                try:
-                    conn, _ = self._sock.accept()
-                    logger.info("[PoseReceiver] Client connected.")
-                except socket.timeout:
-                    continue
-                conn.settimeout(1) 
-                with conn: 
-                    while not self._stop_event.is_set():
-                        data = self._recvall(conn, 48)
-                        logger.debug(f"[PoseReceiver] Raw pose bytes received: {data}")
-                        if not data:
-                            break
-                        pose = struct.unpack('<12f', data)
-                        logger.debug(f"[PoseReceiver] Decoded pose: {pose}")
-                        matrix = [list(pose[i*4:(i+1)*4]) for i in range(3)]
-                        with self._lock:
-                            self._latest_pose = matrix
-                            self._history.append((time.time(), matrix))
+                self._sock.settimeout(None)  # block forever until first connection
+                self._conn, addr = self._sock.accept()
+                print(f"[PoseReceiver] Accepted connection from {addr}")
+                logger.info(f"[PoseReceiver] Accepted connection from {addr}")
+                self._conn.settimeout(1)
 
-                        # Log the received translation for debugging
-                        tx, ty, tz = matrix[0][3], matrix[1][3], matrix[2][3]
-                        logger.debug(f"[PoseReceiver] Received Tcw translation: ({tx:.3f}, {ty:.3f}, {tz:.3f})")
+                while not self._stop_event.is_set():
+                    data = self._recvall(self._conn, 48)
+                    if not data:
+                        logger.warning("[PoseReceiver] Client disconnected or sent no data.")
+                        break
 
-            except OSError:
-                break
+                    pose = struct.unpack('<12f', data)
+                    matrix = [list(pose[i * 4:(i + 1) * 4]) for i in range(3)]
+                    with self._lock:
+                        self._latest_pose = matrix
+                        self._history.append((time.time(), matrix))
+
+                    tx, ty, tz = matrix[0][3], matrix[1][3], matrix[2][3]
+                    print(f"[PoseReceiver] Received Twc translation: ({tx:.3f}, {ty:.3f}, {tz:.3f})")
+                    logger.debug(f"[PoseReceiver] Received Twc translation: ({tx:.3f}, {ty:.3f}, {tz:.3f})")
+
+                # Clean up connection after client disconnects
+                if self._conn:
+                    self._conn.close()
+                    self._conn = None
+
             except Exception as e:
-                logger.error("Error: %s", e)
+                logger.error("[PoseReceiver] accept() or recv loop error: %s", e)
+                time.sleep(1)  # Brief pause before retrying
+
         logger.info("PoseReceiver stopped")
 
     def _recvall(self, conn: socket.socket, n: int) -> bytes:
@@ -116,3 +136,4 @@ class PoseReceiver:
                 return b''
             data += packet
         return data
+

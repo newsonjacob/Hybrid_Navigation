@@ -12,7 +12,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 from slam_bridge.slam_receiver import get_latest_pose
 
 # --- Global logger for this module ---
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("slam_plotter")
 logger.info("SLAM plotter script started.")
 
 # --- Optional pose-specific log file ---
