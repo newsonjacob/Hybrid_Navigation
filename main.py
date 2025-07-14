@@ -75,7 +75,7 @@ def main() -> None:
 
     slam_server_host = args.slam_server_host or config.get("network", "slam_server_host", fallback="127.0.0.1")
     slam_server_port = int(args.slam_server_port or config.get("network", "slam_server_port", fallback="6000"))
-    slam_receiver_host = "127.0.0.1"
+    slam_receiver_host = "0.0.0.0"
     print(f"[main.py] SLAM receiver host resolved to: {slam_receiver_host}")
 
     slam_receiver_port = int(args.slam_receiver_port or config.get("network", "slam_receiver_port", fallback="6001"))

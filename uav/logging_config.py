@@ -116,18 +116,18 @@ def setup_logging(
                 handler.setFormatter(formatter)
                 logger.addHandler(handler)
 
+    # # === Optional: Print active loggers and handlers for debugging ===
+    # for mod in module_logs or {}:
+    #     logger = logging.getLogger(mod)
+    #     for h in logger.handlers:
+    #         print(f"[CHECK] Handler for {mod}: {h.baseFilename if hasattr(h, 'baseFilename') else h}")
 
-    for mod in module_logs or {}:
-        logger = logging.getLogger(mod)
-        for h in logger.handlers:
-            print(f"[CHECK] Handler for {mod}: {h.baseFilename if hasattr(h, 'baseFilename') else h}")
-
-    # === Optional: Print active loggers and handlers for debugging ===
-    for name, obj in logging.root.manager.loggerDict.items():
-        if isinstance(obj, logging.Logger):
-            print(f"[LOGGER] {name} — handlers: {obj.handlers}")
-        else:
-            print(f"[PLACEHOLDER] {name}")
+    # # === Optional: Print active loggers and handlers for debugging ===
+    # for name, obj in logging.root.manager.loggerDict.items():
+    #     if isinstance(obj, logging.Logger):
+    #         print(f"[LOGGER] {name} — handlers: {obj.handlers}")
+    #     else:
+    #         print(f"[PLACEHOLDER] {name}")
 
 
 

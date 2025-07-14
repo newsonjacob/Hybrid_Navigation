@@ -41,6 +41,8 @@ def launch_control_gui(param_refs, nav_mode="unknown"):
         """Signal the main loop to terminate by creating a stop flag file."""
         from pathlib import Path
         Path("flags/stop.flag").touch()
+        exit_flag.set()
+        root.destroy()
 
     def on_launch_sim():
         """Write selected nav mode to a flag file to trigger simulation startup."""

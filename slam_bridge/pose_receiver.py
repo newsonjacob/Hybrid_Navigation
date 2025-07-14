@@ -46,10 +46,11 @@ class PoseReceiver:
 
     def stop(self) -> None: # Stop the receiver and clear resources.
         logger.info("[PoseReceiver] Stopping receiver...")
-        self._stop_event.set() # Signal the thread to stop.
-        if self._sock: # Close the socket if it exists.
+        self._stop_event.set()  # Signal the thread to stop.
+
+        # Wake accept() by connecting then close the socket
+        if self._sock:
             try:
-                # Wake accept() by connecting then close the socket
                 try:
                     socket.create_connection((self.host, self.port), timeout=0.1).close()
                 except Exception:
@@ -58,8 +59,20 @@ class PoseReceiver:
             except OSError:
                 pass
             self._sock = None
-        if self._thread: # Wait for the thread to finish
-            self._thread.join(timeout=1)
+
+        # Ensure any active connection is closed
+        if self._conn:
+            try:
+                self._conn.close()
+            except OSError:
+                pass
+            self._conn = None
+
+        # Wait for the thread to finish, warn if it doesn't exit
+        if self._thread:
+            self._thread.join(timeout=2)
+            if self._thread.is_alive():
+                logger.warning("[PoseReceiver] Thread did not exit cleanly after stop().")
 
     def get_latest_pose(self) -> Optional[Tuple[float, float, float]]:
         """
@@ -90,13 +103,18 @@ class PoseReceiver:
         assert self._sock is not None  # Ensure the socket is initialized
         logger.info(f"[PoseReceiver] Listening on {self.host}:{self.port}")
 
+        retry_count = 0
+        max_retries = None
+        
+        logger.info(f"[PoseReceiver] stop_event is set? {self._stop_event.is_set()}")
         while not self._stop_event.is_set():
             try:
                 self._sock.settimeout(None)  # block forever until first connection
+                logger.info(f"[PoseReceiver] Waiting for connection (retry {retry_count})...")
                 self._conn, addr = self._sock.accept()
-                print(f"[PoseReceiver] Accepted connection from {addr}")
                 logger.info(f"[PoseReceiver] Accepted connection from {addr}")
                 self._conn.settimeout(1)
+                retry_count = 0
 
                 while not self._stop_event.is_set():
                     data = self._recvall(self._conn, 48)
@@ -120,8 +138,12 @@ class PoseReceiver:
                     self._conn = None
 
             except Exception as e:
-                logger.error("[PoseReceiver] accept() or recv loop error: %s", e)
-                time.sleep(1)  # Brief pause before retrying
+                retry_count += 1
+                logger.error(f"[PoseReceiver] accept() or recv loop error (retry {retry_count}): {e}")
+                if max_retries is not None and retry_count >= max_retries:
+                    logger.error("[PoseReceiver] Maximum retries reached, stopping receiver loop.")
+                    break
+                time.sleep(2)
 
         logger.info("PoseReceiver stopped")
 

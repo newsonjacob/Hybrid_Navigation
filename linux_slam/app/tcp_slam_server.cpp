@@ -142,8 +142,8 @@ bool send_pose(int pose_sock, const cv::Mat& Tcw) {
 // ------- Main function to set up the TCP server, receive images, and process them with ORB-SLAM2 -------
 int main(int argc, char **argv) {
     // Redirect stdout and stderr to log files
-    freopen("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/slam_console.txt", "w", stdout);
-    freopen("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/slam_console_err.txt", "w", stderr);
+    (void)freopen("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/slam_console.txt", "w", stdout);
+    (void)freopen("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/slam_console_err.txt", "w", stderr);
     // Set the locale to C for consistent number formatting
     if (argc < 3) {
         cerr << "Usage: ./tcp_slam_server path_to_vocabulary path_to_settings [log_file_path]" << endl;
@@ -187,68 +187,55 @@ int main(int argc, char **argv) {
     log_event("[INFO] SLAM system initialized.");
 
     // -- Setup TCP server for receiving AirSim images --
+    log_event("[DEBUG] Creating server socket for AirSim image stream...");
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd == -1) {
-        log_event("Socket creation failed");
+        log_event("[ERROR] Socket creation failed for AirSim image stream.");
         return 1;
     }
-    // Set socket options to allow reuse of the address and port
+    log_event("[DEBUG] Server socket created successfully.");
+
     int opt = 1;
-    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)); // Allow reuse of address and port
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)) < 0) {
+        log_event("[WARN] setsockopt failed for server_fd.");
+    } else {
+        log_event("[DEBUG] setsockopt SO_REUSEADDR | SO_REUSEPORT succeeded.");
+    }
 
-    sockaddr_in address; // Define the address structure
-    address.sin_family = AF_INET; // Use IPv4
-    address.sin_addr.s_addr = INADDR_ANY;  // binds to 0.0.0.0 — all interfaces
+    sockaddr_in address;
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(6000);
-    
-    // Bind the socket to the address and port
+
+    log_event("[DEBUG] Binding server socket to port 6000...");
     if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-        cerr << "Bind failed" << endl;
+        log_event("[ERROR] Bind failed for server_fd.");
         close(server_fd);
         return 1;
     }
-    // Set the socket to listen for incoming connections
+    log_event("[DEBUG] Bind succeeded for server_fd.");
+
+    log_event("[DEBUG] Listening for incoming connections on port 6000...");
     if (listen(server_fd, 1) < 0) {
-        cerr << "Listen failed" << endl;
+        log_event("[ERROR] Listen failed for server_fd.");
         close(server_fd);
         return 1;
     }
-    cout << "[INFO] Waiting for Python streamer on port 6000..." << endl;
+    log_event("[DEBUG] Listen succeeded. Waiting for Python streamer...");
 
-    // Log the event
     int addrlen = sizeof(address);
-    log_event("Calling accept() and waiting for streamer...");
-    log_event("[INFO] Calling accept() and waiting for streamer...");
-    std::cout.flush();
-
-    // Accept a client connection
+    log_event("[DEBUG] Calling accept() to wait for streamer...");
     int sock = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
     if (sock < 0) {
         log_event("[ERROR] Failed to accept() client connection.");
-        cerr << "Accept failed" << endl;
         close(server_fd);
         return 1;
     }
-    log_event("✅ Client connection accepted");
-    std::cout << "[BOOT] Client connection accepted" << std::endl;
-    std::cout.flush();
-    log_event("Client connection accepted, entering image receive loop.");
-
-    // Log the connection details
-    if (sock < 0) {
-        cerr << "Accept failed" << endl;
-        close(server_fd);
-        return 1;
-    }
-    cout << "[INFO] Connected to Python streamer!" << endl;
-
-    // --- Initialize SLAM ---
-    bool slam_ready_flag_written = false;
-    bool clean_exit = true;
-    int frame_counter = 0;
+    log_event("[INFO] Client connection accepted on image stream socket.");
+    log_event("[DEBUG] sock value after accept: " + std::to_string(sock));
 
     // --- Setup pose sender socket ---
-    // Initialize pose sender socket
+    log_event("[DEBUG] Creating pose sender socket...");
     int pose_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (pose_sock < 0) {
         log_event("[ERROR] Could not create pose sender socket.");
@@ -261,26 +248,25 @@ int main(int argc, char **argv) {
         pose_addr.sin_port = htons(POSE_RECEIVER_PORT);
         inet_pton(AF_INET, POSE_RECEIVER_IP, &pose_addr.sin_addr);
 
-        // Log IP and port information
         char ip_str[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &pose_addr.sin_addr, ip_str, INET_ADDRSTRLEN);
         std::ostringstream sockinfo;
         sockinfo << "[DEBUG] Attempting connection to pose receiver at "
-                << ip_str << ":" << ntohs(pose_addr.sin_port);
+                 << ip_str << ":" << ntohs(pose_addr.sin_port);
         log_event(sockinfo.str());
 
-        log_event("Connecting to Python pose receiver...");
+        log_event("[DEBUG] Connecting to Python pose receiver...");
         bool connected = false;
         for (int attempt = 0; attempt < 10; ++attempt) {
             int pose_conn = connect(pose_sock, (struct sockaddr*)&pose_addr, sizeof(pose_addr));
             if (pose_conn >= 0) {
                 connected = true;
-                log_event("✅ Connected to Python pose receiver.");
+                log_event("[INFO] Connected to Python pose receiver.");
                 break;
             } else {
                 std::ostringstream retry_msg;
                 retry_msg << "[WARN] Attempt " << (attempt + 1)
-                        << " failed to connect to Python pose receiver — retrying in 1s...";
+                          << " failed to connect to Python pose receiver — retrying in 1s...";
                 log_event(retry_msg.str());
                 std::this_thread::sleep_for(std::chrono::seconds(1));
             }
@@ -299,8 +285,10 @@ int main(int argc, char **argv) {
     cv::Mat imLeft, imRight;
     cv::Mat imLeftGray, imRightGray;
 
-    while (true) {
-        int snapshot_limit = 5;             
+    int frame_counter = 0;              // Add this line
+    bool slam_ready_flag_written = false; // Add this line
+
+    while (true) {       
         log_event("----- Begin image receive loop -----");
 
         // Log the loop start time
@@ -334,7 +322,7 @@ int main(int argc, char **argv) {
         {
             std::ostringstream log;
             log << "[DEBUG] Left image received: "
-                << "height=" << left_rgb.rows
+                << "height="<< left_rgb.rows
                 << ", width=" << left_rgb.cols
                 << ", expected bytes=" << rgb_bytes
                 << ", actual buffer size=" << left_buffer.size();
@@ -623,9 +611,6 @@ int main(int argc, char **argv) {
                 log_event("[ERROR] Pose socket is not valid.");
             }
         }
-
-
-        int track_state = SLAM.GetTracker()->mState;
         
         // Diagnostic: Log the tracking state
         std::ostringstream pose_check;
@@ -715,19 +700,12 @@ int main(int argc, char **argv) {
     }
 
     // --- Cleanup and exit ---
-    if (clean_exit) {
-        log_event("Image receive loop exited cleanly (no error).");
-        std::cout << "[INFO] Image receive loop exited cleanly (no error)." << std::endl;
-    } else {
-        log_event("Image receive loop exited due to error or disconnect.");
-        std::cout << "[INFO] Image receive loop exited due to error or disconnect." << std::endl;
-    }
-    log_event("Connection closed or error occurred. Shutting down main loop.");
-    std::cout << "[INFO] Connection closed or error occurred. Shutting down." << std::endl;
+    log_event("[DEBUG] Closing sockets and cleaning up...");
     close(sock);
     close(server_fd);
     if (pose_sock >= 0) close(pose_sock);
     if (pose_log_stream.is_open()) pose_log_stream.close();
+    log_event("[DEBUG] Sockets closed. SLAM server shutting down.");
     SLAM.Shutdown();
     return 0;
 }
