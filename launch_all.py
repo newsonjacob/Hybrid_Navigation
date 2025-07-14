@@ -324,10 +324,10 @@ def main(timestamp):
             # --- STEP 4: Launch SLAM backend in WSL ---
             # Start receiver
             from slam_bridge.slam_receiver import start_receiver
-            start_receiver("127.0.0.1", 6001)
+            start_receiver("0.0.0.0", 6001)
 
             # Wait for receiver to be ready
-            wait_for_port("127.0.0.1", 6001)
+            wait_for_port("0.0.0.0", 6001)
 
             # Launch SLAM backend
             slam_proc = launch_slam_backend(slam_receiver_host, slam_receiver_port)
