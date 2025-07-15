@@ -10,6 +10,7 @@ import logging
 from uav.logging_config import setup_logging
 from uav.utils import retain_recent_logs
 from uav.cli import parse_args
+import threading
 
 if 'pytest' in os.path.basename(sys.argv[0]):
     sys.argv = [sys.argv[0]]
@@ -310,7 +311,7 @@ def main(timestamp):
 
     main_proc = slam_proc = stream_proc = ffmpeg_proc = None
     slam_video_path = None
-
+    logger.info(f"[MAIN] Starting main.py with config: {args.config}")
     try:
         logger.info(f"[MAIN] Launching Unreal Engine + main.py with nav_mode={args.nav_mode}")
         main_proc = subprocess.Popen([
@@ -390,26 +391,7 @@ def main(timestamp):
         logger.info("[MAIN] Final shutdown sequence.")
         shutdown_all(main_proc, slam_proc, stream_proc, ffmpeg_proc, slam_video_path)
 
-if __name__ == "__main__":
-    # --- CLEANUP FLAGS FIRST ---
-    for flag in [AIRSIM_READY_FLAG, SLAM_READY_FLAG, SLAM_FAILED_FLAG, START_NAV_FLAG, STOP_FLAG, flags_dir / "nav_mode.flag"]:
-        try:
-            flag.unlink()
-        except FileNotFoundError:
-            pass
-        except PermissionError:
-            logger.warning(f"Could not delete {flag} due to permission error.")
-
-    # --- LAUNCH GUI ---
-    param_refs = {
-        "L": [0.0],
-        "C": [0.0],
-        "R": [0.0],
-        "state": ["idle"]
-    }
-    start_gui(param_refs)
-
-    # Wait for user to select nav mode and launch simulation
+def wait_for_nav_mode_and_launch():
     logger.info("Waiting for user to select navigation mode and launch simulation...")
     while not os.path.exists("flags/nav_mode.flag"):
         if STOP_FLAG.exists():
@@ -427,3 +409,27 @@ if __name__ == "__main__":
         main(timestamp)
     finally:
         retain_recent_logs("logs")
+
+if __name__ == "__main__":
+    # --- CLEANUP FLAGS FIRST ---
+    for flag in [AIRSIM_READY_FLAG, SLAM_READY_FLAG, SLAM_FAILED_FLAG, START_NAV_FLAG, STOP_FLAG, flags_dir / "nav_mode.flag"]:
+        try:
+            flag.unlink()
+        except FileNotFoundError:
+            pass
+        except PermissionError:
+            logger.warning(f"Could not delete {flag} due to permission error.")
+
+    param_refs = {
+        "L": [0.0],
+        "C": [0.0],
+        "R": [0.0],
+        "state": ["idle"]
+    }
+
+    # Start the simulation launcher in a background thread
+    sim_thread = threading.Thread(target=wait_for_nav_mode_and_launch, daemon=True)
+    sim_thread.start()
+
+    # Start the GUI in the main thread (this blocks until GUI closes)
+    start_gui(param_refs)

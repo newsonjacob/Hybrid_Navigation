@@ -21,6 +21,8 @@ class PoseReceiver:
         self._stop_event = threading.Event()
         self._lock = threading.Lock()
         self._latest_pose: Optional[List[List[float]]] = None
+        self._latest_inliers: Optional[int] = None
+        self._latest_covariance: Optional[float] = None
         self._history = deque(maxlen=history_size)
         self._conn: Optional[socket.socket] = None
 
@@ -94,6 +96,14 @@ class PoseReceiver:
                 logger.error(f"[PoseReceiver] Pose extraction failed: {e}")
                 return None
 
+    def get_latest_inliers(self) -> Optional[int]:
+        with self._lock:
+            return self._latest_inliers
+
+    def get_latest_covariance(self) -> Optional[float]:
+        with self._lock:
+            return self._latest_covariance
+
     def get_pose_history(self):
         return list(self._history)
 
@@ -109,6 +119,7 @@ class PoseReceiver:
         logger.info(f"[PoseReceiver] stop_event is set? {self._stop_event.is_set()}")
         while not self._stop_event.is_set():
             try:
+                # Set the socket to block until a connection is made
                 self._sock.settimeout(None)  # block forever until first connection
                 logger.info(f"[PoseReceiver] Waiting for connection (retry {retry_count})...")
                 self._conn, addr = self._sock.accept()
@@ -116,18 +127,39 @@ class PoseReceiver:
                 self._conn.settimeout(1)
                 retry_count = 0
 
+                # Start receiving data from the client
                 while not self._stop_event.is_set():
                     data = self._recvall(self._conn, 48)
                     if not data:
                         logger.warning("[PoseReceiver] Client disconnected or sent no data.")
                         break
 
+                    # Expecting 12 floats (3x4 matrix) = 48 bytes
                     pose = struct.unpack('<12f', data)
                     matrix = [list(pose[i * 4:(i + 1) * 4]) for i in range(3)]
                     with self._lock:
                         self._latest_pose = matrix
                         self._history.append((time.time(), matrix))
 
+                    # --- Receive covariance (float, 4 bytes) ---
+                    cov_data = self._recvall(self._conn, 4)
+                    if cov_data and len(cov_data) == 4:
+                        self._latest_covariance = struct.unpack('<f', cov_data)[0]
+                        logger.debug(f"[PoseReceiver] Received covariance: {self._latest_covariance}")
+                    else:
+                        self._latest_covariance = None
+                        logger.warning("[PoseReceiver] Covariance data missing or incomplete.")
+
+                    # --- Receive inliers (int, 4 bytes) ---
+                    inlier_data = self._recvall(self._conn, 4)
+                    if inlier_data and len(inlier_data) == 4:
+                        self._latest_inliers = struct.unpack('<i', inlier_data)[0]
+                        logger.debug(f"[PoseReceiver] Received inlier count: {self._latest_inliers}")
+                    else:
+                        self._latest_inliers = None
+                        logger.warning("[PoseReceiver] Inlier data missing or incomplete.")
+
+                    # Log the received pose
                     tx, ty, tz = matrix[0][3], matrix[1][3], matrix[2][3]
                     print(f"[PoseReceiver] Received Twc translation: ({tx:.3f}, {ty:.3f}, {tz:.3f})")
                     logger.debug(f"[PoseReceiver] Received Twc translation: ({tx:.3f}, {ty:.3f}, {tz:.3f})")

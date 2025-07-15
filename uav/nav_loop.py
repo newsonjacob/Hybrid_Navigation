@@ -32,9 +32,14 @@ from uav import config
 from uav.logging_helpers import log_frame_data, write_video_frame, write_frame_output, handle_reset
 from uav.perception_loop import perception_loop, start_perception_thread, process_perception_data
 from uav.navigation_core import detect_obstacle, determine_side_safety, handle_obstacle, navigation_step, apply_navigation_decision
+from uav.navigation_slam_boot import run_slam_bootstrap
+from uav.slam_utils import is_slam_stable
 
 logger = logging.getLogger("nav_loop")
 logger.warning("[TEST] __name__ = %s | handlers = %s", __name__, logger.handlers)
+
+frame_counter = 0
+MIN_INLIERS_THRESHOLD = 100  # Minimum inliers to consider SLAM stable
 
 # Grace period duration (seconds) after dodge/brake actions
 NAV_GRACE_PERIOD_SEC = 0.5
@@ -99,13 +104,16 @@ def navigation_loop(args, client, ctx):
     exit_flag, flow_history, navigator = ctx['exit_flag'], ctx['flow_history'], ctx['navigator']
     param_refs, state_history, pos_history = ctx['param_refs'], ctx['state_history'], ctx['pos_history']
     perception_queue, frame_queue, video_thread = ctx['perception_queue'], ctx['frame_queue'], ctx['video_thread']
+
     out, log_file, log_buffer = ctx['out'], ctx['log_file'], ctx['log_buffer']
     start_time, timestamp, fps_list, fourcc = ctx['start_time'], ctx['timestamp'], ctx['fps_list'], ctx['fourcc']
+
     MAX_FLOW_MAG, MAX_VECTOR_COMPONENT = config.MAX_FLOW_MAG, config.MAX_VECTOR_COMPONENT
     GRACE_PERIOD_SEC, MAX_SIM_DURATION = config.GRACE_PERIOD_SEC, args.max_duration
     GOAL_X, GOAL_Y = args.goal_x, config.GOAL_Y
     frame_count, target_fps, frame_duration = 0, config.TARGET_FPS, 1.0 / config.TARGET_FPS
     grace_logged, startup_grace_over = False, False
+    logger.info("[NavLoop] Starting navigation loop with args: %s", args)
     try:
         loop_start = time.time()
         while not exit_flag.is_set():
@@ -178,11 +186,13 @@ def navigation_loop(args, client, ctx):
 
 def is_obstacle_ahead(client, depth_threshold=2.0, vehicle_name="UAV"):
     from airsim import ImageRequest, ImageType
+    logger.info("[Obstacle Check] Checking for obstacles ahead.")
     try:
         responses = client.simGetImages([
             ImageRequest("oakd_camera", ImageType.DepthPlanar, True)
         ], vehicle_name=vehicle_name)
         if not responses or responses[0].height == 0:
+            logger.error("[Obstacle Check] No depth image received or image height is zero.")
             return False, None
         depth_image = airsim.get_pfm_array(responses[0])
         h, w = depth_image.shape
@@ -197,7 +207,9 @@ def is_obstacle_ahead(client, depth_threshold=2.0, vehicle_name="UAV"):
 import subprocess
 
 def generate_pose_comparison_plot():
+    logger.info("[Plotting] Generating pose comparison plot.")
     try:
+        logger.info("[Plotting] Running pose_comparison_plotter.py script.")
         result = subprocess.run(
             ["python", "slam_bridge/pose_comparison_plotter.py"],
             check=True,
@@ -207,6 +219,7 @@ def generate_pose_comparison_plot():
         print("[Plotting] Pose comparison plot generated.")
         print(result.stdout)
     except subprocess.CalledProcessError as e:
+        logger.error("[Plotting] Failed to generate pose comparison plot.")
         print("[Plotting] Failed to generate plot:")
         print(e.stderr)
 
@@ -214,17 +227,14 @@ def slam_navigation_loop(args, client, ctx):
     """
     Main navigation loop for SLAM-based navigation with basic obstacle avoidance.
     """
-    from uav.navigation_slam_boot import run_slam_bootstrap
-
     # After drone takeoff and camera ready
-    run_slam_bootstrap(client, duration=8.0)  # you can tune this
+    run_slam_bootstrap(client, duration=2.0)  # you can tune this
     time.sleep(1.0)  # Let SLAM settle after bootstrap
 
-    logger.info("[SLAMNav] Starting SLAM navigation loop with obstacle avoidance.")
-    logger.debug("[SLAMNav] Starting SLAM navigation loop with obstacle avoidance.")
+    logger.info("[SLAMNav] Starting SLAM navigation loop.")
 
     from slam_bridge.slam_receiver import get_latest_pose, get_pose_history
-    from slam_bridge.frontier_detection import detect_frontiers
+    from slam_bridge.frontier_detection import detect_frontiers  
 
     # --- Incorporate exit_flag from ctx for GUI stop button ---
     exit_flag = None
@@ -242,6 +252,14 @@ def slam_navigation_loop(args, client, ctx):
     goal_z = getattr(args, "goal_z", -2) if hasattr(args, "goal_z") else -2
     threshold = 0.5  # meters
 
+    # --- Define waypoints for SLAM navigation ---
+    waypoints = [
+        (5, 0, -2),  # (x, y, z)
+        (10, 0, -2),
+        (29, 0, -2)
+    ]
+    current_waypoint_index = 0
+    logger.info("[DEBUG] Entered slam_navigation_loop")
     try:
         while True:
             # --- Check for exit_flag to allow GUI stop button to interrupt navigation ---
@@ -249,6 +267,7 @@ def slam_navigation_loop(args, client, ctx):
                 logger.info("[SLAMNav] Stop flag detected. Landing and exiting navigation loop.")
                 client.landAsync().join()
                 break
+
             # --- Get the latest SLAM pose ---
             pose = get_latest_pose()
             if pose is None: # No pose received, hover to recover
@@ -256,69 +275,66 @@ def slam_navigation_loop(args, client, ctx):
                 client.hoverAsync().join()
                 time.sleep(1.0)  # allow SLAM to reinitialize
                 continue
+
+            # --- Check if SLAM is stable ---
+            if not is_slam_stable():  # Check SLAM stability
+                logger.warning("[SLAMNav] SLAM is unstable. Pausing navigation.")
+                client.hoverAsync().join()  # Pause the drone (hover)
+                break  # Exit the loop or you can reset/restart SLAM if necessary
             else:
-                x, y, z = pose # Unpack the pose
-                logger.info(f"[SLAMNav] Received pose: x={x:.2f}, y={y:.2f}, z={z:.2f}")
+                logger.info("[SLAMNav] SLAM is stable. Continuing navigation.")
 
-                # Detect exploration frontiers from accumulated SLAM poses
-                history = get_pose_history()
-                map_pts = np.array(
-                    [[m[0][3], m[1][3], m[2][3]] for _, m in history], dtype=float
+            x, y, z = pose # Unpack the pose
+            logger.info(f"[SLAMNav] Received pose: x={x:.2f}, y={y:.2f}, z={z:.2f}")
+
+            # Detect exploration frontiers from accumulated SLAM poses
+            history = get_pose_history()
+            map_pts = np.array(
+                [[m[0][3], m[1][3], m[2][3]] for _, m in history], dtype=float
+            )
+            frontiers = detect_frontiers(map_pts)
+            if frontiers.size:
+                logger.debug(
+                    "[SLAMNav] Frontier voxels detected: %d", len(frontiers)
                 )
-                frontiers = detect_frontiers(map_pts)
-                if frontiers.size:
-                    logger.debug(
-                        "[SLAMNav] Frontier voxels detected: %d", len(frontiers)
-                    )
-                    logger.debug(
-                        "[SLAMNav] Sample frontier: x=%.2f y=%.2f z=%.2f",
-                        frontiers[0][0],
-                        frontiers[0][1],
-                        frontiers[0][2],
-                    )
+                logger.debug(
+                    "[SLAMNav] Sample frontier: x=%.2f y=%.2f z=%.2f",
+                    frontiers[0][0],
+                    frontiers[0][1],
+                    frontiers[0][2],
+                )
 
-                # Check for collision/obstacle
-                collision = client.simGetCollisionInfo()
-                if getattr(collision, "has_collided", False):
-                    logger.warning("[SLAMNav] Obstacle detected! Executing avoidance maneuver.")
-                    # Back up and try to move sideways
-                    client.moveByVelocityAsync(-1.0, 0, 0, 1).join()  # Back up
-                    client.moveByVelocityAsync(0, 1.0, 0, 1).join()   # Move right
-                    continue
+            # Check for collision/obstacle
+            collision = client.simGetCollisionInfo()
+            if getattr(collision, "has_collided", False):
+                logger.warning("[SLAMNav] Obstacle detected! Executing avoidance maneuver.")
+                # Back up and try to move sideways
+                client.moveByVelocityAsync(-1.0, 0, 0, 1).join()  # Back up
+                continue
 
-                # Depth-based obstacle check before moving toward the goal
-                ahead, depth = is_obstacle_ahead(client)
-                if ahead:
-                    msg = "[SLAMNav] Depth obstacle detected"
-                    if depth is not None:
-                        msg += f" at {depth:.2f}m"
-                    logger.warning(msg)
-                    if navigator is not None:
-                        navigator.dodge(0, 0, 0, direction="right")
-                    else:
-                        client.hoverAsync().join()
-                    continue
+            # --- Get the current waypoint (goal) ---
+            goal_x, goal_y, goal_z = waypoints[current_waypoint_index]
 
-                # Check if goal reached
-                if abs(x - goal_x) < threshold and abs(y - goal_y) < threshold:
-                    if frontiers.size:
-                        goal_x, goal_y, _ = frontiers[0]
-                        logger.info(
-                            "[SLAMNav] Goal reached — switching to frontier at x=%.2f y=%.2f",
-                            goal_x,
-                            goal_y,
-                        )
-                    else:
-                        logger.info("[SLAMNav] Goal reached — landing.")
-                        client.moveToPositionAsync(x, y, goal_z, 1).join()
-                        client.landAsync().join()
-                        break
+            # --- Calculate the distance to the current waypoint ---
+            distance_to_goal = np.sqrt((x - goal_x)**2 + (y - goal_y)**2)
+            logger.info(f"Distance to waypoint: {distance_to_goal:.2f} meters")
 
-                # Move toward goal using Navigator helper
-                if navigator is None:
-                    navigator = Navigator(client)
-                last_action = navigator.slam_to_goal(pose, (goal_x, goal_y, goal_z))
-                logger.info("[SLAMNav] Action: %s", last_action)
+            # --- If the drone is within the threshold of the waypoint, move to the next waypoint ---
+            if distance_to_goal < threshold:  # Threshold for reaching waypoint
+                logger.info(f"Reached waypoint {current_waypoint_index + 1}, moving to next waypoint.")
+                current_waypoint_index = (current_waypoint_index + 1) % len(waypoints)  # Move to next waypoint
+
+            # --- Use SLAM for deliberative navigation ---
+            if navigator is None:
+                navigator = Navigator(client)
+            last_action = navigator.slam_to_goal(pose, (goal_x, goal_y, goal_z))
+            logger.info("[SLAMNav] Action: %s", last_action)
+        
+            # --- Check if the stop flag is set ---
+            if os.path.exists(STOP_FLAG_PATH):
+                logger.info("Stop flag detected. Landing and shutting down.")
+                client.landAsync().join()
+                break
 
             # End condition
             if time.time() - start_time > max_duration:
@@ -326,7 +342,20 @@ def slam_navigation_loop(args, client, ctx):
                 client.landAsync().join()
                 break
 
-            time.sleep(0.1)
+            # # Depth-based obstacle check before moving toward the goal # Depth check optional
+            # ahead, depth = is_obstacle_ahead(client)
+            # if ahead:
+            #     msg = "[SLAMNav] Depth obstacle detected"
+            #     if depth is not None:
+            #         msg += f" at {depth:.2f}m"
+            #     logger.warning(msg)
+            #     if navigator is not None:
+            #         navigator.dodge(0, 0, 0, direction="right")
+            #     else:
+            #         client.hoverAsync().join()
+            #     continue
+
+            time.sleep(0.1)  # Allow for periodic updates
     except KeyboardInterrupt:
         logger.info("[SLAMNav] Interrupted by user.")
         client.landAsync().join()

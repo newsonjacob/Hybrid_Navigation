@@ -190,15 +190,9 @@ def start_gui(param_refs=None, nav_mode="unknown"):
     simulation startup while the GUI runs in the background.
     """
     if param_refs is None:
-        Thread(
-            target=gui_exit,
-            daemon=True,
-        ).start()
+        gui_exit()
     else:
-        Thread(
-            target=lambda: launch_control_gui(param_refs, nav_mode),
-            daemon=True,
-        ).start()
+        launch_control_gui(param_refs, nav_mode)
 
 def gui_exit():
     """Show a small window with a single STOP button.

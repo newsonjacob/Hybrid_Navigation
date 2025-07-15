@@ -135,9 +135,23 @@ class SlamReceiver:
     def get_pose_history(self):
         return self.receiver.get_pose_history()
 
+    def get_latest_inliers(self) -> Optional[int]:
+        return self.receiver.get_latest_inliers()
+
+    def get_latest_covariance(self) -> Optional[float]:
+        return self.receiver.get_latest_covariance()
+    
+def get_latest_inliers() -> Optional[int]:
+    if _manager is not None:
+        return _manager.get_latest_inliers()
+    return None
+
+def get_latest_covariance() -> Optional[float]:
+    if _manager is not None:
+        return _manager.get_latest_covariance()
+    return None
 
 _manager: Optional[SlamReceiver] = None
-
 
 def start_receiver(host: str = HOST, port: int = PORT) -> Optional[threading.Thread]:
     global _manager
@@ -165,7 +179,6 @@ def get_pose_history():
     if _manager is not None:
         return _manager.get_pose_history()
     return []
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="SLAM pose receiver")
