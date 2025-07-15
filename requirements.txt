@@ -7,3 +7,4 @@ pandas>=1.5,<1.6
 plotly>=5.15,<5.20
 scipy>=1.10,<1.11
 pytest>=7.2,<8
+psutil>=5.9,<6

@@ -11,6 +11,9 @@ from uav.logging_config import setup_logging
 from uav.utils import retain_recent_logs
 from uav.cli import parse_args
 
+if 'pytest' in os.path.basename(sys.argv[0]):
+    sys.argv = [sys.argv[0]]
+
 args = parse_args()
 
 # --- Set default stream mode based on nav mode ---
@@ -62,6 +65,7 @@ AIRSIM_READY_FLAG = flags_dir / "airsim_ready.flag"
 SLAM_READY_FLAG = flags_dir / "slam_ready.flag"
 SLAM_FAILED_FLAG = flags_dir / "slam_failed.flag"
 START_NAV_FLAG = flags_dir / "start_nav.flag"
+STOP_FLAG = flags_dir / "stop.flag"
 
 def shutdown_all(main_proc=None, slam_proc=None, stream_proc=None, ffmpeg_proc=None, slam_video_path=None, sim_proc=None):
     """Terminate all subprocesses and clean temporary files.
@@ -72,7 +76,7 @@ def shutdown_all(main_proc=None, slam_proc=None, stream_proc=None, ffmpeg_proc=N
     logger.info("[SHUTDOWN] Initiating shutdown sequence for all subprocesses.")
     # --- CLEAN UP streamer ---
     if stream_proc is not None:
-        logger.info("[SHUTDOWN] Terminating SLAM streamer (PID %s)", stream_proc.pid)
+        logger.info("[SHUTDOWN] Terminating SLAM streamer (PID %s)", getattr(stream_proc, "pid", "n/a"))
         stream_proc.terminate()
         try:
             stream_proc.wait(timeout=5)
@@ -83,7 +87,7 @@ def shutdown_all(main_proc=None, slam_proc=None, stream_proc=None, ffmpeg_proc=N
 
     # --- CLEAN UP SLAM ---
     if slam_proc is not None:
-        logger.info("[SHUTDOWN] Terminating SLAM backend (PID %s)", slam_proc.pid)
+        logger.info("[SHUTDOWN] Terminating SLAM backend (PID %s)", getattr(slam_proc, "pid", "n/a"))
         slam_proc.terminate()
         try:
             slam_proc.wait(timeout=5)
@@ -94,7 +98,7 @@ def shutdown_all(main_proc=None, slam_proc=None, stream_proc=None, ffmpeg_proc=N
 
     # --- CLEAN UP FFMPEG ---
     if isinstance(ffmpeg_proc, subprocess.Popen):
-        logger.info("[SHUTDOWN] Terminating screen recording (PID %s)", ffmpeg_proc.pid)
+        logger.info("[SHUTDOWN] Terminating screen recording (PID %s)", getattr(ffmpeg_proc, "pid", "n/a"))
         ffmpeg_proc.terminate()
         try:
             ffmpeg_proc.wait(timeout=5)
@@ -105,7 +109,7 @@ def shutdown_all(main_proc=None, slam_proc=None, stream_proc=None, ffmpeg_proc=N
 
     # --- CLEAN UP main.py ---
     if main_proc is not None:
-        logger.info("[SHUTDOWN] Terminating main script (PID %s)", main_proc.pid)
+        logger.info("[SHUTDOWN] Terminating main script (PID %s)", getattr(main_proc, "pid", "n/a"))
         main_proc.terminate()
         try:
             main_proc.wait(timeout=5)
@@ -147,18 +151,25 @@ def wait_for_window(title_substring, timeout=20):
     logger.info(f"Waiting for window containing title: '{title_substring}'...")
     start_time = time.time()
     while time.time() - start_time < timeout:
+        if STOP_FLAG.exists():
+            logger.info("[WAIT] Stop flag detected - cancelling window wait")
+            return False
         titles = gw.getAllTitles()
         for title in titles:
             if title_substring.lower() in title.lower():
                 logger.info(f"Window found: '{title}'")
                 return True
         time.sleep(0.5)
-    raise TimeoutError(f"Timeout waiting for window with title containing: '{title_substring}'")
+    logger.error(f"Timeout waiting for window with title containing: '{title_substring}'")
+    return False
 
 def wait_for_flag(flag_path, timeout=15):
     logger.info(f"[WAIT] Waiting for flag: {flag_path} (timeout={timeout}s)")
     start = time.time()
     while not os.path.exists(flag_path):
+        if STOP_FLAG.exists():
+            logger.info("[WAIT] Stop flag detected - cancelling flag wait")
+            return False
         elapsed = time.time() - start
         if elapsed > timeout:
             logger.error(f"[WAIT] Timeout waiting for flag: {flag_path}")
@@ -171,6 +182,9 @@ def wait_for_port(host: str, port: int, timeout: float = 5.0):
     logger.info(f"[WAIT] Waiting for port {host}:{port} to become available (timeout={timeout}s)")
     start_time = time.time()
     while time.time() - start_time < timeout:
+        if STOP_FLAG.exists():
+            logger.info("[WAIT] Stop flag detected - cancelling port wait")
+            return False
         try:
             with socket.create_connection((host, port), timeout=1):
                 logger.info(f"[WAIT] Port {host}:{port} is now accepting connections.")
@@ -193,22 +207,9 @@ def start_streamer(host: str, port: int, stream_mode: str = "stereo"):
         "--mode", stream_mode,
         "--log-timestamp", timestamp
     ])
-    logger.info(f"[LAUNCH] SLAM image streamer started (PID {proc.pid})")
+    logger.info(f"[LAUNCH] SLAM image streamer started (PID {getattr(proc, 'pid', 'n/a')})")
     time.sleep(2)
     return proc
-
-def wait_for_port(host: str, port: int, timeout: float = 5.0):
-    logger.info(f"[wait_for_port] Waiting for {host}:{port} to become available...")
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        try:
-            with socket.create_connection((host, port), timeout=1):
-                logger.info(f"[wait_for_port] {host}:{port} is now accepting connections.")
-                return True
-        except OSError:
-            time.sleep(0.2)
-    logger.error(f"[wait_for_port] Timeout: {host}:{port} did not become ready.")
-    return False
 
 import psutil
 
@@ -237,7 +238,7 @@ def launch_slam_backend(receiver_host: str, receiver_port: int):
     ]
     logger.info(f"[LAUNCH] SLAM backend command: {' '.join(slam_cmd)}")
     proc = subprocess.Popen(slam_cmd)
-    logger.info(f"[LAUNCH] SLAM backend started (PID {proc.pid})")
+    logger.info(f"[LAUNCH] SLAM backend started (PID {getattr(proc, 'pid', 'n/a')})")
     return proc
 
 def record_slam_video(window_substring: str = "ORB-SLAM2", duration: int = 60):
@@ -290,7 +291,7 @@ def wait_for_start_flag():
         "Waiting for user to initiate navigation via GUI (flags/start_nav.flag)..."
     )
     while not START_NAV_FLAG.exists():
-        if os.path.exists("flags/stop.flag"):
+        if STOP_FLAG.exists():
             logger.info("Stop flag detected before navigation started. Shutting down.")
             return False
         time.sleep(0.2)
@@ -299,6 +300,8 @@ def wait_for_start_flag():
 
 def main(timestamp):
     args = parse_args()
+    if not hasattr(args, "stream_mode") or args.stream_mode is None:
+        args.stream_mode = "stereo"
     config = load_app_config(args.config)
     slam_server_host = args.slam_server_host or config.get("network", "slam_server_host", fallback="127.0.0.1")
     slam_server_port = int(args.slam_server_port or config.get("network", "slam_server_port", fallback="6000"))
@@ -318,13 +321,13 @@ def main(timestamp):
             "--slam-receiver-port", str(slam_receiver_port),
             "--log-timestamp", timestamp,
         ])
-        logger.info(f"[MAIN] main.py started (PID {main_proc.pid})")
+        logger.info(f"[MAIN] main.py started (PID {getattr(main_proc, 'pid', 'n/a')})")
         logger.info("[MAIN] Waiting for AirSim to fully launch...")
 
         if not wait_for_flag(AIRSIM_READY_FLAG, timeout=20):
-            logger.error("[MAIN] AirSim did not become ready in time. Shutting down.")
+            logger.error("[MAIN] AirSim did not become ready or startup was cancelled.")
             shutdown_all(main_proc)
-            sys.exit(1)
+            return False
 
         if args.nav_mode == "slam":
             logger.info("[MAIN] Launching SLAM streamer and backend for SLAM mode.")
@@ -337,7 +340,10 @@ def main(timestamp):
             logger.info("[MAIN] SLAM receiver started.")
 
             logger.info("[MAIN] Waiting for SLAM receiver port to become available...")
-            wait_for_port("0.0.0.0", 6001)
+            if not wait_for_port("127.0.0.1", 6001):
+                logger.error("[MAIN] SLAM receiver port never became ready.")
+                shutdown_all(main_proc, stream_proc)
+                return False
 
             logger.info("[MAIN] Launching SLAM backend in WSL...")
             slam_proc = launch_slam_backend(slam_receiver_host, slam_receiver_port)
@@ -345,24 +351,21 @@ def main(timestamp):
 
             logger.info("[MAIN] Waiting for SLAM backend to signal readiness...")
             if not wait_for_flag(SLAM_READY_FLAG, timeout=30):
-                logger.error("[MAIN] SLAM backend never received first image — shutting down.")
+                logger.error("[MAIN] SLAM backend never received first image or startup was cancelled.")
                 time.sleep(2)
                 shutdown_all(main_proc, slam_proc, stream_proc)
-                sys.exit(1)
+                return False
 
-            try:
-                logger.info("[MAIN] Waiting for Pangolin visualization window...")
-                wait_for_window("ORB-SLAM2", timeout=20)
-                logger.info("[MAIN] Pangolin window found.")
-            except TimeoutError as e:
-                logger.error(f"[MAIN] {e}")
-                logger.info("[MAIN] Shutting down due to missing SLAM visualization window...")
+            logger.info("[MAIN] Waiting for Pangolin visualization window...")
+            if not wait_for_window("ORB-SLAM2", timeout=20):
+                logger.error("[MAIN] SLAM visualization window not detected or startup was cancelled.")
                 shutdown_all(main_proc, slam_proc)
-                sys.exit(1)
+                return False
+            logger.info("[MAIN] Pangolin window found.")
 
             ffmpeg_proc, slam_video_path = record_slam_video("ORB-SLAM2")
             if ffmpeg_proc:
-                logger.info(f"[MAIN] Screen recording started (PID {ffmpeg_proc.pid})")
+                logger.info(f"[MAIN] Screen recording started (PID {getattr(ffmpeg_proc, 'pid', 'n/a')})")
             else:
                 logger.warning("[MAIN] Screen recording failed to start.")
 
@@ -381,6 +384,7 @@ def main(timestamp):
         logger.info("[MAIN] Waiting for main.py to finish...")
         main_proc.wait()
         logger.info("[MAIN] main.py completed.")
+        return True
 
     finally:
         logger.info("[MAIN] Final shutdown sequence.")
@@ -388,7 +392,7 @@ def main(timestamp):
 
 if __name__ == "__main__":
     # --- CLEANUP FLAGS FIRST ---
-    for flag in [AIRSIM_READY_FLAG, SLAM_READY_FLAG, SLAM_FAILED_FLAG, START_NAV_FLAG, flags_dir / "stop.flag", flags_dir / "nav_mode.flag"]:
+    for flag in [AIRSIM_READY_FLAG, SLAM_READY_FLAG, SLAM_FAILED_FLAG, START_NAV_FLAG, STOP_FLAG, flags_dir / "nav_mode.flag"]:
         try:
             flag.unlink()
         except FileNotFoundError:
@@ -408,7 +412,7 @@ if __name__ == "__main__":
     # Wait for user to select nav mode and launch simulation
     logger.info("Waiting for user to select navigation mode and launch simulation...")
     while not os.path.exists("flags/nav_mode.flag"):
-        if os.path.exists("flags/stop.flag"):
+        if STOP_FLAG.exists():
             logger.info("Stop flag detected before simulation started. Shutting down.")
             sys.exit(0)
         time.sleep(0.2)

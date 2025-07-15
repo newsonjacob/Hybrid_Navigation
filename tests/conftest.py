@@ -52,6 +52,12 @@ airsim_stub = types.SimpleNamespace(
     DrivetrainType=types.SimpleNamespace(ForwardOnly=1),
     YawMode=DummyYawMode,
     to_eularian_angles=lambda ori: (0, 0, 0),
+ImageType=types.SimpleNamespace(Scene=0),
+    ImageRequest=lambda *a, **k: None,
+    MultirotorClient=lambda: types.SimpleNamespace(
+        confirmConnection=lambda: None,
+        simGetImages=lambda reqs: []
+    ),
 )
 if "airsim" not in sys.modules:
     sys.modules["airsim"] = airsim_stub

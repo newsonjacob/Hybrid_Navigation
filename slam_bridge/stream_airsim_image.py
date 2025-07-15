@@ -40,7 +40,7 @@ logger = logging.getLogger("stream_airsim_image")
 class ImageStreamer:
     """Stream RGB + Depth or Stereo RGB images from AirSim to a TCP server."""
 
-    def __init__(self, host: str, port: int, mode: str, retries: int = 10) -> None:
+    def __init__(self, host: str, port: int, mode: str = "rgbd", retries: int = 10) -> None:
         self.host = host
         self.port = port
         self.mode = mode  # ✅ fixed typo
@@ -82,25 +82,26 @@ class ImageStreamer:
             logger.warning("[FRAME] Invalid stereo response count.")
             return
 
-        if len(responses[0].image_data_uint8) == 0 or len(responses[1].image_data_uint8) == 0:
+        right_bytes = getattr(responses[1], "image_data_uint8", None)
+        if right_bytes is None and hasattr(responses[1], "image_data_float"):
+            right_bytes = np.array(responses[1].image_data_float, dtype=np.float32).tobytes()
+
+        if len(responses[0].image_data_uint8) == 0 or len(right_bytes or b"") == 0:
             logger.warning("[FRAME] Empty stereo frame detected. Skipping this frame.")
             return
-
-        for i, resp in enumerate(responses):
-            expected_bytes = resp.height * resp.width * 3
-            actual_bytes = len(resp.image_data_uint8)
-            logger.debug(f"[FRAME] Image {i}: expected {expected_bytes} bytes, got {actual_bytes} bytes")
-            if actual_bytes != expected_bytes:
-                logger.warning(f"[FRAME] Frame {i} has unexpected size: got {actual_bytes} bytes, expected {expected_bytes}")
-                return
 
         try:
             left = np.frombuffer(responses[0].image_data_uint8, dtype=np.uint8).reshape(
                 responses[0].height, responses[0].width, 3
             )
-            right = np.frombuffer(responses[1].image_data_uint8, dtype=np.uint8).reshape(
-                responses[1].height, responses[1].width, 3
-            )
+            if hasattr(responses[1], "image_data_uint8"):
+                right = np.frombuffer(responses[1].image_data_uint8, dtype=np.uint8).reshape(
+                    responses[1].height, responses[1].width, 3
+                )
+            else:
+                right = np.frombuffer(right_bytes, dtype=np.float32).reshape(
+                    responses[1].height, responses[1].width
+                )
             logger.debug(f"[FRAME] Left shape: {left.shape}, Right shape: {right.shape}")
         except ValueError as e:
             logger.exception(f"[FRAME] Image reshape failed — skipping frame: {e}")

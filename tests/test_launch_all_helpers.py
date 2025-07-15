@@ -44,3 +44,18 @@ def test_record_slam_video_returns_path(monkeypatch):
     assert path.endswith("20200101_000000.mp4")
     assert calls and calls[0][0] == "ffmpeg"
 
+def test_wait_helpers_cancel(tmp_path, monkeypatch):
+    flags = tmp_path / "flags"
+    flags.mkdir()
+    stop = flags / "stop.flag"
+    monkeypatch.setattr(launch_all, "STOP_FLAG", stop, raising=False)
+    stop.touch()
+
+    assert launch_all.wait_for_flag(flags / "dummy.flag", timeout=0.1) is False
+
+    monkeypatch.setattr(launch_all.gw, "getAllTitles", lambda: [])
+    assert launch_all.wait_for_window("dummy", timeout=0.1) is False
+
+    monkeypatch.setattr(launch_all.socket, "create_connection", lambda *a, **k: (_ for _ in ()).throw(OSError()))
+    assert launch_all.wait_for_port("127.0.0.1", 1234, timeout=0.1) is False
+    
