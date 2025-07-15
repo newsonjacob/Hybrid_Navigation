@@ -228,10 +228,10 @@ def slam_navigation_loop(args, client, ctx):
     Main navigation loop for SLAM-based navigation with basic obstacle avoidance.
     """
     # After drone takeoff and camera ready
-    run_slam_bootstrap(client, duration=2.0)  # you can tune this
+    run_slam_bootstrap(client, duration=6.0)  # you can tune this
     time.sleep(1.0)  # Let SLAM settle after bootstrap
 
-    logger.info("[SLAMNav] Starting SLAM navigation loop.")
+    # logger.info("[SLAMNav] Starting SLAM navigation loop.")
 
     from slam_bridge.slam_receiver import get_latest_pose, get_pose_history
     from slam_bridge.frontier_detection import detect_frontiers  
@@ -281,11 +281,11 @@ def slam_navigation_loop(args, client, ctx):
                 logger.warning("[SLAMNav] SLAM is unstable. Pausing navigation.")
                 client.hoverAsync().join()  # Pause the drone (hover)
                 break  # Exit the loop or you can reset/restart SLAM if necessary
-            else:
-                logger.info("[SLAMNav] SLAM is stable. Continuing navigation.")
+            # else:
+            #     logger.info("[SLAMNav] SLAM is stable. Continuing navigation.")
 
             x, y, z = pose # Unpack the pose
-            logger.info(f"[SLAMNav] Received pose: x={x:.2f}, y={y:.2f}, z={z:.2f}")
+            # logger.info(f"[SLAMNav] Received pose: x={x:.2f}, y={y:.2f}, z={z:.2f}")
 
             # Detect exploration frontiers from accumulated SLAM poses
             history = get_pose_history()
@@ -293,27 +293,24 @@ def slam_navigation_loop(args, client, ctx):
                 [[m[0][3], m[1][3], m[2][3]] for _, m in history], dtype=float
             )
             frontiers = detect_frontiers(map_pts)
-            if frontiers.size:
-                logger.debug(
-                    "[SLAMNav] Frontier voxels detected: %d", len(frontiers)
-                )
-                logger.debug(
-                    "[SLAMNav] Sample frontier: x=%.2f y=%.2f z=%.2f",
-                    frontiers[0][0],
-                    frontiers[0][1],
-                    frontiers[0][2],
-                )
+            # if frontiers.size:
+            #     logger.debug("[SLAMNav] Frontier voxels detected: %d", len(frontiers))
+            #     logger.debug("[SLAMNav] Sample frontier: x=%.2f y=%.2f z=%.2f",
+            #         frontiers[0][0],
+            #         frontiers[0][1],
+            #         frontiers[0][2],
+            #     )
 
             # Check for collision/obstacle
             collision = client.simGetCollisionInfo()
             if getattr(collision, "has_collided", False):
                 logger.warning("[SLAMNav] Obstacle detected! Executing avoidance maneuver.")
-                # Back up and try to move sideways
                 client.moveByVelocityAsync(-1.0, 0, 0, 1).join()  # Back up
                 continue
 
             # --- Get the current waypoint (goal) ---
             goal_x, goal_y, goal_z = waypoints[current_waypoint_index]
+            logger.info(f"[SLAMNav] Current waypoint: {current_waypoint_index + 1} at ({goal_x}, {goal_y}, {goal_z})")
 
             # --- Calculate the distance to the current waypoint ---
             distance_to_goal = np.sqrt((x - goal_x)**2 + (y - goal_y)**2)
@@ -361,7 +358,7 @@ def slam_navigation_loop(args, client, ctx):
         client.landAsync().join()
     finally:
         logger.info("[SLAMNav] SLAM navigation loop finished.")
-        generate_pose_comparison_plot()
+        # generate_pose_comparison_plot()
     return last_action
 
 def cleanup(client, sim_process, ctx):

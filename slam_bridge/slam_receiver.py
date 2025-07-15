@@ -11,9 +11,6 @@ import threading
 import numpy as np
 
 logger = logging.getLogger("slam_receiver")
-logger.warning("[TEST] __name__ = %s | handlers = %s", __name__, logger.handlers)
-logger.info("[TEST] This is a dedicated log line.")
-
 
 HOST = "192.168.1.103"  # Default IP if not provided
 PORT = 6001
@@ -58,7 +55,7 @@ class SlamReceiver:
 
             try:
                 import airsim
-
+                logger.info("[SLAMReceiver] Connecting to AirSim client...")
                 self.airsim_client = airsim.MultirotorClient()
                 self.airsim_client.confirmConnection()
             except Exception as e:
@@ -86,6 +83,7 @@ class SlamReceiver:
     def _log_pose_loop(self) -> None:
         while self.log_thread_running:
             slam_pose = self.get_latest_pose()
+            logger.info(f"[PoseLogger] Latest SLAM pose: {slam_pose}")
 
             if slam_pose is None:
                 logger.warning("[PoseLogger] get_latest_pose() returned None")
@@ -171,7 +169,10 @@ def stop_receiver() -> None:
 
 def get_latest_pose() -> Optional[Tuple[float, float, float]]:
     if _manager is not None:
-        return _manager.get_latest_pose()
+        matrix = _manager.get_latest_pose()
+        logger.debug("[slam_receiver] Latest pose matrix: %s", matrix)
+        if matrix is not None and isinstance(matrix, (list, tuple)) and len(matrix) == 3:
+            return tuple(matrix)
     return None
 
 
