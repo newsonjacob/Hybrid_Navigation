@@ -118,10 +118,11 @@ def main() -> None:
 
         ctx = None
         try:
-            import atexit
-            from slam_bridge.slam_plotter import save_interactive_plot
-            threading.Thread(target=plot_slam_trajectory, daemon=True).start()
-            atexit.register(save_interactive_plot)
+            # import atexit
+            # from slam_bridge.slam_plotter import save_interactive_plot
+            # plotter_thread = threading.Thread(target=plot_slam_trajectory, daemon=True)
+            # plotter_thread.start()
+            # atexit.register(save_interactive_plot)
 
             ctx = setup_environment(args, client)
             start_perception_thread(ctx)
