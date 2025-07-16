@@ -5,7 +5,7 @@
 #include <cstring>
 
 int main() {
-    const char* POSE_RECEIVER_IP = "192.168.1.103"; // or your receiver's IP
+    const char* POSE_RECEIVER_IP = "192.168.1.100"; // or your receiver's IP
     const int POSE_RECEIVER_PORT = 6001;
 
     int sock = socket(AF_INET, SOCK_STREAM, 0);

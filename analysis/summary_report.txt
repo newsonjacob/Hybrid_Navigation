@@ -1,6 +1,0 @@
-log,frames,collisions,distance
-full_log_20250605_132004.csv,170,35,10.95
-full_log_20250605_132105.csv,214,61,12.48
-full_log_20250605_132205.csv,168,51,8.67
-full_log_20250605_132316.csv,154,31,8.41
-full_log_20250605_132413.csv,200,42,13.16

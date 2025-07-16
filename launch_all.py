@@ -67,6 +67,7 @@ SLAM_READY_FLAG = flags_dir / "slam_ready.flag"
 SLAM_FAILED_FLAG = flags_dir / "slam_failed.flag"
 START_NAV_FLAG = flags_dir / "start_nav.flag"
 STOP_FLAG = flags_dir / "stop.flag"
+exit_flag = threading.Event()
 
 def shutdown_all(main_proc=None, slam_proc=None, stream_proc=None, ffmpeg_proc=None, slam_video_path=None, sim_proc=None):
     """Terminate all subprocesses and clean temporary files.
@@ -75,6 +76,13 @@ def shutdown_all(main_proc=None, slam_proc=None, stream_proc=None, ffmpeg_proc=N
     is simply ignored. This function is safe to call multiple times.
     """
     logger.info("[SHUTDOWN] Initiating shutdown sequence for all subprocesses.")
+    # Check for exit_flag before starting shutdown
+    if exit_flag.is_set() or os.path.exists(STOP_FLAG):
+        logger.info("[SHUTDOWN] Shutdown signal detected. Proceeding with shutdown.")
+    else:
+        logger.info("[SHUTDOWN] No shutdown signal detected. Skipping shutdown.")
+        return  # Exit gracefully if no shutdown signal
+    
     # --- CLEAN UP streamer ---
     if stream_proc is not None:
         logger.info("[SHUTDOWN] Terminating SLAM streamer (PID %s)", getattr(stream_proc, "pid", "n/a"))
@@ -281,9 +289,8 @@ def record_slam_video(window_substring: str = "ORB-SLAM2", duration: int = 60):
         return proc, video_path
 
     except Exception as e:
-        logger.warning("⚠️ Screen recording failed to start: %s", e)
+        logger.warning("Screen recording failed to start: %s", e)
         return None, None
-
 
 
 def wait_for_start_flag():
@@ -299,8 +306,10 @@ def wait_for_start_flag():
     logger.info("Signaling navigation to begin...")
     return True
 
-def main(timestamp):
+def main(timestamp, selected_nav_mode=None):
     args = parse_args()
+    if selected_nav_mode is not None:
+        args.nav_mode = selected_nav_mode
     if not hasattr(args, "stream_mode") or args.stream_mode is None:
         args.stream_mode = "stereo"
     config = load_app_config(args.config)
@@ -382,9 +391,15 @@ def main(timestamp):
             shutdown_all(main_proc, slam_proc, stream_proc, ffmpeg_proc, slam_video_path)
             sys.exit(0)
 
-        logger.info("[MAIN] Waiting for main.py to finish...")
-        main_proc.wait()
-        logger.info("[MAIN] main.py completed.")
+        logger.info("[MAIN] Waiting for main.py to finish or stop.flag to be set...")
+        while main_proc.poll() is None:
+            if STOP_FLAG.exists():
+                logger.info("[MAIN] Stop flag detected. Shutting down all processes...")
+                shutdown_all(main_proc, slam_proc, stream_proc, ffmpeg_proc, slam_video_path)
+                break
+            time.sleep(1)
+        logger.info("[MAIN] main.py completed or terminated.")
+
         return True
 
     finally:
@@ -406,7 +421,7 @@ def wait_for_nav_mode_and_launch():
 
     # --- NOW CALL MAIN() TO LAUNCH THE SIMULATION ---
     try:
-        main(timestamp)
+        main(timestamp, selected_nav_mode)
     finally:
         retain_recent_logs("logs")
 
@@ -427,9 +442,14 @@ if __name__ == "__main__":
         "state": ["idle"]
     }
 
-    # Start the simulation launcher in a background thread
-    sim_thread = threading.Thread(target=wait_for_nav_mode_and_launch, daemon=True)
+    # The simulation launcher is started in a background thread so that the GUI can run in the main thread.
+    # Many GUI frameworks require the event loop to run in the main thread for proper operation.
+    sim_thread = threading.Thread(target=wait_for_nav_mode_and_launch)
     sim_thread.start()
 
     # Start the GUI in the main thread (this blocks until GUI closes)
     start_gui(param_refs)
+
+    # Wait for the simulation thread to finish
+    STOP_FLAG.touch()
+    sim_thread.join()

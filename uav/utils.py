@@ -12,6 +12,17 @@ from uav.config import FLOW_STD_MAX
 
 logger = logging.getLogger(__name__)
 
+def init_client(client):
+    """Enable API control, arm the drone and confirm the connection."""
+    try:
+        client.enableApiControl(True)
+        client.armDisarm(True)
+        if hasattr(client, "confirmConnection"):
+            client.confirmConnection()
+    except Exception as e:
+        logger.warning("Client init failed: %s", e)
+    return client
+
 def apply_clahe(gray_image):
     """Improve contrast of a grayscale image using CLAHE."""
     clahe = cv2.createCLAHE(clipLimit=6.0, tileGridSize=(4, 4))

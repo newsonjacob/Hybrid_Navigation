@@ -147,20 +147,50 @@ class Navigator:
         self.last_movement_time = time.time()
         return "timeout_nudge"
     
-    def slam_to_goal(self, pose, goal, max_speed=1.5, threshold=0.5):
-        x, y, z = pose
+    # def slam_to_goal(self, pose, goal, max_speed=1.5, threshold=0.5):
+    #     x, y, z = pose
+    #     gx, gy, gz = goal
+    #     dx = gx - x
+    #     dy = gy - y
+    #     dist = math.sqrt(dx**2 + dy**2)
+    #     if dist < threshold:
+    #         self.client.moveByVelocityAsync(0, 0, 0, 0.5, vehicle_name="UAV")
+    #         return "slam_stop"
+    #     vx, vy = dx / dist * max_speed, dy / dist * max_speed
+    #     vz = 0.0  # Don't change altitude, just hold current Z
+    #     self.client.moveByVelocityAsync(vx, vy, vz, duration=1, vehicle_name="UAV")
+    #     return f"slam_nav vx={vx:.2f} vy={vy:.2f} vz={vz:.2f} dist={dist:.2f}"
+    
+    def slam_to_goal(self, pose, goal, max_speed=1.5, threshold=0.5, settle_time=1.0, velocity_threshold=0.1):
+        # Use AirSim position instead of SLAM pose
+        state = self.client.getMultirotorState()
+        pos = state.kinematics_estimated.position
+        x, y, z = pos.x_val, pos.y_val, pos.z_val
+
         gx, gy, gz = goal
         dx = gx - x
         dy = gy - y
         dist = math.sqrt(dx**2 + dy**2)
         if dist < threshold:
-            self.client.moveByVelocityAsync(0, 0, 0, 0.5)
-            return "slam_stop"
+            # Stop the drone
+            self.client.moveByVelocityAsync(0, 0, 0, 0.5, vehicle_name="UAV")
+            # Wait until drone settles (position within threshold and velocity near zero)
+            settle_start = time.time()
+            while True:
+                state = self.client.getMultirotorState()
+                pos = state.kinematics_estimated.position
+                vel = state.kinematics_estimated.linear_velocity
+                x, y = pos.x_val, pos.y_val
+                vx, vy, vz = vel.x_val, vel.y_val, vel.z_val
+                dist = math.sqrt((gx - x)**2 + (gy - y)**2)
+                speed = math.sqrt(vx**2 + vy**2 + vz**2)
+                if dist < threshold and speed < velocity_threshold:
+                    break
+                if time.time() - settle_start > settle_time:
+                    break
+                time.sleep(0.1)
+            return "airsim_stop"
         vx, vy = dx / dist * max_speed, dy / dist * max_speed
-        self.client.moveByVelocityAsync(vx, vy, 0, duration=1)
-        return "slam_nav"
-    
-    
-    
-    
-
+        vz = 0.0  # Don't change altitude, just hold current Z
+        self.client.moveByVelocityAsync(vx, vy, vz, duration=1, vehicle_name="UAV")
+        return f"airsim_nav vx={vx:.2f} vy={vy:.2f} vz={vz:.2f} dist={dist:.2f}"

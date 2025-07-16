@@ -9,7 +9,7 @@ import cv2
 from uav.cli import parse_args
 from uav.sim_launcher import launch_sim
 import airsim
-from uav.utils import FLOW_STD_MAX
+from uav.utils import FLOW_STD_MAX, init_client
 from uav.config import load_app_config
 import logging
 import argparse
@@ -44,6 +44,8 @@ flags_dir = Path("flags")
 flags_dir.mkdir(exist_ok=True)
 START_FLAG_PATH = flags_dir / "start_nav.flag"
 SETTINGS_PATH = r"C:\Users\Jacob\OneDrive\Documents\AirSim\settings.json"
+STOP_FLAG_PATH = flags_dir / "stop.flag"
+
 
 def get_settings_path(args, config):
     try:
@@ -59,6 +61,7 @@ def wait_for_nav_trigger():
 
 def main() -> None:
     # Safety: fallback logging if nothing is configured
+    ctx = None
     logger = logging.getLogger(__name__)
     if not logger.hasHandlers():
         from uav.logging_config import setup_logging
@@ -69,6 +72,7 @@ def main() -> None:
     from uav.nav_loop import setup_environment, start_perception_thread, navigation_loop, slam_navigation_loop, cleanup
     from slam_bridge.slam_receiver import start_receiver
     from slam_bridge.slam_plotter import plot_slam_trajectory
+
     args = parse_args()
     config = load_app_config(args.config)
     settings_path = get_settings_path(args, config)
@@ -109,12 +113,12 @@ def main() -> None:
     if nav_mode == "slam":
         receiver_thread = start_receiver(slam_receiver_host, slam_receiver_port)
         time.sleep(1) # Give the receiver time to start
+        if STOP_FLAG_PATH.exists():
+            logger.info("[main.py] Stop flag detected before navigation started. Exiting.")
+            cleanup(client, sim_process, ctx)
+            return
         wait_for_nav_trigger()
-        client.enableApiControl(True)
-        client.armDisarm(True)
-        client.confirmConnection()
-        client.enableApiControl(True)
-        client.armDisarm(True)
+        init_client(client)
 
         ctx = None
         try:
@@ -139,12 +143,13 @@ def main() -> None:
                     pass
             cleanup(client, sim_process, ctx if ctx is not None else None)
     elif nav_mode == "reactive":
+        if STOP_FLAG_PATH.exists():
+            logger.info("[main.py] Stop flag detected before navigation started. Exiting.")
+            cleanup(client, sim_process, ctx)
+            return
+
         wait_for_nav_trigger()
-        client.enableApiControl(True)
-        client.armDisarm(True)
-        client.confirmConnection()
-        client.enableApiControl(True)
-        client.armDisarm(True)
+        init_client(client)
 
         ctx = setup_environment(args, client)
         start_perception_thread(ctx)
@@ -161,7 +166,7 @@ def main() -> None:
             navigation_loop(args, client, ctx)
 
         finally:
-            for flag in [flags_dir / "airsim_ready.flag", flags_dir / "start_nav.flag"]:
+            for flag in [flags_dir / "airsim_ready.flag", flags_dir / "start_nav.flag", flags_dir / "stop.flag"]:
                 try:
                     flag.unlink()
                 except FileNotFoundError:
@@ -179,7 +184,7 @@ def main() -> None:
 
     else:
         logger.error(f"Unknown navigation mode: {nav_mode}")
-        cleanup(client, sim_process, None)
+        cleanup(client, sim_process, ctx)
 
 if __name__ == "__main__":
     main()

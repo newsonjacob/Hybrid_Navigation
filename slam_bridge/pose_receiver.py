@@ -72,7 +72,7 @@ class PoseReceiver:
 
         # Wait for the thread to finish, warn if it doesn't exit
         if self._thread:
-            self._thread.join(timeout=2)
+            self._thread.join()
             if self._thread.is_alive():
                 logger.warning("[PoseReceiver] Thread did not exit cleanly after stop().")
 

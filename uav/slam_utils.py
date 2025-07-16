@@ -1,6 +1,7 @@
 # uav/slam_utils.py
 import logging
-from slam_bridge.slam_receiver import get_latest_pose, get_latest_covariance, get_latest_inliers  # Import functions from slam_receiver.py
+# from slam_bridge.slam_receiver import get_latest_pose, get_latest_covariance, get_latest_inliers  # Import functions from slam_receiver.py
+import slam_bridge.slam_receiver as slam_receiver
 
 # You should define these thresholds as constants.
 SOME_THRESHOLD = 1.0  # Example threshold for pose covariance
@@ -14,18 +15,21 @@ def is_slam_stable():
     
     Returns True if SLAM is stable, otherwise False.
     """
-    pose = get_latest_pose()
+    pose = slam_receiver.get_latest_pose()
     
     if pose is None:
         logger.warning("[SLAM] No pose data available. SLAM is unstable.")
         return False
     
     # Get the covariance of the current pose
-    pose_covariance = get_latest_covariance()
-    
-    if pose_covariance is None:
-        logger.warning("[SLAM] Covariance data unavailable. SLAM is unstable.")
-        return False
+    pose_covariance = slam_receiver.get_latest_covariance()
+    inliers = slam_receiver.get_latest_inliers()
+
+    if pose_covariance is None or inliers is None:
+        logger.warning(
+            "[SLAM] Covariance or inlier data unavailable. Assuming stable."
+        )
+        return True
     
     # Check if pose covariance is within acceptable limits
     if pose_covariance > SOME_THRESHOLD:
@@ -33,12 +37,7 @@ def is_slam_stable():
         return False
     
     # Check the number of inliers detected by SLAM
-    inliers = get_latest_inliers()
-    
-    if inliers is None:
-        logger.warning("[SLAM] Inlier count unavailable. SLAM is unstable.")
-        return False
-    
+
     if inliers < MIN_INLIERS_THRESHOLD:
         logger.warning("[SLAM] Low inlier count. SLAM is unstable.")
         return False
