@@ -26,7 +26,7 @@ from uav.perception import OpticalFlowTracker, FlowHistory
 from uav.navigation import Navigator
 from uav.state_checks import in_grace_period
 from uav.scoring import compute_region_stats
-from uav.utils import (get_drone_state, retain_recent_logs)
+from uav.utils import (get_drone_state, retain_recent_logs, init_client)
 from uav.utils import retain_recent_files, retain_recent_views
 from uav import config
 from uav.logging_helpers import log_frame_data, write_video_frame, write_frame_output, handle_reset
@@ -60,7 +60,7 @@ def setup_environment(args, client):
         'state': [''], 'reset_flag': [False]
     }
     logger.info("Available vehicles: %s", client.listVehicles())
-    client.enableApiControl(True); client.armDisarm(True)
+    init_client(client)
     client.takeoffAsync().join(); client.moveToPositionAsync(0, 0, -2, 2).join()
     feature_params = dict(maxCorners=150, qualityLevel=0.05, minDistance=5, blockSize=5)
     lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
@@ -127,7 +127,7 @@ def navigation_loop(args, client, ctx):
             # Print real drone position from AirSim
             pose = client.simGetVehiclePose("UAV")
             pos = pose.position
-            logger.debug("[UAV Pose] x=%.2f, y=%.2f, z=%.2f", pos.x_val, pos.y_val, pos.z_val)
+            # logger.debug("[UAV Pose] x=%.2f, y=%.2f, z=%.2f", pos.x_val, pos.y_val, pos.z_val)
 
             if not startup_grace_over:
                 if time_now - start_time < GRACE_PERIOD_SEC:
@@ -228,8 +228,8 @@ def slam_navigation_loop(args, client, ctx):
     Main navigation loop for SLAM-based navigation with basic obstacle avoidance.
     """
     # After drone takeoff and camera ready
-    run_slam_bootstrap(client, duration=6.0)  # you can tune this
-    time.sleep(1.0)  # Let SLAM settle after bootstrap
+    # run_slam_bootstrap(client, duration=6.0)  # you can tune this
+    # time.sleep(1.0)  # Let SLAM settle after bootstrap
 
     # logger.info("[SLAMNav] Starting SLAM navigation loop.")
 
@@ -254,9 +254,12 @@ def slam_navigation_loop(args, client, ctx):
 
     # --- Define waypoints for SLAM navigation ---
     waypoints = [
-        (5, 0, -2),  # (x, y, z)
-        (10, 0, -2),
-        (29, 0, -2)
+        (20, 0, -2),  # (x, y, z)
+        (20, -2.5, -2),
+        (22.5, -2.5, -2),
+        (23.5, -0.5, -2),
+        (45, 0, -2)
+        
     ]
     current_waypoint_index = 0
     logger.info("[DEBUG] Entered slam_navigation_loop")
@@ -272,20 +275,28 @@ def slam_navigation_loop(args, client, ctx):
             pose = get_latest_pose()
             if pose is None: # No pose received, hover to recover
                 logger.warning("[SLAMNav] No pose received – hovering to recover.")
-                client.hoverAsync().join()
+                # client.hoverAsync().join()
                 time.sleep(1.0)  # allow SLAM to reinitialize
                 continue
 
             # --- Check if SLAM is stable ---
             if not is_slam_stable():  # Check SLAM stability
                 logger.warning("[SLAMNav] SLAM is unstable. Pausing navigation.")
-                client.hoverAsync().join()  # Pause the drone (hover)
-                break  # Exit the loop or you can reset/restart SLAM if necessary
+                # client.hoverAsync().join()  # Pause the drone (hover)
+                continue  # Exit the loop or you can reset/restart SLAM if necessary
             # else:
             #     logger.info("[SLAMNav] SLAM is stable. Continuing navigation.")
 
             x, y, z = pose # Unpack the pose
+            z = -z # Adjust z to match AirSim's coordinate system
             # logger.info(f"[SLAMNav] Received pose: x={x:.2f}, y={y:.2f}, z={z:.2f}")
+            # logger.debug("[SLAM Pose] x=%.2f, y=%.2f, z=%.2f", x, y, z)
+
+            # Print real drone position from AirSim
+            Air_pose = client.simGetVehiclePose("UAV")
+            pos = Air_pose.position
+            airsim_x, airsim_y, airsim_z = pos.x_val, pos.y_val, pos.z_val
+            # logger.debug("[UAV Pose] x=%.2f, y=%.2f, z=%.2f", pos.x_val, pos.y_val, pos.z_val)
 
             # Detect exploration frontiers from accumulated SLAM poses
             history = get_pose_history()
@@ -302,18 +313,19 @@ def slam_navigation_loop(args, client, ctx):
             #     )
 
             # Check for collision/obstacle
-            collision = client.simGetCollisionInfo()
-            if getattr(collision, "has_collided", False):
-                logger.warning("[SLAMNav] Obstacle detected! Executing avoidance maneuver.")
-                client.moveByVelocityAsync(-1.0, 0, 0, 1).join()  # Back up
-                continue
+            # collision = client.simGetCollisionInfo()
+            # if getattr(collision, "has_collided", False):
+            #     logger.warning("[SLAMNav] Obstacle detected! Executing avoidance maneuver.")
+            #     client.moveByVelocityAsync(-1.0, 0, 0, 1).join()  # Back up
+            #     continue
 
             # --- Get the current waypoint (goal) ---
             goal_x, goal_y, goal_z = waypoints[current_waypoint_index]
             logger.info(f"[SLAMNav] Current waypoint: {current_waypoint_index + 1} at ({goal_x}, {goal_y}, {goal_z})")
 
             # --- Calculate the distance to the current waypoint ---
-            distance_to_goal = np.sqrt((x - goal_x)**2 + (y - goal_y)**2)
+            distance_to_goal = np.sqrt((airsim_x - goal_x)**2 + (airsim_y - goal_y)**2)
+            # distance_to_goal = np.sqrt((x - goal_x)**2 + (y - goal_y)**2)
             logger.info(f"Distance to waypoint: {distance_to_goal:.2f} meters")
 
             # --- If the drone is within the threshold of the waypoint, move to the next waypoint ---
@@ -324,8 +336,9 @@ def slam_navigation_loop(args, client, ctx):
             # --- Use SLAM for deliberative navigation ---
             if navigator is None:
                 navigator = Navigator(client)
-            last_action = navigator.slam_to_goal(pose, (goal_x, goal_y, goal_z))
-            logger.info("[SLAMNav] Action: %s", last_action)
+            # last_action = client.moveToPositionAsync(2,0,-2, 2)
+            last_action = navigator.slam_to_goal(None, (goal_x, goal_y, goal_z))
+            # logger.info("[SLAMNav] Action: %s", last_action)
         
             # --- Check if the stop flag is set ---
             if os.path.exists(STOP_FLAG_PATH):

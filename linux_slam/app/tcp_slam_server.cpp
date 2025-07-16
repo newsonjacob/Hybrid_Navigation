@@ -124,7 +124,7 @@ static void log_event(const std::string& msg) {
     }
 }
 
-const char* POSE_RECEIVER_IP = getenv("POSE_RECEIVER_IP") ? getenv("POSE_RECEIVER_IP") : "192.168.1.103"; // Python receiver IP
+const char* POSE_RECEIVER_IP = getenv("POSE_RECEIVER_IP") ? getenv("POSE_RECEIVER_IP") : "192.168.1.100"; // Python receiver IP
 const int POSE_RECEIVER_PORT = getenv("POSE_RECEIVER_PORT") ? atoi(getenv("POSE_RECEIVER_PORT")) : 6001; // Python receiver port
 
 // Helper to send pose as 12 floats (row-major 3x4 matrix)

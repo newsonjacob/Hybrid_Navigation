@@ -105,10 +105,30 @@ def launch_control_gui(param_refs, nav_mode="unknown"):
     systems = [
         ("UE4 PID", "flags/ue4_sim.pid"),
         ("AirSim", "flags/airsim_ready.flag"),
-        ("SLAM", "flags/slam_ready.flag"),
+        # ("SLAM", "flags/slam_ready.flag"),
     ]
+
+    # Navigation mode selection
+    nav_modes = ["(select)", "slam", "reactive", "other"]  # List of available navigation modes
+    nav_mode_var = tk.StringVar(value=nav_modes[0]) # Default to the first mode
+
     # List of system names that are required before navigation can start
-    required_systems = ["UE4 PID", "AirSim", "SLAM"]
+    def get_required_systems(mode):
+        # Always need simulator and AirSim
+        base = ["UE4 PID", "AirSim"]
+        # Only require SLAM if running in slam mode
+        if mode == "slam":
+            return base + ["SLAM"]
+        return base
+
+    required_systems = get_required_systems(nav_mode_var.get())
+
+    def on_nav_mode_change(*args):
+        global required_systems
+        required_systems = get_required_systems(nav_mode_var.get())
+        update_status_lights()
+
+    nav_mode_var.trace_add("write", on_nav_mode_change)
 
     status_labels = {} # Dictionary to hold references to status labels
     # Create labels for each system status
@@ -118,9 +138,6 @@ def launch_control_gui(param_refs, nav_mode="unknown"):
         lbl.grid(row=idx, column=1, sticky='w') # Align label to the left
         status_labels[name] = lbl # Store the label in the dictionary for later updates
 
-    # Navigation mode selection
-    nav_modes = ["slam", "reactive", "other"]  # List of available navigation modes
-    nav_mode_var = tk.StringVar(value=nav_modes[0]) # Default to the first mode
 
     # Add dropdown and launch button to GUI
     tk.Label(root, text="Select Navigation Mode:").pack(pady=(10, 0)) # Label for dropdown
