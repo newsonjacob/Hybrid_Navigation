@@ -105,7 +105,7 @@ def launch_control_gui(param_refs, nav_mode="unknown"):
     systems = [
         ("UE4 PID", "flags/ue4_sim.pid"),
         ("AirSim", "flags/airsim_ready.flag"),
-        # ("SLAM", "flags/slam_ready.flag"),
+        ("SLAM", "flags/slam_ready.flag"),
     ]
 
     # Navigation mode selection

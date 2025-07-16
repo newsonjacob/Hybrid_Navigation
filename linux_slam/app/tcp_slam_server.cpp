@@ -931,5 +931,9 @@ int main(int argc, char **argv) {
     if (pose_log_stream.is_open()) pose_log_stream.close();
     log_event("[DEBUG] Sockets closed. SLAM server shutting down.");
     SLAM.Shutdown();
+
+    SLAM.SaveTrajectoryTUM("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/CameraTrajectory.txt");
+    SLAM.SaveKeyFrameTrajectoryTUM("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/KeyFrameTrajectory.txt");
+
     return 0;
 }
