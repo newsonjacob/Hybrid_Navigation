@@ -67,6 +67,7 @@ SLAM_READY_FLAG = flags_dir / "slam_ready.flag"
 SLAM_FAILED_FLAG = flags_dir / "slam_failed.flag"
 START_NAV_FLAG = flags_dir / "start_nav.flag"
 STOP_FLAG = flags_dir / "stop.flag"
+SHUTDOWN_GRACE = 10  # seconds to wait for main.py to exit gracefully
 
 def shutdown_all(main_proc=None, slam_proc=None, stream_proc=None, ffmpeg_proc=None, slam_video_path=None, sim_proc=None):
     """Terminate all subprocesses and clean temporary files.
@@ -116,14 +117,20 @@ def shutdown_all(main_proc=None, slam_proc=None, stream_proc=None, ffmpeg_proc=N
 
     # --- CLEAN UP main.py ---
     if main_proc is not None:
-        logger.info("[SHUTDOWN] Terminating main script (PID %s)", getattr(main_proc, "pid", "n/a"))
-        main_proc.terminate()
-        try:
-            main_proc.wait(timeout=5)
-            logger.info("[SHUTDOWN] main.py terminated cleanly.")
-        except subprocess.TimeoutExpired:
-            logger.warning("[SHUTDOWN] Forcing main script shutdown...")
-            main_proc.kill()
+        if hasattr(main_proc, "poll") and main_proc.poll() is None:
+            logger.info(
+                "[SHUTDOWN] Terminating main script (PID %s)",
+                getattr(main_proc, "pid", "n/a"),
+            )
+            main_proc.terminate()
+            try:
+                main_proc.wait(timeout=5)
+                logger.info("[SHUTDOWN] main.py terminated cleanly.")
+            except subprocess.TimeoutExpired:
+                logger.warning("[SHUTDOWN] Forcing main script shutdown...")
+                main_proc.kill()
+        else:
+            logger.info("[SHUTDOWN] main.py already exited.")
 
     # --- CLEAN UP Unreal Engine (UE4) ---
     pid_file = flags_dir / "ue4_sim.pid"
@@ -390,12 +397,21 @@ def main(timestamp, selected_nav_mode=None):
             sys.exit(0)
 
         logger.info("[MAIN] Waiting for main.py to finish or stop.flag to be set...")
+        shutdown_requested = False
         while hasattr(main_proc, "poll") and main_proc.poll() is None:
             if STOP_FLAG.exists():
-                logger.info("[MAIN] Stop flag detected. Shutting down all processes...")
-                shutdown_all(main_proc, slam_proc, stream_proc, ffmpeg_proc, slam_video_path)
+                logger.info("[MAIN] Stop flag detected. Initiating graceful shutdown...")
+                shutdown_requested = True
                 break
             time.sleep(1)
+
+        logger.info("[MAIN] Waiting for main.py to exit...")
+        try:
+            main_proc.wait(timeout=SHUTDOWN_GRACE)
+        except subprocess.TimeoutExpired:
+            logger.warning("[MAIN] main.py did not exit within grace period.")
+            if shutdown_requested:
+                shutdown_all(main_proc, slam_proc, stream_proc, ffmpeg_proc, slam_video_path)
         logger.info("[MAIN] main.py completed or terminated.")
 
         return True
