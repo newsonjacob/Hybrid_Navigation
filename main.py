@@ -70,7 +70,7 @@ def main() -> None:
         logger.warning("Logger was missing handlers. Reconfigured logging as fallback.")
 
     from uav.nav_loop import setup_environment, start_perception_thread, navigation_loop, slam_navigation_loop, cleanup
-    from slam_bridge.slam_receiver import start_receiver
+    from slam_bridge.slam_receiver import start_receiver, stop_receiver
     from slam_bridge.slam_plotter import plot_slam_trajectory
 
     args = parse_args()
@@ -131,11 +131,13 @@ def main() -> None:
             ctx = setup_environment(args, client)
             start_perception_thread(ctx)
             slam_navigation_loop(args, client, ctx)
+        finally:
             if receiver_thread:
+                logger.info("[main.py] Stopping SLAM receiver thread...")
+                stop_receiver()
                 logger.info("[main.py] Waiting for SLAM receiver to finish...")
                 receiver_thread.join()
                 logger.info("[main.py] SLAM receiver thread joined successfully.")
-        finally:
             for flag in [flags_dir / "airsim_ready.flag", flags_dir / "start_nav.flag"]:
                 try:
                     flag.unlink()

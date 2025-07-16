@@ -57,7 +57,7 @@ logger, launch_log, module_logs, timestamp = init_logging_and_flags()
 from uav.cli import parse_args
 from uav.config import load_app_config
 import pygetwindow as gw
-from uav.interface import start_gui
+from uav.interface import start_gui, exit_flag
 
 # --- Flag paths ---
 flags_dir = Path("flags")
@@ -67,7 +67,6 @@ SLAM_READY_FLAG = flags_dir / "slam_ready.flag"
 SLAM_FAILED_FLAG = flags_dir / "slam_failed.flag"
 START_NAV_FLAG = flags_dir / "start_nav.flag"
 STOP_FLAG = flags_dir / "stop.flag"
-exit_flag = threading.Event()
 
 def shutdown_all(main_proc=None, slam_proc=None, stream_proc=None, ffmpeg_proc=None, slam_video_path=None, sim_proc=None):
     """Terminate all subprocesses and clean temporary files.
@@ -80,8 +79,7 @@ def shutdown_all(main_proc=None, slam_proc=None, stream_proc=None, ffmpeg_proc=N
     if exit_flag.is_set() or os.path.exists(STOP_FLAG):
         logger.info("[SHUTDOWN] Shutdown signal detected. Proceeding with shutdown.")
     else:
-        logger.info("[SHUTDOWN] No shutdown signal detected. Skipping shutdown.")
-        return  # Exit gracefully if no shutdown signal
+        logger.info("[SHUTDOWN] No shutdown signal detected. Performing cleanup anyway.")
     
     # --- CLEAN UP streamer ---
     if stream_proc is not None:
@@ -392,7 +390,7 @@ def main(timestamp, selected_nav_mode=None):
             sys.exit(0)
 
         logger.info("[MAIN] Waiting for main.py to finish or stop.flag to be set...")
-        while main_proc.poll() is None:
+        while hasattr(main_proc, "poll") and main_proc.poll() is None:
             if STOP_FLAG.exists():
                 logger.info("[MAIN] Stop flag detected. Shutting down all processes...")
                 shutdown_all(main_proc, slam_proc, stream_proc, ffmpeg_proc, slam_video_path)

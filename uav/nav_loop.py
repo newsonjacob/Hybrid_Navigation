@@ -124,10 +124,15 @@ def navigation_loop(args, client, ctx):
             frame_count += 1
             time_now = time.time()
 
-            # Print real drone position from AirSim
-            pose = client.simGetVehiclePose("UAV")
-            pos = pose.position
-            # logger.debug("[UAV Pose] x=%.2f, y=%.2f, z=%.2f", pos.x_val, pos.y_val, pos.z_val)
+            # Print real drone position from AirSim if available
+            if hasattr(client, "simGetVehiclePose"):
+                try:
+                    pose = client.simGetVehiclePose("UAV")
+                    pos = getattr(pose, "position", None)
+                    if pos is not None:
+                        pass  # Could log position here if desired
+                except Exception:
+                    pass
 
             if not startup_grace_over:
                 if time_now - start_time < GRACE_PERIOD_SEC:
@@ -287,15 +292,24 @@ def slam_navigation_loop(args, client, ctx):
             # else:
             #     logger.info("[SLAMNav] SLAM is stable. Continuing navigation.")
 
-            x, y, z = pose # Unpack the pose
-            z = -z # Adjust z to match AirSim's coordinate system
+            x_slam, y_slam, z_slam = pose
+            x, y, z = x_slam, y_slam, -z_slam  # Adjust z for AirSim
             # logger.info(f"[SLAMNav] Received pose: x={x:.2f}, y={y:.2f}, z={z:.2f}")
             # logger.debug("[SLAM Pose] x=%.2f, y=%.2f, z=%.2f", x, y, z)
 
             # Print real drone position from AirSim
-            Air_pose = client.simGetVehiclePose("UAV")
-            pos = Air_pose.position
-            airsim_x, airsim_y, airsim_z = pos.x_val, pos.y_val, pos.z_val
+            # Air_pose = client.simGetVehiclePose("UAV")
+            # pos = Air_pose.position
+            # airsim_x, airsim_y, airsim_z = pos.x_val, pos.y_val, pos.z_val
+            if hasattr(client, "simGetVehiclePose"):
+                Air_pose = client.simGetVehiclePose("UAV")
+                pos = getattr(Air_pose, "position", None)
+                if pos is not None:
+                    airsim_x, airsim_y, airsim_z = pos.x_val, pos.y_val, pos.z_val
+                else:
+                    airsim_x, airsim_y, airsim_z = x, y, z
+            else:
+                airsim_x, airsim_y, airsim_z = x_slam, y_slam, z_slam
             # logger.debug("[UAV Pose] x=%.2f, y=%.2f, z=%.2f", pos.x_val, pos.y_val, pos.z_val)
 
             # Detect exploration frontiers from accumulated SLAM poses
