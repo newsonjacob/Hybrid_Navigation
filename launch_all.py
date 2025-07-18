@@ -305,7 +305,7 @@ def wait_for_nav_mode_and_launch(timestamp: str) -> None:
 
     with open(flags_dir / "nav_mode.flag") as f:
         selected_nav_mode = f.read().strip()
-    logger.info(f"User selected navigation mode: %2", selected_nav_mode)
+    logger.info(f"User selected navigation mode: {selected_nav_mode}")
 
     try:
         main(timestamp, selected_nav_mode)
