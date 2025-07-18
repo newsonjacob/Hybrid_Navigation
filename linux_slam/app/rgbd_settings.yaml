@@ -3,19 +3,19 @@
 # === Camera intrinsics ===
 Camera.fx: 720.0
 Camera.fy: 720.0
-Camera.cx: 640.0
-Camera.cy: 360.0
+Camera.cx: 320.0
+Camera.cy: 180.0
 
 Camera.k1: 0.0
 Camera.k2: 0.0
 Camera.p1: 0.0
 Camera.p2: 0.0
 
-Camera.width: 1280
-Camera.height: 720
+Camera.width: 640
+Camera.height: 360
 
 # === Stereo baseline * fx ===
-Camera.bf: 144.0   # <-- 0.05m baseline × 720.0 fx = 36.0
+Camera.bf: 144.0   
 
 # === Stereo mode only ===
 Camera.RGB: 1

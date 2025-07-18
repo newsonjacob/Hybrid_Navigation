@@ -12,7 +12,7 @@ import numpy as np
 
 logger = logging.getLogger("slam_receiver")
 
-HOST = "192.168.1.100"  # Default IP if not provided
+HOST = "192.168.1.102"  # Default IP if not provided
 PORT = 6001
 
 
