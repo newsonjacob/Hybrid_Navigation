@@ -179,7 +179,7 @@ def navigation_step(
     logger.debug("Flow Magnitudes — L: %.2f, C: %.2f, R: %.2f", smooth_L, smooth_C, smooth_R)
 
     if in_grace_period(time_now, navigator):
-        param_refs['state'][0] = "\U0001F552 grace"
+        param_refs.state[0] = "\U0001F552 grace"
         obstacle_detected = 0
         try:
             frame_queue.get_nowait()
@@ -245,7 +245,7 @@ def navigation_step(
         elif time_now - navigator.last_movement_time > 4:
             state_str = navigator.timeout_recover()
 
-    param_refs['state'][0] = state_str
+    param_refs.state[0] = state_str
 
     pos_hist, _, _ = get_drone_state(client)
     state_history.append(state_str)
@@ -258,7 +258,7 @@ def navigation_step(
                 logger.warning("Repeated dodges detected — extending dodge")
                 state_str = navigator.dodge(smooth_L, smooth_C, smooth_R, duration=3.0)
                 state_history[-1] = state_str
-                param_refs['state'][0] = state_str
+                param_refs.state[0] = state_str
 
     pos, yaw, speed = get_drone_state(client)
     brake_thres, dodge_thres = compute_thresholds(speed)

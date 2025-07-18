@@ -44,7 +44,7 @@ if 'scipy.spatial.transform' not in sys.modules:
     sys.modules['scipy.spatial'] = types.SimpleNamespace(transform=transform_stub)
     sys.modules['scipy.spatial.transform'] = types.SimpleNamespace(Rotation=DummyRotation)
 
-from analysis import visualize_flight as vis
+from analysis import visualise_flight as vis
 
 
 def test_build_plot_returns_figure(monkeypatch):

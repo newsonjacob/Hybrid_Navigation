@@ -138,15 +138,15 @@ def write_frame_output(
 
 def handle_reset(client, ctx, frame_count):
     """Reset simulation and restart logging/video."""
-    param_refs = ctx['param_refs']
-    flow_history = ctx['flow_history']
-    navigator = ctx['navigator']
-    frame_queue = ctx['frame_queue']
-    video_thread = ctx['video_thread']
-    out = ctx['out']
-    log_file = ctx['log_file']
-    log_buffer = ctx['log_buffer']
-    fourcc = ctx['fourcc']
+    param_refs = ctx.param_refs
+    flow_history = ctx.flow_history
+    navigator = ctx.navigator
+    frame_queue = ctx.frame_queue
+    video_thread = ctx.video_thread
+    out = ctx.out
+    log_file = ctx.log_file
+    log_buffer = ctx.log_buffer
+    fourcc = ctx.fourcc
 
     logger.info("Resetting simulation...")
     try:
@@ -158,16 +158,16 @@ def handle_reset(client, ctx, frame_count):
         client.moveToPositionAsync(0, 0, -2, 2).join()
     except Exception as e:
         logger.error("Reset error: %s", e)
-    ctx['flow_history'], ctx['navigator'], frame_count = FlowHistory(), Navigator(client), 0
-    param_refs['reset_flag'][0] = False
+    ctx.flow_history, ctx.navigator, frame_count = FlowHistory(), Navigator(client), 0
+    param_refs.reset_flag[0] = False
     if log_buffer:
         log_file.writelines(log_buffer)
         log_buffer.clear()
     log_file.close()
-    ctx['timestamp'] = datetime.now().strftime('%Y%m%d_%H%M%S')
-    timestamp = ctx['timestamp']
+    ctx.timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    timestamp = ctx.timestamp
     log_file = open(f"flow_logs/full_log_{timestamp}.csv", 'w')
-    ctx['log_file'] = log_file
+    ctx.log_file = log_file
     log_file.write(
         "frame,flow_left,flow_center,flow_right,"
         "delta_left,delta_center,delta_right,flow_std,"
@@ -186,7 +186,7 @@ def handle_reset(client, ctx, frame_count):
     video_thread.join()
     out.release()
     out = cv2.VideoWriter(config.VIDEO_OUTPUT, fourcc, config.VIDEO_FPS, config.VIDEO_SIZE)
-    ctx['out'] = out
-    video_thread = start_video_writer_thread(frame_queue, out, ctx['exit_flag'])
-    ctx['video_thread'] = video_thread
+    ctx.out = out
+    video_thread = start_video_writer_thread(frame_queue, out, ctx.exit_flag)
+    ctx.video_thread = video_thread
     return frame_count

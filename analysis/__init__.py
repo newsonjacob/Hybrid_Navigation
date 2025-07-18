@@ -1,12 +1,12 @@
 """Lightweight analysis helpers for tests."""
 
 from .flight_review import parse_log, align_path
-from .summarize_runs import summarize_log
-from . import visualize_flight
+from .summarise_runs import summarise_log
+from . import visualise_flight
 
 __all__ = [
     "parse_log",
     "align_path",
-    "summarize_log",
-    "visualize_flight",
+    "summarise_log",
+    "visualise_flight",
 ]
