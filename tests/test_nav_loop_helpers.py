@@ -12,6 +12,10 @@ def test_helper_functions_exist(monkeypatch):
     for name in (
         'setup_environment',
         'start_perception_thread',
+        'check_startup_grace',
+        'get_perception_data',
+        'update_navigation_state',
+        'log_and_record_frame',
         'navigation_loop',
         'process_perception_data',
         'apply_navigation_decision',

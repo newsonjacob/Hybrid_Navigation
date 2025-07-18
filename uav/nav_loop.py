@@ -92,99 +92,297 @@ def setup_environment(args, client):
     frame_queue = Queue(maxsize=20)
     video_thread = start_video_writer_thread(frame_queue, out, exit_flag)
     ctx = {
-        'exit_flag': exit_flag, 'param_refs': param_refs, 'tracker': tracker, 'flow_history': flow_history,
-        'navigator': navigator, 'state_history': state_history, 'pos_history': pos_history,
-        'frame_queue': frame_queue, 'video_thread': video_thread, 'out': out, 'log_file': log_file,
-        'log_buffer': [], 'timestamp': timestamp, 'start_time': start_time, 'fps_list': [], 'fourcc': fourcc,
+        'exit_flag': exit_flag,
+        'param_refs': param_refs,
+        'tracker': tracker,
+        'flow_history': flow_history,
+        'navigator': navigator,
+        'state_history': state_history,
+        'pos_history': pos_history,
+        'frame_queue': frame_queue,
+        'video_thread': video_thread,
+        'out': out,
+        'log_file': log_file,
+        'log_buffer': [],
+        'timestamp': timestamp,
+        'start_time': start_time,
+        'fps_list': [],
+        'fourcc': fourcc,
+        'startup_grace_over': False,
+        'grace_logged': False,
     }
     return ctx
 
+
+def check_startup_grace(ctx, time_now):
+    """Return True when the initial grace period has completed."""
+    if ctx.get('startup_grace_over'):
+        return True
+
+    start_time = ctx['start_time']
+    if time_now - start_time < config.GRACE_PERIOD_SEC:
+        ctx['param_refs']['state'][0] = 'startup_grace'
+        if not ctx.get('grace_logged'):
+            logger.info(
+                "Startup grace period active — waiting to start perception and nav"
+            )
+            ctx['grace_logged'] = True
+        time.sleep(0.05)
+        return False
+
+    ctx['startup_grace_over'] = True
+    logger.info("Startup grace period complete — beginning full nav logic")
+    return True
+
+
+def get_perception_data(ctx):
+    """Fetch perception results with timeout handling."""
+    try:
+        return ctx['perception_queue'].get(timeout=1.0)
+    except Exception:
+        return None
+
+
+def update_navigation_state(client, args, data, frame_count, ctx, time_now, max_flow_mag):
+    """Process perception data and apply navigation decision."""
+    flow_history = ctx['flow_history']
+    navigator = ctx['navigator']
+    param_refs = ctx['param_refs']
+    frame_queue = ctx['frame_queue']
+    state_history = ctx['state_history']
+    pos_history = ctx['pos_history']
+
+    prev_state = param_refs['state'][0]
+
+    processed = process_perception_data(
+        client,
+        args,
+        data,
+        frame_count,
+        frame_queue,
+        flow_history,
+        navigator,
+        param_refs,
+        time_now,
+        max_flow_mag,
+    )
+    if processed is None:
+        return None
+
+    (
+        vis_img,
+        good_old,
+        flow_vectors,
+        flow_std,
+        simgetimage_s,
+        decode_s,
+        processing_s,
+        smooth_L,
+        smooth_C,
+        smooth_R,
+        delta_L,
+        delta_C,
+        delta_R,
+        probe_mag,
+        probe_count,
+        left_count,
+        center_count,
+        right_count,
+        in_grace,
+    ) = processed
+
+    (
+        state_str,
+        obstacle_detected,
+        side_safe,
+        brake_thres,
+        dodge_thres,
+        probe_req,
+    ) = apply_navigation_decision(
+        client,
+        navigator,
+        flow_history,
+        good_old,
+        flow_vectors,
+        flow_std,
+        smooth_L,
+        smooth_C,
+        smooth_R,
+        delta_L,
+        delta_C,
+        delta_R,
+        probe_mag,
+        probe_count,
+        left_count,
+        center_count,
+        right_count,
+        frame_queue,
+        vis_img,
+        time_now,
+        frame_count,
+        prev_state,
+        state_history,
+        pos_history,
+        param_refs,
+    )
+
+    return (
+        processed,
+        state_str,
+        obstacle_detected,
+        side_safe,
+        brake_thres,
+        dodge_thres,
+        probe_req,
+    )
+
+
+def log_and_record_frame(
+    client,
+    ctx,
+    loop_start,
+    frame_duration,
+    fps_list,
+    start_time,
+    processed,
+    nav_results,
+    frame_count,
+    time_now,
+):
+    """Write video frame and log output."""
+    (
+        vis_img,
+        good_old,
+        flow_vectors,
+        flow_std,
+        simgetimage_s,
+        decode_s,
+        processing_s,
+        smooth_L,
+        smooth_C,
+        smooth_R,
+        delta_L,
+        delta_C,
+        delta_R,
+        probe_mag,
+        probe_count,
+        left_count,
+        center_count,
+        right_count,
+        in_grace,
+    ) = processed
+    (
+        state_str,
+        obstacle_detected,
+        side_safe,
+        brake_thres,
+        dodge_thres,
+        probe_req,
+    ) = nav_results
+
+    return write_frame_output(
+        client,
+        vis_img,
+        ctx['frame_queue'],
+        loop_start,
+        frame_duration,
+        fps_list,
+        start_time,
+        smooth_L,
+        smooth_C,
+        smooth_R,
+        delta_L,
+        delta_C,
+        delta_R,
+        left_count,
+        center_count,
+        right_count,
+        good_old,
+        flow_vectors,
+        in_grace,
+        frame_count,
+        time_now,
+        ctx['param_refs'],
+        ctx['log_file'],
+        ctx['log_buffer'],
+        state_str,
+        obstacle_detected,
+        side_safe,
+        brake_thres,
+        dodge_thres,
+        probe_req,
+        simgetimage_s,
+        decode_s,
+        processing_s,
+        flow_std,
+    )
+
 def navigation_loop(args, client, ctx):
     """Main navigation loop processing perception results."""
-    exit_flag, flow_history, navigator = ctx['exit_flag'], ctx['flow_history'], ctx['navigator']
-    param_refs, state_history, pos_history = ctx['param_refs'], ctx['state_history'], ctx['pos_history']
-    perception_queue, frame_queue, video_thread = ctx['perception_queue'], ctx['frame_queue'], ctx['video_thread']
-
-    out, log_file, log_buffer = ctx['out'], ctx['log_file'], ctx['log_buffer']
-    start_time, timestamp, fps_list, fourcc = ctx['start_time'], ctx['timestamp'], ctx['fps_list'], ctx['fourcc']
-
-    MAX_FLOW_MAG, MAX_VECTOR_COMPONENT = config.MAX_FLOW_MAG, config.MAX_VECTOR_COMPONENT
-    GRACE_PERIOD_SEC, MAX_SIM_DURATION = config.GRACE_PERIOD_SEC, args.max_duration
-    GOAL_X, GOAL_Y = args.goal_x, config.GOAL_Y
-    frame_count, target_fps, frame_duration = 0, config.TARGET_FPS, 1.0 / config.TARGET_FPS
-    grace_logged, startup_grace_over = False, False
+    exit_flag = ctx['exit_flag']
+    fps_list = ctx['fps_list']
+    start_time = ctx['start_time']
+    frame_duration = 1.0 / config.TARGET_FPS
+    frame_count = 0
     logger.info("[NavLoop] Starting navigation loop with args: %s", args)
+
+    loop_start = time.time()
     try:
-        loop_start = time.time()
         while not exit_flag.is_set():
             if os.path.exists(STOP_FLAG_PATH):
                 logger.info("Stop flag detected. Landing and shutting down.")
                 exit_flag.set()
                 break
+
             frame_count += 1
             time_now = time.time()
 
-            # Print real drone position from AirSim if available
-            if hasattr(client, "simGetVehiclePose"):
-                try:
-                    pose = client.simGetVehiclePose("UAV")
-                    pos = getattr(pose, "position", None)
-                    if pos is not None:
-                        pass  # Could log position here if desired
-                except Exception:
-                    pass
+            if not check_startup_grace(ctx, time_now):
+                continue
 
-            if not startup_grace_over:
-                if time_now - start_time < GRACE_PERIOD_SEC:
-                    param_refs['state'][0] = "startup_grace"
-                    if not grace_logged:
-                        logger.info("Startup grace period active — waiting to start perception and nav")
-                        grace_logged = True
-                    time.sleep(0.05)
-                    continue
-                else:
-                    startup_grace_over = True
-                    logger.info("Startup grace period complete — beginning full nav logic")
-            try: data = perception_queue.get(timeout=1.0)
-            except Exception: continue
-            prev_state = param_refs['state'][0]
-            # if navigator.settling and time_now >= navigator.settle_end_time:
-            #     logger.info("Settle period over — resuming evaluation")
-            #     navigator.settling = False
-            if time_now - start_time >= MAX_SIM_DURATION:
-                logger.info("Time limit reached — landing and stopping."); break
+            data = get_perception_data(ctx)
+            if data is None:
+                continue
+
+            if time_now - start_time >= args.max_duration:
+                logger.info("Time limit reached — landing and stopping.")
+                break
+
             pos_goal, _, _ = get_drone_state(client)
-            threshold = 0.5  # Define a threshold for goal position proximity
-            if abs(pos_goal.x_val - GOAL_X) < threshold and abs(pos_goal.y_val - GOAL_Y) < threshold:
+            if abs(pos_goal.x_val - args.goal_x) < 0.5 and abs(pos_goal.y_val - config.GOAL_Y) < 0.5:
                 logger.info("Goal reached — landing.")
                 break
-            processed = process_perception_data(
-                client, args, data, frame_count, frame_queue, flow_history, navigator, param_refs, time_now, MAX_FLOW_MAG,
+
+            update = update_navigation_state(
+                client,
+                args,
+                data,
+                frame_count,
+                ctx,
+                time_now,
+                config.MAX_FLOW_MAG,
             )
-            if processed is None: continue
-            (   vis_img, good_old, flow_vectors, flow_std, simgetimage_s, decode_s, processing_s,
-                smooth_L, smooth_C, smooth_R, delta_L, delta_C, delta_R,
-                probe_mag, probe_count, left_count, center_count, right_count, in_grace,
-            ) = processed
-            (
-                state_str, obstacle_detected, side_safe, brake_thres, dodge_thres, probe_req,
-            ) = apply_navigation_decision(
-                client, navigator, flow_history, good_old, flow_vectors, flow_std,
-                smooth_L, smooth_C, smooth_R, delta_L, delta_C, delta_R, probe_mag, probe_count,
-                left_count, center_count, right_count, frame_queue, vis_img,
-                time_now, frame_count, prev_state, state_history, pos_history, param_refs,
-            )
-            if param_refs['reset_flag'][0]:
-                frame_count = handle_reset(client, ctx, frame_count)
-                flow_history, navigator, log_file, video_thread, out = ctx['flow_history'], ctx['navigator'], ctx['log_file'], ctx['video_thread'], ctx['out']
+            if update is None:
                 continue
-            loop_start = write_frame_output(
-                client, vis_img, frame_queue, loop_start, frame_duration, fps_list, start_time,
-                smooth_L, smooth_C, smooth_R, delta_L, delta_C, delta_R,
-                left_count, center_count, right_count,
-                good_old, flow_vectors, in_grace, frame_count, time_now, param_refs,
-                log_file, log_buffer, state_str, obstacle_detected, side_safe,
-                brake_thres, dodge_thres, probe_req, simgetimage_s, decode_s, processing_s, flow_std,
+
+            processed = update[0]
+            nav_results = update[1:]
+
+            if ctx['param_refs']['reset_flag'][0]:
+                frame_count = handle_reset(client, ctx, frame_count)
+                continue
+
+            loop_start = log_and_record_frame(
+                client,
+                ctx,
+                loop_start,
+                frame_duration,
+                fps_list,
+                start_time,
+                processed,
+                nav_results,
+                frame_count,
+                time_now,
             )
     except KeyboardInterrupt:
         logger.info("Interrupted.")
