@@ -30,6 +30,7 @@ from uav.utils import (get_drone_state, retain_recent_logs, init_client)
 from uav.utils import retain_recent_files, retain_recent_views
 from uav import config
 from uav.logging_helpers import log_frame_data, write_video_frame, write_frame_output, handle_reset
+from uav.context import ParamRefs, NavContext
 from uav.perception_loop import perception_loop, start_perception_thread, process_perception_data
 from uav.navigation_core import detect_obstacle, determine_side_safety, handle_obstacle, navigation_step, apply_navigation_decision
 from uav.navigation_slam_boot import run_slam_bootstrap
@@ -53,12 +54,7 @@ def setup_environment(args, client):
     """Initialize the navigation environment and return a context dict."""
     from uav.interface import exit_flag
     from uav.utils import retain_recent_logs
-    param_refs = {
-        'L': [0.0], 'C': [0.0], 'R': [0.0],
-        'prev_L': [0.0], 'prev_C': [0.0], 'prev_R': [0.0],
-        'delta_L': [0.0], 'delta_C': [0.0], 'delta_R': [0.0],
-        'state': [''], 'reset_flag': [False]
-    }
+    param_refs = ParamRefs()
     logger.info("Available vehicles: %s", client.listVehicles())
     init_client(client)
     client.takeoffAsync().join(); client.moveToPositionAsync(0, 0, -2, 2).join()
@@ -91,22 +87,34 @@ def setup_environment(args, client):
     out = cv2.VideoWriter(config.VIDEO_OUTPUT, fourcc, config.VIDEO_FPS, config.VIDEO_SIZE)
     frame_queue = Queue(maxsize=20)
     video_thread = start_video_writer_thread(frame_queue, out, exit_flag)
-    ctx = {
-        'exit_flag': exit_flag, 'param_refs': param_refs, 'tracker': tracker, 'flow_history': flow_history,
-        'navigator': navigator, 'state_history': state_history, 'pos_history': pos_history,
-        'frame_queue': frame_queue, 'video_thread': video_thread, 'out': out, 'log_file': log_file,
-        'log_buffer': [], 'timestamp': timestamp, 'start_time': start_time, 'fps_list': [], 'fourcc': fourcc,
-    }
+    ctx = NavContext(
+        exit_flag=exit_flag,
+        param_refs=param_refs,
+        tracker=tracker,
+        flow_history=flow_history,
+        navigator=navigator,
+        state_history=state_history,
+        pos_history=pos_history,
+        frame_queue=frame_queue,
+        video_thread=video_thread,
+        out=out,
+        log_file=log_file,
+        log_buffer=[],
+        timestamp=timestamp,
+        start_time=start_time,
+        fps_list=[],
+        fourcc=fourcc,
+    )
     return ctx
 
 def navigation_loop(args, client, ctx):
     """Main navigation loop processing perception results."""
-    exit_flag, flow_history, navigator = ctx['exit_flag'], ctx['flow_history'], ctx['navigator']
-    param_refs, state_history, pos_history = ctx['param_refs'], ctx['state_history'], ctx['pos_history']
-    perception_queue, frame_queue, video_thread = ctx['perception_queue'], ctx['frame_queue'], ctx['video_thread']
+    exit_flag, flow_history, navigator = ctx.exit_flag, ctx.flow_history, ctx.navigator
+    param_refs, state_history, pos_history = ctx.param_refs, ctx.state_history, ctx.pos_history
+    perception_queue, frame_queue, video_thread = ctx.perception_queue, ctx.frame_queue, ctx.video_thread
 
-    out, log_file, log_buffer = ctx['out'], ctx['log_file'], ctx['log_buffer']
-    start_time, timestamp, fps_list, fourcc = ctx['start_time'], ctx['timestamp'], ctx['fps_list'], ctx['fourcc']
+    out, log_file, log_buffer = ctx.out, ctx.log_file, ctx.log_buffer
+    start_time, timestamp, fps_list, fourcc = ctx.start_time, ctx.timestamp, ctx.fps_list, ctx.fourcc
 
     MAX_FLOW_MAG, MAX_VECTOR_COMPONENT = config.MAX_FLOW_MAG, config.MAX_VECTOR_COMPONENT
     GRACE_PERIOD_SEC, MAX_SIM_DURATION = config.GRACE_PERIOD_SEC, args.max_duration
@@ -136,7 +144,7 @@ def navigation_loop(args, client, ctx):
 
             if not startup_grace_over:
                 if time_now - start_time < GRACE_PERIOD_SEC:
-                    param_refs['state'][0] = "startup_grace"
+                    param_refs.state[0] = "startup_grace"
                     if not grace_logged:
                         logger.info("Startup grace period active — waiting to start perception and nav")
                         grace_logged = True
@@ -147,7 +155,7 @@ def navigation_loop(args, client, ctx):
                     logger.info("Startup grace period complete — beginning full nav logic")
             try: data = perception_queue.get(timeout=1.0)
             except Exception: continue
-            prev_state = param_refs['state'][0]
+            prev_state = param_refs.state[0]
             # if navigator.settling and time_now >= navigator.settle_end_time:
             #     logger.info("Settle period over — resuming evaluation")
             #     navigator.settling = False
@@ -174,9 +182,13 @@ def navigation_loop(args, client, ctx):
                 left_count, center_count, right_count, frame_queue, vis_img,
                 time_now, frame_count, prev_state, state_history, pos_history, param_refs,
             )
-            if param_refs['reset_flag'][0]:
+            if param_refs.reset_flag[0]:
                 frame_count = handle_reset(client, ctx, frame_count)
-                flow_history, navigator, log_file, video_thread, out = ctx['flow_history'], ctx['navigator'], ctx['log_file'], ctx['video_thread'], ctx['out']
+                flow_history = ctx.flow_history
+                navigator = ctx.navigator
+                log_file = ctx.log_file
+                video_thread = ctx.video_thread
+                out = ctx.out
                 continue
             loop_start = write_frame_output(
                 client, vis_img, frame_queue, loop_start, frame_duration, fps_list, start_time,
@@ -246,8 +258,8 @@ def slam_navigation_loop(args, client, ctx):
     navigator = None
     last_action = "none"
     if ctx is not None:
-        exit_flag = ctx.get("exit_flag", None)
-        navigator = ctx.get("navigator", None)
+        exit_flag = getattr(ctx, "exit_flag", None)
+        navigator = getattr(ctx, "navigator", None)
 
     # --- Initialize SLAM navigation parameters ---
     start_time = time.time()
@@ -398,15 +410,15 @@ def cleanup(client, sim_process, ctx):
     logger.info("Landing...")
 
     if ctx is not None:
-        exit_flag = ctx.get('exit_flag')
-        frame_queue = ctx.get('frame_queue')
-        video_thread = ctx.get('video_thread')
-        perception_thread = ctx.get('perception_thread')
-        out = ctx.get('out')
-        log_file = ctx.get('log_file')
-        log_buffer = ctx.get('log_buffer')
-        timestamp = ctx.get('timestamp')
-        fps_list = ctx.get('fps_list')
+        exit_flag = getattr(ctx, 'exit_flag', None)
+        frame_queue = getattr(ctx, 'frame_queue', None)
+        video_thread = getattr(ctx, 'video_thread', None)
+        perception_thread = getattr(ctx, 'perception_thread', None)
+        out = getattr(ctx, 'out', None)
+        log_file = getattr(ctx, 'log_file', None)
+        log_buffer = getattr(ctx, 'log_buffer', None)
+        timestamp = getattr(ctx, 'timestamp', None)
+        fps_list = getattr(ctx, 'fps_list', None)
 
         if exit_flag:
             exit_flag.set()
@@ -438,7 +450,7 @@ def cleanup(client, sim_process, ctx):
 
         try:
             html_output = f"analysis/flight_view_{timestamp}.html"
-            subprocess.run(["python3", "-m", "analysis.visualize_flight", html_output])
+            subprocess.run(["python3", "-m", "analysis.visualise_flight", html_output])
             logger.info("Flight path analysis saved to %s", html_output)
         except Exception as e:
             logger.error("Error generating flight path analysis: %s", e)
@@ -457,7 +469,7 @@ def cleanup(client, sim_process, ctx):
         logger.error("Landing error: %s", e)
 
     # Wait after landing for graceful shutdown if early exit
-    if client and ctx is not None and ctx.get("exit_flag", None) and ctx["exit_flag"].is_set():
+    if client and ctx is not None and getattr(ctx, "exit_flag", None) and ctx.exit_flag.is_set():
         logger.info("🕒 Pausing briefly after landing for graceful shutdown...")
         for _ in range(30):  # Wait up to 3 seconds
             try:
@@ -471,7 +483,7 @@ def cleanup(client, sim_process, ctx):
 
     try:
         # Wait until the drone is landed or until a timeout (e.g., 15 seconds)
-        if client and ctx is not None and ctx.get("exit_flag", None) and ctx["exit_flag"].is_set():
+        if client and ctx is not None and getattr(ctx, "exit_flag", None) and ctx.exit_flag.is_set():
             logger.info("🕒 Waiting for drone to land for graceful shutdown...")
             max_wait = 7  # seconds
             start_wait = time.time()

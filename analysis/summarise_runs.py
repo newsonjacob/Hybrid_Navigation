@@ -3,8 +3,8 @@ import math
 from typing import Tuple
 
 
-def summarize_log(csv_path: str) -> Tuple[int, int, float]:
-    """Summarize a flight log CSV.
+def summarise_log(csv_path: str) -> Tuple[int, int, float]:
+    """Summarise a flight log CSV.
 
     Parameters
     ----------

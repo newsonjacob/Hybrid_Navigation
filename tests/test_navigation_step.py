@@ -59,16 +59,19 @@ def _make_nav():
     return nav
 
 
+from uav.context import ParamRefs
+
+
 def _default_params():
-    return {
-        "state": [None],
-        "prev_L": [0.0],
-        "prev_C": [0.0],
-        "prev_R": [0.0],
-        "delta_L": [0.0],
-        "delta_C": [0.0],
-        "delta_R": [0.0],
-    }
+    return ParamRefs(
+        state=[None],
+        prev_L=[0.0],
+        prev_C=[0.0],
+        prev_R=[0.0],
+        delta_L=[0.0],
+        delta_C=[0.0],
+        delta_R=[0.0],
+    )
 
 
 def test_brake_when_side_flow_high(monkeypatch):

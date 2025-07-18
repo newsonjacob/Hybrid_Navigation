@@ -26,8 +26,8 @@ def perception_loop(tracker, image):
 
 def start_perception_thread(ctx):
     """Launch background perception thread and attach queue to ctx."""
-    exit_flag = ctx['exit_flag']
-    tracker = ctx['tracker']
+    exit_flag = ctx.exit_flag
+    tracker = ctx.tracker
     perception_queue = Queue(maxsize=1)
     last_vis_img = np.zeros((720, 1280, 3), dtype=np.uint8)
 
@@ -75,8 +75,8 @@ def start_perception_thread(ctx):
 
     perception_thread = Thread(target=perception_worker, daemon=True)
     perception_thread.start()
-    ctx['perception_queue'] = perception_queue
-    ctx['perception_thread'] = perception_thread
+    ctx.perception_queue = perception_queue
+    ctx.perception_thread = perception_thread
 
 
 def process_perception_data(
@@ -138,20 +138,20 @@ def process_perception_data(
     flow_history.update(left_mag, center_mag, right_mag)
     smooth_L, smooth_C, smooth_R = flow_history.average()
 
-    delta_L = smooth_L - param_refs['prev_L'][0]
-    delta_C = smooth_C - param_refs['prev_C'][0]
-    delta_R = smooth_R - param_refs['prev_R'][0]
-    param_refs['prev_L'][0], param_refs['prev_C'][0], param_refs['prev_R'][0] = (
+    delta_L = smooth_L - param_refs.prev_L[0]
+    delta_C = smooth_C - param_refs.prev_C[0]
+    delta_R = smooth_R - param_refs.prev_R[0]
+    param_refs.prev_L[0], param_refs.prev_C[0], param_refs.prev_R[0] = (
         smooth_L,
         smooth_C,
         smooth_R,
     )
-    param_refs['delta_L'][0], param_refs['delta_C'][0], param_refs['delta_R'][0] = (
+    param_refs.delta_L[0], param_refs.delta_C[0], param_refs.delta_R[0] = (
         delta_L,
         delta_C,
         delta_R,
     )
-    param_refs['L'][0], param_refs['C'][0], param_refs['R'][0] = smooth_L, smooth_C, smooth_R
+    param_refs.L[0], param_refs.C[0], param_refs.R[0] = smooth_L, smooth_C, smooth_R
 
     if navigator.just_resumed and time_now < navigator.resume_grace_end_time:
         cv2.putText(vis_img, "GRACE", (1100, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 3)

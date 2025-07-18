@@ -21,6 +21,7 @@ import os
 import tkinter as tk
 from threading import Thread
 from threading import Event
+from .context import ParamRefs
 
 from .performance import get_cpu_percent, get_memory_info
 
@@ -32,8 +33,8 @@ def launch_control_gui(param_refs, nav_mode="unknown"):
 
     Parameters
     ----------
-    param_refs : dict
-        Dictionary of mutable lists used by the navigation loop to expose
+    param_refs : ParamRefs
+        Dataclass containing mutable lists used by the navigation loop to expose
         real-time values such as optical flow magnitudes and the current state.
         These values are shown in the GUI and updated periodically.
     nav_mode : str, optional
@@ -57,10 +58,10 @@ def launch_control_gui(param_refs, nav_mode="unknown"):
         Path("flags/start_nav.flag").touch()
 
     def update_labels():
-        l_val.set(f"{param_refs['L'][0]:.2f}") # Flow magnitude label for left sensor
-        c_val.set(f"{param_refs['C'][0]:.2f}") # Flow magnitude label for center sensor
-        r_val.set(f"{param_refs['R'][0]:.2f}") # Flow magnitude label for right sensor
-        state_val.set(param_refs['state'][0]) # Current state of the UAV label
+        l_val.set(f"{param_refs['L'][0]:.2f}")  # Flow magnitude label for left sensor
+        c_val.set(f"{param_refs['C'][0]:.2f}")  # Flow magnitude label for center sensor
+        r_val.set(f"{param_refs['R'][0]:.2f}")  # Flow magnitude label for right sensor
+        state_val.set(param_refs['state'][0])  # Current state of the UAV label
         root.after(200, update_labels) # Update every 200ms
 
     def update_status_lights():
