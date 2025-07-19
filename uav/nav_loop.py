@@ -509,95 +509,103 @@ def slam_navigation_loop(args, client, ctx):
         # generate_pose_comparison_plot()
     return last_action
 
-def cleanup(client, sim_process, ctx):
-    """Clean up resources and land the drone."""
-    logger.info("Landing...")
+def shutdown_threads(ctx):
+    """Stop worker threads and wait for them to exit."""
+    if ctx is None:
+        return
 
-    if ctx is not None:
-        exit_flag = getattr(ctx, 'exit_flag', None)
-        frame_queue = getattr(ctx, 'frame_queue', None)
-        video_thread = getattr(ctx, 'video_thread', None)
-        perception_thread = getattr(ctx, 'perception_thread', None)
-        out = getattr(ctx, 'out', None)
-        log_file = getattr(ctx, 'log_file', None)
-        log_buffer = getattr(ctx, 'log_buffer', None)
-        timestamp = getattr(ctx, 'timestamp', None)
-        fps_list = getattr(ctx, 'fps_list', None)
+    exit_flag = getattr(ctx, "exit_flag", None)
+    if exit_flag is not None:
+        exit_flag.set()
 
-        if exit_flag:
-            exit_flag.set()
+    frame_queue = getattr(ctx, "frame_queue", None)
+    if frame_queue is not None:
+        try:
+            frame_queue.put(None, block=False)
+        except Exception:
+            pass
 
-        if frame_queue:
-            try: frame_queue.put(None)
-            except Exception: pass
-
-        if video_thread:
-            try: video_thread.join()
-            except Exception: pass
-
-        if perception_thread:
-            try: perception_thread.join()
-            except Exception: pass
-
-        if out:
-            try: out.release()
-            except Exception: pass
-
-        if log_file:
+    for attr in ("video_thread", "perception_thread"):
+        thread = getattr(ctx, attr, None)
+        if thread is not None:
             try:
-                if log_buffer:
-                    log_file.writelines(log_buffer)
-                    log_buffer.clear()
-                log_file.close()
-            except Exception as e:
-                logger.warning("⚠️ Log file already closed or error writing: %s", e)
+                thread.join()
+            except Exception:
+                pass
 
+
+def close_logging(ctx):
+    """Flush buffered log/video data and close file handles."""
+    if ctx is None:
+        return
+
+    out = getattr(ctx, "out", None)
+    if out is not None:
+        try:
+            out.release()
+        except Exception:
+            pass
+
+    log_file = getattr(ctx, "log_file", None)
+    log_buffer = getattr(ctx, "log_buffer", None)
+    if log_file is not None:
+        try:
+            if log_buffer:
+                log_file.writelines(log_buffer)
+                log_buffer.clear()
+            log_file.close()
+        except Exception as exc:
+            logger.warning("⚠️ Log file already closed or error writing: %s", exc)
+
+
+def shutdown_airsim(client):
+    """Land the drone and disable API control."""
+    if client is None:
+        return
+    try:
+        fut = client.landAsync()
+        fut.join()
+        client.armDisarm(False)
+        client.enableApiControl(False)
+    except Exception as exc:
+        logger.error("Landing error: %s", exc)
+
+
+def finalize_files(ctx):
+    """Generate flight analysis and clean up generated files."""
+    if ctx is None:
+        return
+
+    timestamp = getattr(ctx, "timestamp", None)
+    if timestamp:
         try:
             html_output = f"analysis/flight_view_{timestamp}.html"
             subprocess.run(["python3", "-m", "analysis.visualise_flight", html_output])
             logger.info("Flight path analysis saved to %s", html_output)
-        except Exception as e:
-            logger.error("Error generating flight path analysis: %s", e)
-
-        try:
-            retain_recent_views("analysis", 5)
-        except Exception as e:
-            logger.error("Error retaining recent views: %s", e)
+        except Exception as exc:
+            logger.error("Error generating flight path analysis: %s", exc)
 
     try:
-        if client:
-            client.landAsync().join()
-            client.armDisarm(False)
-            client.enableApiControl(False)
-    except Exception as e:
-        logger.error("Landing error: %s", e)
-
-    # Wait after landing for graceful shutdown if early exit
-    if client and ctx is not None and getattr(ctx, "exit_flag", None) and ctx.exit_flag.is_set():
-        logger.info("🕒 Pausing briefly after landing for graceful shutdown...")
-        for _ in range(30):  # Wait up to 3 seconds
-            try:
-                pos = client.getMultirotorState().kinematics_estimated.position
-                if pos.z_val > -0.2:
-                    logger.info("Drone appears to be landed.")
-                    break
-                time.sleep(0.1)
-            except Exception:
-                break
+        retain_recent_views("analysis", 5)
+    except Exception as exc:
+        logger.error("Error retaining recent views: %s", exc)
 
     try:
-        # Wait until the drone is landed or until a timeout (e.g., 15 seconds)
-        if client and ctx is not None and getattr(ctx, "exit_flag", None) and ctx.exit_flag.is_set():
-            logger.info("🕒 Waiting for drone to land for graceful shutdown...")
-            max_wait = 7  # seconds
-            start_wait = time.time()
-            while True:
-                if time.time() - start_wait > max_wait:
-                    logger.warning("Timeout waiting for drone to land.")
-                    break
-                time.sleep(0.1)
-    except Exception as e:
-        logger.error("Error during graceful shutdown wait: %s", e)
+        if os.path.exists(STOP_FLAG_PATH):
+            os.remove(STOP_FLAG_PATH)
+            logger.info("Removed stop flag file.")
+    except Exception as exc:
+        logger.error("Error removing stop flag file: %s", exc)
+
+
+def cleanup(client, sim_process, ctx):
+    """Clean up resources and land the drone."""
+    logger.info("Landing...")
+
+    shutdown_threads(ctx)
+    close_logging(ctx)
+    shutdown_airsim(client)
+    finalize_files(ctx)
 
     if sim_process:
         sim_process.terminate()
@@ -606,14 +614,4 @@ def cleanup(client, sim_process, ctx):
         except Exception:
             sim_process.kill()
         logger.info("UE4 simulation closed.")
-
-    # --- New cleanup code ---
-    try:
-        # Ensure the stop flag file is removed on cleanup
-        if os.path.exists(STOP_FLAG_PATH):
-            os.remove(STOP_FLAG_PATH)
-            logger.info("Removed stop flag file.")
-    except Exception as e:
-        logger.error("Error removing stop flag file: %s", e)
-
 
