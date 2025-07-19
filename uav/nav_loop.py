@@ -34,6 +34,7 @@ from uav.context import ParamRefs, NavContext
 from uav.perception_loop import perception_loop, start_perception_thread, process_perception_data
 from uav.navigation_core import detect_obstacle, determine_side_safety, handle_obstacle, navigation_step, apply_navigation_decision
 from uav.navigation_slam_boot import run_slam_bootstrap
+from uav.paths import STOP_FLAG_PATH
 from uav.slam_utils import (
     is_slam_stable,
     is_obstacle_ahead,
@@ -42,15 +43,6 @@ from uav.slam_utils import (
 
 logger = logging.getLogger("nav_loop")
 logger.warning("[TEST] __name__ = %s | handlers = %s", __name__, logger.handlers)
-
-frame_counter = 0
-MIN_INLIERS_THRESHOLD = 100  # Minimum inliers to consider SLAM stable
-
-# Grace period duration (seconds) after dodge/brake actions
-NAV_GRACE_PERIOD_SEC = 0.5
-
-# Flag file to stop the drone
-STOP_FLAG_PATH = "flags/stop.flag"
 
 # === Perception Processing ===
 
