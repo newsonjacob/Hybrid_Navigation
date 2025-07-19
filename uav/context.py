@@ -43,3 +43,5 @@ class NavContext:
     fourcc: Any = None
     perception_queue: Optional[Queue] = None
     perception_thread: Optional[Thread] = None
+    grace_logged: bool = False
+    startup_grace_over: bool = False
