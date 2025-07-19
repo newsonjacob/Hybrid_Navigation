@@ -4,18 +4,20 @@
 #include <opencv2/highgui.hpp>
 #include <iostream>
 #include <vector>
-#include <arpa/inet.h>
-#include <unistd.h>
 #include <fstream>
 #include <ctime>
 #include <iomanip>
 #include <thread>
 #include <chrono>
 #include <sstream>
-#include <mutex>
+#include "server/logging.hpp"
+#include "server/network.hpp"
+#include "server/slam_runner.hpp"
 #include <filesystem>
 #include <sys/stat.h>
 #include <cerrno>
+#include <arpa/inet.h>
+#include <sys/socket.h>
 #ifdef _WIN32
 #include <direct.h>
 #endif
@@ -31,191 +33,13 @@ const int MAX_IMAGE_BYTES  = MAX_IMAGE_WIDTH * MAX_IMAGE_HEIGHT * 3; // 3 for RG
 
 using namespace std;
 
-// Forward declaration for log_event
-static void log_event(const std::string& msg);
 
-cv::Mat get_pose_covariance_with_inliers(const cv::Mat& current_pose, const cv::Mat& previous_pose) {
-    // Ensure that both poses are valid (4x4 matrices)
-    if (current_pose.empty() || previous_pose.empty() || current_pose.rows != 4 || current_pose.cols != 4 || previous_pose.rows != 4 || previous_pose.cols != 4) {
-        log_event("[ERROR] Invalid pose matrices.");
-        return cv::Mat();  // Return empty matrix on error
-    }
-
-    // Calculate pose difference (motion uncertainty)
-    cv::Mat pose_diff = current_pose - previous_pose;  // Difference between poses
-
-    // Estimate covariance based on the difference (this is a simple placeholder logic)
-    double norm = cv::norm(pose_diff, cv::NORM_L2);  // Compute the L2 norm (Euclidean distance)
-    
-    // Use the norm as an estimate of uncertainty
-    double uncertainty = std::max(norm, 0.1);  // Ensure the uncertainty is not too small
-
-    // For simplicity, scale the covariance based on the uncertainty
-    cv::Mat covariance = cv::Mat::eye(4, 4, CV_32F) * uncertainty;  // Identity matrix scaled by uncertainty
-
-    // You can modify the above logic if you want to factor in inliers or other factors
-    
-    // For now, we're returning the basic pose difference-based covariance matrix
-    return covariance;
-}
-
-// Helper function to receive exactly n bytes
-bool recv_all(int sock, char* buffer, int len) {
-    int total = 0;
-    int retries = 0;
-
-    while (total < len) {
-        int received = recv(sock, buffer + total, len - total, 0);
-
-        if (received == 0 && total == 0 && retries < 1) {
-            log_event("recv() returned 0 on first attempt — retrying once...");
-            std::cerr << "[WARN] recv() returned 0 on first attempt — retrying once..." << std::endl;
-            retries++;
-            sleep(1); // brief pause to wait for client
-            continue;
-        }
-
-        if (received <= 0) {
-            log_event("recv() returned " + std::to_string(received) + " at byte " + std::to_string(total) + " of " + std::to_string(len));
-            std::cerr << "[ERROR] recv() returned " << received << " at byte " << total << " of " << len << std::endl;
-            std::ostringstream oss; // Create a string stream to format the error message
-            oss << "recv_all failed: received=" << received << ", total=" << total << ", expected=" << len;
-            log_event(oss.str());
-            return false;
-        }
-
-
-        total += received;
-    }
-    return true;
-}
-
-#include <mutex> // for thread safety
-static std::string g_log_file_path; // Global variable to hold the log file path
-static std::mutex g_log_mutex;
-
-// Thread-safe logging function.
-// Writes the given message to the log file specified by g_log_file_path, prefixing each entry with a timestamp.
-static void log_event(const std::string& msg) {
-    static bool warned = false;
-    static std::unique_ptr<std::ofstream> log_stream;
-
-    if (g_log_file_path.empty()) {
-        if (!warned) {
-            std::cerr << "[WARN] Logging is disabled because g_log_file_path is empty." << std::endl;
-            warned = true;
-        }
-        return;
-    }
-
-    std::lock_guard<std::mutex> lock(g_log_mutex); // Ensure thread safety when accessing the log file
-
-    // Open log file only once
-    if (!log_stream) {
-        log_stream = std::make_unique<std::ofstream>(g_log_file_path, std::ios::app);
-        if (!log_stream->is_open() && !warned) {
-            log_event("[WARN] Could not open log file: " + g_log_file_path);
-            std::cerr << "[WARN] Could not open log file: " << g_log_file_path << std::endl;
-            warned = true;
-        }
-    }
-
-    if (log_stream && log_stream->is_open()) { // Check if the log stream is valid
-        std::time_t t = std::time(nullptr);
-        // Timestamp format: "%F %T" means "YYYY-MM-DD HH:MM:SS"
-        (*log_stream) << "[" << std::put_time(std::localtime(&t), "%F %T") << "] " << msg << std::endl;
-        log_stream->flush(); // Ensure log is written immediately
-    }
-}
-
-const char* POSE_RECEIVER_IP = getenv("POSE_RECEIVER_IP") ? getenv("POSE_RECEIVER_IP") : "192.168.1.102"; // Python receiver IP
-const int POSE_RECEIVER_PORT = getenv("POSE_RECEIVER_PORT") ? atoi(getenv("POSE_RECEIVER_PORT")) : 6001; // Python receiver port
-
-// Helper to send pose as 12 floats (row-major 3x4 matrix)
-bool send_pose(int pose_sock, const cv::Mat& Tcw) {
-    std::cout << "[DEBUG] send_pose() CALLED" << std::endl;
-    log_event("[DEBUG] Attempting to send pose to Python receiver.");
-
-    // Validate the pose matrix dimensions
-    if (Tcw.empty() || Tcw.rows != 4 || Tcw.cols != 4) {
-        log_event("[ERROR] Pose matrix is invalid — empty or wrong size.");
-        return false;
-    }
-
-    // Convert the pose matrix to a 12-element float array (3x4 matrix)
-    cv::Mat Tcw_send; // Temporary matrix to hold the converted pose
-    if (Tcw.type() != CV_32F) {
-        log_event("[WARN] Pose matrix not CV_32F. Converting...");
-        Tcw.convertTo(Tcw_send, CV_32F); // Convert to float if not already
-    } else {
-        Tcw_send = Tcw; // Use the original matrix if it's already in float format
-    }
-    // Ensure Tcw_send is 3x4
-    float data[12];
-    for (int r = 0; r < 3; ++r)
-        for (int c = 0; c < 4; ++c)
-            data[r * 4 + c] = Tcw_send.at<float>(r, c);
-
-
-    // Log the matrix being sent
-    std::ostringstream log_msg;
-    log_msg << "[POSE] Sending 3x4 pose matrix: ";
-    for (int i = 0; i < 12; ++i) {
-        log_msg << data[i];
-        if (i < 11) log_msg << ", ";
-    }
-    log_event(log_msg.str());
-
-    int bytes = 12 * sizeof(float);
-    int sent = send(pose_sock, reinterpret_cast<char*>(data), bytes, 0);
-
-    std::ostringstream dbg;
-    dbg << "[DEBUG] send() returned " << sent << " of " << bytes << " bytes.";
-    log_event(dbg.str());
-
-    if (sent != bytes) {
-        std::ostringstream oss;
-        oss << "[ERROR] send_pose failed: sent " << sent << " of " << bytes << " bytes.";
-        log_event(oss.str());
-    } else {
-        log_event("[DEBUG] send_pose succeeded: 48 bytes sent to Python receiver.");
-    }
-
-    return sent == bytes;
-}
-
-// Function to get the number of inliers (features successfully tracked)
-int get_feature_inliers(ORB_SLAM2::System &SLAM) {
-    // Get the tracker object from the SLAM system
-    auto tracker = SLAM.GetTracker();
-    
-    // Ensure the tracker is valid
-    if (!tracker) {
-        log_event("[ERROR] Tracker not available in SLAM system.");
-        return -1;  // Return -1 to indicate failure
-    }
-
-    // Access the current frame's inliers from the tracker
-    int inliers = tracker->mCurrentFrame.N; // N is the number of features in the current frame
-    
-    log_event("[DEBUG] Inliers tracked: " + std::to_string(inliers));
-    return inliers;
-}
-
-void cleanup_resources(int sock, int server_fd, int pose_sock) {
-    if (sock >= 0) {
-        log_event("[DEBUG] Closing image stream socket...");
-        close(sock);
-    }
-    if (server_fd >= 0) {
-        log_event("[DEBUG] Closing server socket...");
-        close(server_fd);
-    }
-    if (pose_sock >= 0) {
-        log_event("[DEBUG] Closing pose sender socket...");
-        close(pose_sock);
-    }
-}
+using slam_server::g_log_file_path;
+using slam_server::log_event;
+using slam_server::get_feature_inliers;
+using slam_server::get_pose_covariance_with_inliers;
+using slam_server::recv_all;
+using slam_server::send_pose;
 
 // ------- Main function to set up the TCP server, receive images, and process them with ORB-SLAM2 -------
 // Simple cross-platform helpers
@@ -317,98 +141,13 @@ int main(int argc, char **argv) {
     log_event("[INFO] SLAM system initialized.");
 
     // -- Setup TCP server for receiving AirSim images --
-    log_event("[DEBUG] Creating server socket for AirSim image stream...");
-    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd == -1) {
-        log_event("[ERROR] Socket creation failed for AirSim image stream.");
-        return 1;
-    }
-    log_event("[DEBUG] Server socket created successfully.");
+    int server_fd = slam_server::create_server_socket(6000);
+    if (server_fd < 0) return 1;
+    int sock = slam_server::accept_client(server_fd);
+    if (sock < 0) return 1;
 
-    int opt = 1;
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)) < 0) {
-        log_event("[WARN] setsockopt failed for server_fd.");
-    } else {
-        log_event("[DEBUG] setsockopt SO_REUSEADDR | SO_REUSEPORT succeeded.");
-    }
-
-    sockaddr_in address;
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(6000);
-
-    log_event("[DEBUG] Binding server socket to port 6000...");
-    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-        log_event("[ERROR] Bind failed for server_fd.");
-        close(server_fd);
-        return 1;
-    }
-    log_event("[DEBUG] Bind succeeded for server_fd.");
-
-    log_event("[DEBUG] Listening for incoming connections on port 6000...");
-    if (listen(server_fd, 1) < 0) {
-        log_event("[ERROR] Listen failed for server_fd.");
-        close(server_fd);
-        return 1;
-    }
-    log_event("[DEBUG] Listen succeeded. Waiting for Python streamer...");
-
-    int addrlen = sizeof(address);
-    log_event("[DEBUG] Calling accept() to wait for streamer...");
-    int sock = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
-    if (sock < 0) {
-        log_event("[ERROR] Failed to accept() client connection.");
-        close(server_fd);
-        return 1;
-    }
-    log_event("[INFO] Client connection accepted on image stream socket.");
-    log_event("[DEBUG] sock value after accept: " + std::to_string(sock));
-
-    // --- Setup pose sender socket ---
-    log_event("[DEBUG] Creating pose sender socket...");
-    int pose_sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (pose_sock < 0) {
-        log_event("[ERROR] Could not create pose sender socket.");
-        pose_sock = -1;
-    } else {
-        log_event("[DEBUG] Pose sender socket created successfully.");
-        
-        // Set up the address for the pose receiver
-        sockaddr_in pose_addr;
-        pose_addr.sin_family = AF_INET;
-        pose_addr.sin_port = htons(POSE_RECEIVER_PORT);
-        inet_pton(AF_INET, POSE_RECEIVER_IP, &pose_addr.sin_addr);
-        // Log the IP and port of the pose receiver
-        char ip_str[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &pose_addr.sin_addr, ip_str, INET_ADDRSTRLEN);
-        std::ostringstream sockinfo;
-        sockinfo << "[DEBUG] Attempting connection to pose receiver at "
-                 << ip_str << ":" << ntohs(pose_addr.sin_port);
-        log_event(sockinfo.str());
-        // Attempt to connect to the pose receiver
-        log_event("[DEBUG] Connecting to Python pose receiver...");
-        bool connected = false;
-        for (int attempt = 0; attempt < 10; ++attempt) {
-            int pose_conn = connect(pose_sock, (struct sockaddr*)&pose_addr, sizeof(pose_addr));
-            if (pose_conn >= 0) {
-                connected = true;
-                log_event("[INFO] Connected to Python pose receiver.");
-                break;
-            } else {
-                std::ostringstream retry_msg;
-                retry_msg << "[WARN] Attempt " << (attempt + 1)
-                          << " failed to connect to Python pose receiver — retrying in 1s...";
-                log_event(retry_msg.str());
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-            }
-        }
-        // If connection was not established after 10 attempts, log an error
-        if (!connected) {
-            log_event("[ERROR] Failed to connect to Python pose receiver after 10 attempts.");
-            close(pose_sock);
-            pose_sock = -1;
-        }
-    }
+    int pose_sock = slam_server::connect_pose_sender(slam_server::POSE_RECEIVER_IP,
+                                                     slam_server::POSE_RECEIVER_PORT);
     // --- Main loop to receive images and process them with SLAM ---
     cv::Mat imLeft, imRight; // Matrices to hold the received images
     cv::Mat imLeftGray, imRightGray; // Grayscale versions of the images for SLAM processing
@@ -971,9 +710,7 @@ int main(int argc, char **argv) {
 
     // --- Cleanup and exit ---
     log_event("[DEBUG] Closing sockets and cleaning up...");
-    close(sock);
-    close(server_fd);
-    if (pose_sock >= 0) close(pose_sock);
+    slam_server::cleanup_resources(sock, server_fd, pose_sock);
     if (pose_log_stream.is_open()) pose_log_stream.close();
     log_event("[DEBUG] Sockets closed. SLAM server shutting down.");
     SLAM.Shutdown();
