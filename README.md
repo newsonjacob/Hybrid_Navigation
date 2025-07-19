@@ -112,6 +112,16 @@ pip install -e .
              --slam-receiver-host 10.0.0.3 --slam-receiver-port 6001
    ```
 
+## Running Tests
+
+Install the required dependencies and run the test suite:
+
+```bash
+pip install -r requirements.txt
+pip install -e .
+pytest
+```
+
 ### Command Line Interface
 
 The `hybrid-nav` entry point exposes several options:
