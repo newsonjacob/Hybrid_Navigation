@@ -42,8 +42,8 @@ def launch_control_gui(param_refs, nav_mode="unknown"):
         """
     def on_stop():
         """Signal the main loop to terminate by creating a stop flag file."""
-        from pathlib import Path
-        Path("flags/stop.flag").touch()
+        from uav.paths import STOP_FLAG_PATH
+        STOP_FLAG_PATH.touch()
         exit_flag.set()
         root.destroy()
 
