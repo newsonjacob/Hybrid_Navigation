@@ -97,7 +97,6 @@ static void log_event(const std::string& msg) {
 
     if (g_log_file_path.empty()) {
         if (!warned) {
-            log_event("[WARN] Logging is disabled because g_log_file_path is empty.");
             std::cerr << "[WARN] Logging is disabled because g_log_file_path is empty." << std::endl;
             warned = true;
         }
