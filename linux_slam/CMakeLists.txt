@@ -130,8 +130,12 @@ set_target_properties(test_vocab_load PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/app)
 
 # --- Build TCP SLAM Server ---
-add_executable(tcp_slam_server app/tcp_slam_server.cpp)
-target_include_directories(tcp_slam_server PRIVATE ${PROJECT_SOURCE_DIR}/include)
+add_executable(tcp_slam_server
+  app/tcp_slam_server.cpp
+  app/server/logging.cpp
+  app/server/network.cpp
+  app/server/slam_runner.cpp)
+target_include_directories(tcp_slam_server PRIVATE ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/app/server)
 target_link_libraries(tcp_slam_server ${PROJECT_NAME})
 set_target_properties(tcp_slam_server PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/app)
