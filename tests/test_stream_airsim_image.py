@@ -3,6 +3,7 @@ import struct
 import threading
 import sys
 from types import SimpleNamespace
+import cv2
 
 import numpy as np
 
@@ -69,5 +70,6 @@ def test_image_streamer_sends_headers_and_data(monkeypatch):
     t.join(timeout=1)
     server.close()
 
-    assert results["rgb"] == (2, 2, rgb.tobytes())
+    expected_gray = cv2.cvtColor(rgb, cv2.COLOR_BGR2GRAY).tobytes()
+    assert results["rgb"] == (2, 2, expected_gray)
     assert results["depth"] == (2, 2, depth.tobytes())
