@@ -6,6 +6,7 @@
 #include <sstream>  // for string stream operations
 #include <vector>   // for using vectors
 #include <unistd.h>  // for usleep and close
+#include <filesystem>
 #include <netinet/in.h> // for sockaddr_in and socket functions
 #include <arpa/inet.h>  // for inet_pton
 #include <chrono>   // for timing operations
@@ -63,6 +64,7 @@ int main(int argc, char **argv) {
         cerr << "Usage: ./custom_slam [--data-dir=DIR] path_to_vocabulary path_to_settings associate.txt [receiver_ip]" << endl;
         return 1;
     }
+
 
     std::string base_path = data_dir.empty() ? "." : data_dir;
 
@@ -134,6 +136,7 @@ int main(int argc, char **argv) {
     for (size_t i = 0; i < rgb_files.size(); ++i) {
         std::string rgb_path = join_path(base_path, rgb_files[i]);
         std::string depth_path = join_path(base_path, depth_files[i]);
+
 
         cout << "[DEBUG] Frame " << i << " timestamps - RGB: " << timestamps[i] << endl;
         cout << "[DEBUG] Loading RGB image from: " << rgb_path << endl;

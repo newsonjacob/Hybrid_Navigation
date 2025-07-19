@@ -13,6 +13,7 @@
 #include <chrono>
 #include <sstream>
 #include <mutex>
+#include <filesystem>
 #include <sys/stat.h>
 #include <cerrno>
 #ifdef _WIN32
@@ -295,6 +296,7 @@ int main(int argc, char **argv) {
         char timebuf[32];
         std::strftime(timebuf, sizeof(timebuf), "%Y%m%d_%H%M%S", std::localtime(&t));
         oss << join_path(log_dir, std::string("slam_server_debug_") + timebuf + ".log");
+
         g_log_file_path = oss.str();
     }
 
@@ -304,6 +306,7 @@ int main(int argc, char **argv) {
     char pose_log_timebuf[32];
     std::strftime(pose_log_timebuf, sizeof(pose_log_timebuf), "%Y%m%d_%H%M%S", std::localtime(&pose_log_t));
     pose_log_oss << join_path(log_dir, std::string("pose_sent_") + pose_log_timebuf + ".log");
+
     std::string pose_log_file_path = pose_log_oss.str();
     std::ofstream pose_log_stream(pose_log_file_path, std::ios::app);
 
@@ -840,6 +843,7 @@ int main(int argc, char **argv) {
                     cv::drawKeypoints(imLeft, orb_kps, rgb_kp);
                     std::ostringstream kp_filename;
                     kp_filename << join_path(image_dir, std::string("frame_rgb_kp_") + std::to_string(frame_counter) + ".png");
+
                     cv::imwrite(kp_filename.str(), rgb_kp);
                 }
             }
@@ -867,6 +871,7 @@ int main(int argc, char **argv) {
                 // Write the slam_ready.flag only once, after SLAM becomes valid
                 if (!slam_ready_flag_written) {
                     std::string flag_path = join_path(flag_dir, "slam_ready.flag");
+
                     std::ofstream flag_file(flag_path);
                     if (flag_file.is_open()) {
                         flag_file << "SLAM_READY" << std::endl;
