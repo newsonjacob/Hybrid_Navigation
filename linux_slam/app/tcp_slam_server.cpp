@@ -15,6 +15,10 @@
 #include <mutex>
 #include <filesystem>
 #include <sys/stat.h>
+#include <cerrno>
+#ifdef _WIN32
+#include <direct.h>
+#endif
 
 // Define grace period parameters at the top of the main function
 int grace_frame_count = 0;  // Counter for frames with no detected motion
@@ -214,12 +218,45 @@ void cleanup_resources(int sock, int server_fd, int pose_sock) {
 }
 
 // ------- Main function to set up the TCP server, receive images, and process them with ORB-SLAM2 -------
+// Simple cross-platform helpers
+#ifdef _WIN32
+const char PATH_SEP = '\\';
+#else
+const char PATH_SEP = '/';
+#endif
+
+static bool make_dir(const std::string& p) {
+#ifdef _WIN32
+    return _mkdir(p.c_str()) == 0 || errno == EEXIST;
+#else
+    return mkdir(p.c_str(), 0755) == 0 || errno == EEXIST;
+#endif
+}
+
+static bool create_directories(const std::string& path) {
+    std::string accum;
+    for (size_t i = 0; i < path.size(); ++i) {
+        char c = path[i];
+        accum += c;
+        if (c == '/' || c == '\\') {
+            if (!accum.empty()) make_dir(accum);
+        }
+    }
+    if (!accum.empty()) make_dir(accum);
+    return true;
+}
+
+static std::string join_path(const std::string& a, const std::string& b) {
+    if (a.empty()) return b;
+    if (a.back() == PATH_SEP) return a + b;
+    return a + PATH_SEP + b;
+}
+
 int main(int argc, char **argv) {
-    namespace fs = std::filesystem;
 
     std::string log_dir = getenv("SLAM_LOG_DIR") ? getenv("SLAM_LOG_DIR") : "logs";
     std::string flag_dir = getenv("SLAM_FLAG_DIR") ? getenv("SLAM_FLAG_DIR") : "flags";
-    std::string image_dir = getenv("SLAM_IMAGE_DIR") ? getenv("SLAM_IMAGE_DIR") : (fs::path(log_dir) / "images").string();
+    std::string image_dir = getenv("SLAM_IMAGE_DIR") ? getenv("SLAM_IMAGE_DIR") : join_path(log_dir, "images");
 
     if (argc < 3) {
         cerr << "Usage: ./tcp_slam_server vocab settings [log_dir] [flag_dir]" << endl;
@@ -230,12 +267,12 @@ int main(int argc, char **argv) {
     if (argc >= 5) flag_dir = argv[4];
     if (argc >= 6) image_dir = argv[5];
 
-    fs::create_directories(log_dir);
-    fs::create_directories(flag_dir);
-    fs::create_directories(image_dir);
+    create_directories(log_dir);
+    create_directories(flag_dir);
+    create_directories(image_dir);
 
-    fs::path console_log = fs::path(log_dir) / "slam_console.txt";
-    fs::path console_err = fs::path(log_dir) / "slam_console_err.txt";
+    std::string console_log = join_path(log_dir, "slam_console.txt");
+    std::string console_err = join_path(log_dir, "slam_console_err.txt");
 
     (void)freopen(console_log.c_str(), "w", stdout);
     (void)freopen(console_err.c_str(), "w", stderr);
@@ -258,7 +295,8 @@ int main(int argc, char **argv) {
         std::time_t t = std::time(nullptr);
         char timebuf[32];
         std::strftime(timebuf, sizeof(timebuf), "%Y%m%d_%H%M%S", std::localtime(&t));
-        oss << fs::path(log_dir) / (std::string("slam_server_debug_") + timebuf + ".log");
+        oss << join_path(log_dir, std::string("slam_server_debug_") + timebuf + ".log");
+
         g_log_file_path = oss.str();
     }
 
@@ -267,7 +305,8 @@ int main(int argc, char **argv) {
     std::time_t pose_log_t = std::time(nullptr);
     char pose_log_timebuf[32];
     std::strftime(pose_log_timebuf, sizeof(pose_log_timebuf), "%Y%m%d_%H%M%S", std::localtime(&pose_log_t));
-    pose_log_oss << fs::path(log_dir) / (std::string("pose_sent_") + pose_log_timebuf + ".log");
+    pose_log_oss << join_path(log_dir, std::string("pose_sent_") + pose_log_timebuf + ".log");
+
     std::string pose_log_file_path = pose_log_oss.str();
     std::ofstream pose_log_stream(pose_log_file_path, std::ios::app);
 
@@ -803,7 +842,8 @@ int main(int argc, char **argv) {
                     cv::Mat rgb_kp;
                     cv::drawKeypoints(imLeft, orb_kps, rgb_kp);
                     std::ostringstream kp_filename;
-                    kp_filename << fs::path(image_dir) / (std::string("frame_rgb_kp_") + std::to_string(frame_counter) + ".png");
+                    kp_filename << join_path(image_dir, std::string("frame_rgb_kp_") + std::to_string(frame_counter) + ".png");
+
                     cv::imwrite(kp_filename.str(), rgb_kp);
                 }
             }
@@ -830,7 +870,8 @@ int main(int argc, char **argv) {
 
                 // Write the slam_ready.flag only once, after SLAM becomes valid
                 if (!slam_ready_flag_written) {
-                    std::string flag_path = (fs::path(flag_dir) / "slam_ready.flag").string();
+                    std::string flag_path = join_path(flag_dir, "slam_ready.flag");
+
                     std::ofstream flag_file(flag_path);
                     if (flag_file.is_open()) {
                         flag_file << "SLAM_READY" << std::endl;
@@ -937,8 +978,8 @@ int main(int argc, char **argv) {
     log_event("[DEBUG] Sockets closed. SLAM server shutting down.");
     SLAM.Shutdown();
 
-    SLAM.SaveTrajectoryTUM((fs::path(log_dir) / "CameraTrajectory.txt").string());
-    SLAM.SaveKeyFrameTrajectoryTUM((fs::path(log_dir) / "KeyFrameTrajectory.txt").string());
+    SLAM.SaveTrajectoryTUM(join_path(log_dir, "CameraTrajectory.txt"));
+    SLAM.SaveKeyFrameTrajectoryTUM(join_path(log_dir, "KeyFrameTrajectory.txt"));
 
     return 0;
 }

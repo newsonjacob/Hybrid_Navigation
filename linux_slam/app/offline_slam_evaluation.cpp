@@ -32,8 +32,20 @@ bool SendPose(int sockfd, const cv::Mat& Tcw) {
     return sent == sizeof(data);
 }
 
+// Simple cross-platform helpers for path handling
+#ifdef _WIN32
+const char PATH_SEP = '\\';
+#else
+const char PATH_SEP = '/';
+#endif
+
+static std::string join_path(const std::string& base, const std::string& file) {
+    if (base.empty()) return file;
+    if (base.back() == PATH_SEP) return base + file;
+    return base + PATH_SEP + file;
+}
+
 int main(int argc, char **argv) {
-    namespace fs = std::filesystem;
 
     string data_dir = "";
     vector<string> args;
@@ -53,7 +65,8 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    fs::path base_path = data_dir.empty() ? fs::current_path() : fs::path(data_dir);
+
+    std::string base_path = data_dir.empty() ? "." : data_dir;
 
     string vocab = args[0];
     string settings = args[1];
@@ -121,15 +134,16 @@ int main(int argc, char **argv) {
 
     // Process each frame
     for (size_t i = 0; i < rgb_files.size(); ++i) {
-        fs::path rgb_path = base_path / rgb_files[i];
-        fs::path depth_path = base_path / depth_files[i];
+        std::string rgb_path = join_path(base_path, rgb_files[i]);
+        std::string depth_path = join_path(base_path, depth_files[i]);
+
 
         cout << "[DEBUG] Frame " << i << " timestamps - RGB: " << timestamps[i] << endl;
         cout << "[DEBUG] Loading RGB image from: " << rgb_path << endl;
         cout << "[DEBUG] Loading Depth image from: " << depth_path << endl;
 
-        cv::Mat imRGB = cv::imread(rgb_path.string(), cv::IMREAD_UNCHANGED);
-        cv::Mat imD = cv::imread(depth_path.string(), cv::IMREAD_UNCHANGED);
+        cv::Mat imRGB = cv::imread(rgb_path, cv::IMREAD_UNCHANGED);
+        cv::Mat imD = cv::imread(depth_path, cv::IMREAD_UNCHANGED);
 
         if (imRGB.empty() || imD.empty()) {
             cerr << "[Warning] Skipping frame " << i << " due to failed image load." << endl;
