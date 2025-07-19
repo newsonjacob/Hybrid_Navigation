@@ -34,8 +34,12 @@ from uav.context import ParamRefs, NavContext
 from uav.perception_loop import perception_loop, start_perception_thread, process_perception_data
 from uav.navigation_core import detect_obstacle, determine_side_safety, handle_obstacle, navigation_step, apply_navigation_decision
 from uav.navigation_slam_boot import run_slam_bootstrap
-from uav.slam_utils import is_slam_stable
 from uav.paths import STOP_FLAG_PATH
+from uav.slam_utils import (
+    is_slam_stable,
+    is_obstacle_ahead,
+    generate_pose_comparison_plot,
+)
 
 logger = logging.getLogger("nav_loop")
 logger.warning("[TEST] __name__ = %s | handlers = %s", __name__, logger.handlers)
@@ -339,45 +343,6 @@ def navigation_loop(args, client, ctx):
             )
     except KeyboardInterrupt:
         logger.info("Interrupted.")
-
-def is_obstacle_ahead(client, depth_threshold=2.0, vehicle_name="UAV"):
-    from airsim import ImageRequest, ImageType
-    logger.info("[Obstacle Check] Checking for obstacles ahead.")
-    try:
-        responses = client.simGetImages([
-            ImageRequest("oakd_camera", ImageType.DepthPlanar, True)
-        ], vehicle_name=vehicle_name)
-        if not responses or responses[0].height == 0:
-            logger.error("[Obstacle Check] No depth image received or image height is zero.")
-            return False, None
-        depth_image = airsim.get_pfm_array(responses[0])
-        h, w = depth_image.shape
-        cx, cy = w // 2, h // 2
-        roi = depth_image[cy-20:cy+20, cx-20:cx+20]
-        mean_depth = np.nanmean(roi)
-        return mean_depth < depth_threshold, mean_depth
-    except Exception as e:
-        logger.error("[Obstacle Check] Depth read failed: %s", e)
-        return False, None
-
-import subprocess
-
-def generate_pose_comparison_plot():
-    logger.info("[Plotting] Generating pose comparison plot.")
-    try:
-        logger.info("[Plotting] Running pose_comparison_plotter.py script.")
-        result = subprocess.run(
-            ["python", "slam_bridge/pose_comparison_plotter.py"],
-            check=True,
-            capture_output=True,
-            text=True
-        )
-        print("[Plotting] Pose comparison plot generated.")
-        print(result.stdout)
-    except subprocess.CalledProcessError as e:
-        logger.error("[Plotting] Failed to generate pose comparison plot.")
-        print("[Plotting] Failed to generate plot:")
-        print(e.stderr)
 
 def slam_navigation_loop(args, client, ctx):
     """
