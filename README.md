@@ -147,6 +147,13 @@ Simulation* writes `nav_mode.flag`. Once all systems report ready, clicking
 Pressing the stop button touches `stop.flag` so the running process can safely
 land and exit.
 
+### SLAM Utilities
+
+Two helper applications live under `linux_slam/app`:
+
+- `offline_slam_evaluation` now accepts `--data-dir=DIR` to specify where RGB and depth images are loaded from.
+- `tcp_slam_server` reads log and flag locations from the command line or the environment variables `SLAM_LOG_DIR`, `SLAM_FLAG_DIR` and `SLAM_IMAGE_DIR`.
+
 
 ---
 
