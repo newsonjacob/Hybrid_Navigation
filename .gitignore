@@ -25,6 +25,8 @@ linux_slam/custom/data/
 analysis/*.html
 analysis/*.csv
 
+analysis/pose_comparison.csv
+
 # IDE directories
 .vscode/
 .idea/
