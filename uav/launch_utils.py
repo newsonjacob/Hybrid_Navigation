@@ -122,6 +122,9 @@ def launch_slam_backend(receiver_host: str, receiver_port: int) -> subprocess.Po
         "wsl", "bash", "-c",
         f"export POSE_RECEIVER_IP={receiver_host}; "
         f"export POSE_RECEIVER_PORT={receiver_port}; "
+        "export SLAM_FLAG_DIR=/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/flags; "
+        "export SLAM_LOG_DIR=/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs; "
+        "export SLAM_IMAGE_DIR=/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/images; "
         "cd /mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/linux_slam/build && "
         "./app/tcp_slam_server ../Vocabulary/ORBvoc.txt ../app/rgbd_settings.yaml"
     ]
