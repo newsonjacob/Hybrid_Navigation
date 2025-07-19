@@ -16,6 +16,7 @@ from typing import List
 
 import airsim
 import numpy as np
+import cv2
 
 # ---Separate Process so requires logging setup---
 from uav.logging_config import setup_logging

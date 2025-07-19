@@ -27,9 +27,9 @@ int grace_frame_count = 0;  // Counter for frames with no detected motion
 const int MAX_GRACE_FRAMES = 30;  // Maximum number of frames to allow without motion
 
 // At the top of the file or near your other constants:
-const int MAX_IMAGE_WIDTH  = 1920;
-const int MAX_IMAGE_HEIGHT = 1080;
-const int MAX_IMAGE_BYTES  = MAX_IMAGE_WIDTH * MAX_IMAGE_HEIGHT * 3; // 3 for RGB
+const int MAX_IMAGE_WIDTH  = 1920; // Maximum width of the image
+const int MAX_IMAGE_HEIGHT = 1080; // Maximum height of the image
+const int MAX_IMAGE_BYTES  = MAX_IMAGE_WIDTH * MAX_IMAGE_HEIGHT * 1; // Assuming 1 byte per pixel for grayscale images
 
 using namespace std;
 
