@@ -13,6 +13,7 @@
 #include <chrono>
 #include <sstream>
 #include <mutex>
+#include <filesystem>
 #include <sys/stat.h>
 
 // Define grace period parameters at the top of the main function
@@ -214,45 +215,50 @@ void cleanup_resources(int sock, int server_fd, int pose_sock) {
 
 // ------- Main function to set up the TCP server, receive images, and process them with ORB-SLAM2 -------
 int main(int argc, char **argv) {
-    // Redirect stdout and stderr to log files
-    (void)freopen("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/slam_console.txt", "w", stdout);
-    (void)freopen("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/slam_console_err.txt", "w", stderr);
+    namespace fs = std::filesystem;
+
+    std::string log_dir = getenv("SLAM_LOG_DIR") ? getenv("SLAM_LOG_DIR") : "logs";
+    std::string flag_dir = getenv("SLAM_FLAG_DIR") ? getenv("SLAM_FLAG_DIR") : "flags";
+    std::string image_dir = getenv("SLAM_IMAGE_DIR") ? getenv("SLAM_IMAGE_DIR") : (fs::path(log_dir) / "images").string();
+
+    if (argc < 3) {
+        cerr << "Usage: ./tcp_slam_server vocab settings [log_dir] [flag_dir]" << endl;
+        return 1;
+    }
+
+    if (argc >= 4) log_dir = argv[3];
+    if (argc >= 5) flag_dir = argv[4];
+    if (argc >= 6) image_dir = argv[5];
+
+    fs::create_directories(log_dir);
+    fs::create_directories(flag_dir);
+    fs::create_directories(image_dir);
+
+    fs::path console_log = fs::path(log_dir) / "slam_console.txt";
+    fs::path console_err = fs::path(log_dir) / "slam_console_err.txt";
+
+    (void)freopen(console_log.c_str(), "w", stdout);
+    (void)freopen(console_err.c_str(), "w", stderr);
+
     // Set the locale to C for consistent number formatting
-    
+
     // Add this static variable at the top of your main function
     static cv::Mat prev_Tcw;  // Previous pose (initialize once)
 
-    if (argc < 3) {
-        cerr << "Usage: ./tcp_slam_server path_to_vocabulary path_to_settings [log_file_path]" << endl;
-        return 1;
-    }
-    // Create logs directory if it doesn't exist
-    #ifdef _WIN32
-        _mkdir("H:\\Documents\\AirSimExperiments\\Hybrid_Navigation\\logs");
-    #else
-        mkdir("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs", 0777);
-    #endif
-
-    // Create images directory if it doesn't exist
-    #ifdef _WIN32
-        _mkdir("H:\\Documents\\AirSimExperiments\\Hybrid_Navigation\\images");
-    #else
-        mkdir("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/images", 0777);
-    #endif
-    
     // Get vocabulary and settings file paths from command line arguments
     std::string vocab = argv[1];
     std::string settings = argv[2];
 
     // Set log file path with timestamp if not provided
-    if (argc >= 4) {
-        g_log_file_path = argv[3];
+    const char* log_file_env = getenv("SLAM_LOG_FILE");
+    if (log_file_env) {
+        g_log_file_path = log_file_env;
     } else {
         std::ostringstream oss;
         std::time_t t = std::time(nullptr);
         char timebuf[32];
         std::strftime(timebuf, sizeof(timebuf), "%Y%m%d_%H%M%S", std::localtime(&t));
-        oss << "/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/slam_server_debug_" << timebuf << ".log";
+        oss << fs::path(log_dir) / (std::string("slam_server_debug_") + timebuf + ".log");
         g_log_file_path = oss.str();
     }
 
@@ -261,7 +267,7 @@ int main(int argc, char **argv) {
     std::time_t pose_log_t = std::time(nullptr);
     char pose_log_timebuf[32];
     std::strftime(pose_log_timebuf, sizeof(pose_log_timebuf), "%Y%m%d_%H%M%S", std::localtime(&pose_log_t));
-    pose_log_oss << "/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/logs/pose_sent_" << pose_log_timebuf << ".log";
+    pose_log_oss << fs::path(log_dir) / (std::string("pose_sent_") + pose_log_timebuf + ".log");
     std::string pose_log_file_path = pose_log_oss.str();
     std::ofstream pose_log_stream(pose_log_file_path, std::ios::app);
 
@@ -797,7 +803,7 @@ int main(int argc, char **argv) {
                     cv::Mat rgb_kp;
                     cv::drawKeypoints(imLeft, orb_kps, rgb_kp);
                     std::ostringstream kp_filename;
-                    kp_filename << "/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/images/frame_rgb_kp_" << frame_counter << ".png";
+                    kp_filename << fs::path(image_dir) / (std::string("frame_rgb_kp_") + std::to_string(frame_counter) + ".png");
                     cv::imwrite(kp_filename.str(), rgb_kp);
                 }
             }
@@ -824,7 +830,7 @@ int main(int argc, char **argv) {
 
                 // Write the slam_ready.flag only once, after SLAM becomes valid
                 if (!slam_ready_flag_written) {
-                    std::string flag_path = "/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/flags/slam_ready.flag";
+                    std::string flag_path = (fs::path(flag_dir) / "slam_ready.flag").string();
                     std::ofstream flag_file(flag_path);
                     if (flag_file.is_open()) {
                         flag_file << "SLAM_READY" << std::endl;
@@ -931,8 +937,8 @@ int main(int argc, char **argv) {
     log_event("[DEBUG] Sockets closed. SLAM server shutting down.");
     SLAM.Shutdown();
 
-    SLAM.SaveTrajectoryTUM("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/CameraTrajectory.txt");
-    SLAM.SaveKeyFrameTrajectoryTUM("/mnt/h/Documents/AirSimExperiments/Hybrid_Navigation/KeyFrameTrajectory.txt");
+    SLAM.SaveTrajectoryTUM((fs::path(log_dir) / "CameraTrajectory.txt").string());
+    SLAM.SaveKeyFrameTrajectoryTUM((fs::path(log_dir) / "KeyFrameTrajectory.txt").string());
 
     return 0;
 }
