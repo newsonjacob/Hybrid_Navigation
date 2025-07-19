@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 
 
 def perception_loop(tracker, image):
-    """Process a single image for optical flow."""
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    """Process a single grayscale image for optical flow."""
+    gray = image
     if tracker.prev_gray is None:
         tracker.initialize(gray)
         return np.array([]), np.array([]), 0.0
@@ -49,12 +49,12 @@ def start_perception_thread(ctx):
                 data = (last_vis_img, np.array([]), np.array([]), 0.0, t_fetch_end - t0, 0.0, 0.0)
             else:
                 img1d = np.frombuffer(response.image_data_uint8, dtype=np.uint8).copy()
-                img = cv2.imdecode(img1d, cv2.IMREAD_COLOR)
+                img = cv2.imdecode(img1d, cv2.IMREAD_GRAYSCALE)
                 t_decode_end = time.time()
                 if img is None:
                     continue
                 img = cv2.resize(img, config.VIDEO_SIZE)
-                vis_img = img.copy()
+                vis_img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
                 last_vis_img = vis_img
                 t_proc_start = time.time()
                 good_old, flow_vectors, flow_std = perception_loop(tracker, img)
@@ -102,7 +102,7 @@ def process_perception_data(
         processing_s,
     ) = data
 
-    gray = cv2.cvtColor(vis_img, cv2.COLOR_BGR2GRAY)
+    image_width = vis_img.shape[1]
     if frame_count == 1 and len(good_old) == 0:
         frame_queue.put(vis_img)
         return None
@@ -133,7 +133,7 @@ def process_perception_data(
         left_count,
         center_count,
         right_count,
-    ) = compute_region_stats(magnitudes, good_old, gray.shape[1])
+    ) = compute_region_stats(magnitudes, good_old, image_width)
 
     flow_history.update(left_mag, center_mag, right_mag)
     smooth_L, smooth_C, smooth_R = flow_history.average()

@@ -13,6 +13,7 @@ This repository contains the implementation of a reactive obstacle avoidance sys
 - Logs flight data to CSV for post-flight analysis
 - Visualises 3D flight paths with interactive HTML output
 - Compatible with a custom stereo camera setup (`oakd_camera`)
+- Stereo images are streamed in grayscale to reduce processing overhead
 - Works with auto-launched AirSim simulation
 - Receives SLAM poses via a `PoseReceiver` that can be started and stopped programmatically
 - Integrated frontier-based exploration using SLAM map points

@@ -38,7 +38,7 @@ print(f"[stream_airsim_image.py] Logging configured. Writing to logs/stream_airs
 logger = logging.getLogger("stream_airsim_image")
 
 class ImageStreamer:
-    """Stream RGB + Depth or Stereo RGB images from AirSim to a TCP server."""
+    """Stream grayscale + depth or stereo grayscale images from AirSim to a TCP server."""
 
     def __init__(self, host: str, port: int, mode: str = "rgbd", retries: int = 10) -> None:
         self.host = host
@@ -94,10 +94,12 @@ class ImageStreamer:
             left = np.frombuffer(responses[0].image_data_uint8, dtype=np.uint8).reshape(
                 responses[0].height, responses[0].width, 3
             )
+            left = cv2.cvtColor(left, cv2.COLOR_BGR2GRAY)
             if hasattr(responses[1], "image_data_uint8"):
                 right = np.frombuffer(responses[1].image_data_uint8, dtype=np.uint8).reshape(
                     responses[1].height, responses[1].width, 3
                 )
+                right = cv2.cvtColor(right, cv2.COLOR_BGR2GRAY)
             else:
                 right = np.frombuffer(right_bytes, dtype=np.float32).reshape(
                     responses[1].height, responses[1].width
