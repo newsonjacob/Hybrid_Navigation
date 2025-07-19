@@ -60,10 +60,6 @@ int main(int argc, char **argv) {
     string assoc_file = args[2];
     string receiver_ip = (args.size() == 4) ? args[3] : "172.23.31.187"; // default IP or pass as argument
 
-    string vocab = argv[1];
-    string settings = argv[2];
-    string assoc_file = argv[3];
-    string receiver_ip = (argc == 5) ? argv[4] : "172.23.31.187"; // default IP or pass as argument
 
     // DEBUG: start timer before vocabulary load
     cout << "[DEBUG] Starting vocabulary load..." << endl;
