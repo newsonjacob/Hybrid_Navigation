@@ -29,7 +29,7 @@ const int MAX_GRACE_FRAMES = 30;  // Maximum number of frames to allow without m
 // At the top of the file or near your other constants:
 const int MAX_IMAGE_WIDTH  = 1920;
 const int MAX_IMAGE_HEIGHT = 1080;
-const int MAX_IMAGE_BYTES  = MAX_IMAGE_WIDTH * MAX_IMAGE_HEIGHT * 3; // 3 for RGB
+const int MAX_IMAGE_BYTES  = MAX_IMAGE_WIDTH * MAX_IMAGE_HEIGHT * 3; // 3 bytes per pixel
 
 using namespace std;
 
@@ -184,33 +184,33 @@ int main(int argc, char **argv) {
         }
         
             uint32_t net_height, net_width, net_bytes;
-            uint32_t rgb_height, rgb_width, rgb_bytes;
+            uint32_t gray_height, gray_width, gray_bytes;
 
-            // --- Receive Left RGB Image ---
+            // --- Receive Left Gray Image ---
             char left_header[12];
             if (!recv_all(sock, left_header, 12)) break;
             memcpy(&net_height, left_header, 4);
             memcpy(&net_width,  left_header + 4, 4);
             memcpy(&net_bytes, left_header + 8, 4);
-            rgb_height = ntohl(net_height);
-            rgb_width  = ntohl(net_width);
-            rgb_bytes  = ntohl(net_bytes);
+            gray_height = ntohl(net_height);
+            gray_width  = ntohl(net_width);
+            gray_bytes  = ntohl(net_bytes);
 
             // ----> SANITY CHECKS:
-            if (rgb_height <= 0 || rgb_width <= 0 || rgb_bytes <= 0 ||
-                rgb_height > MAX_IMAGE_HEIGHT ||
-                rgb_width  > MAX_IMAGE_WIDTH  ||
-                rgb_bytes  > MAX_IMAGE_BYTES) {
+            if (gray_height <= 0 || gray_width <= 0 || gray_bytes <= 0 ||
+                gray_height > MAX_IMAGE_HEIGHT ||
+                gray_width  > MAX_IMAGE_WIDTH  ||
+                gray_bytes  > MAX_IMAGE_BYTES) {
                 log_event("[FATAL] Received image header values out of bounds: " +
-                    std::to_string(rgb_height) + "x" + std::to_string(rgb_width) + ", " +
-                    std::to_string(rgb_bytes) + " bytes.");
+                    std::to_string(gray_height) + "x" + std::to_string(gray_width) + ", " +
+                    std::to_string(gray_bytes) + " bytes.");
                 break;
             }
             // Allocate buffer for left image
-            vector<uchar> left_buffer(rgb_bytes);
-            if (!recv_all(sock, (char*)left_buffer.data(), rgb_bytes)) break; // Receive the image data
-            cv::Mat left_rgb(rgb_height, rgb_width, CV_8UC3, left_buffer.data()); // Create Mat from buffer
-            if (left_rgb.empty() || left_rgb.rows != rgb_height || left_rgb.cols != rgb_width || left_rgb.type() != CV_8UC3) {
+            vector<uchar> left_buffer(gray_bytes);
+            if (!recv_all(sock, (char*)left_buffer.data(), gray_bytes)) break; // Receive the image data
+            cv::Mat left_rgb(gray_height, gray_width, CV_8UC3, left_buffer.data()); // Create Mat from buffer
+            if (left_rgb.empty() || left_rgb.rows != gray_height || left_rgb.cols != gray_width || left_rgb.type() != CV_8UC3) {
                 log_event("[ERROR] left_rgb invalid after construction! Skipping frame.");
                 continue;  // or break, depending on your policy
             }
@@ -231,7 +231,7 @@ int main(int argc, char **argv) {
                 log << "[DEBUG] Left image received: "
                     << "height="<< left_rgb.rows
                     << ", width=" << left_rgb.cols
-                    << ", expected bytes=" << rgb_bytes
+                    << ", expected bytes=" << gray_bytes
                     << ", actual buffer size=" << left_buffer.size();
                 log_event(log.str());
 
@@ -254,31 +254,31 @@ int main(int argc, char **argv) {
                 log_event(csmsg.str());
             }
 
-            // --- Receive Right RGB Image ---
+            // --- Receive Right Gray Image ---
             char right_header[12];
             if (!recv_all(sock, right_header, 12)) break;
             memcpy(&net_height, right_header, 4);
             memcpy(&net_width,  right_header + 4, 4);
             memcpy(&net_bytes, right_header + 8, 4);
-            rgb_height = ntohl(net_height);
-            rgb_width  = ntohl(net_width);
-            rgb_bytes  = ntohl(net_bytes);
+            gray_height = ntohl(net_height);
+            gray_width  = ntohl(net_width);
+            gray_bytes  = ntohl(net_bytes);
 
             // ----> SANITY CHECKS:
-            if (rgb_height <= 0 || rgb_width <= 0 || rgb_bytes <= 0 ||
-                rgb_height > MAX_IMAGE_HEIGHT ||
-                rgb_width  > MAX_IMAGE_WIDTH  ||
-                rgb_bytes  > MAX_IMAGE_BYTES) {
+            if (gray_height <= 0 || gray_width <= 0 || gray_bytes <= 0 ||
+                gray_height > MAX_IMAGE_HEIGHT ||
+                gray_width  > MAX_IMAGE_WIDTH  ||
+                gray_bytes  > MAX_IMAGE_BYTES) {
                 log_event("[FATAL] Received image header values out of bounds: " +
-                    std::to_string(rgb_height) + "x" + std::to_string(rgb_width) + ", " +
-                    std::to_string(rgb_bytes) + " bytes.");
+                    std::to_string(gray_height) + "x" + std::to_string(gray_width) + ", " +
+                    std::to_string(gray_bytes) + " bytes.");
                 break;
             }
 
-            vector<uchar> right_buffer(rgb_bytes); // Allocate buffer for right image
-            if (!recv_all(sock, (char*)right_buffer.data(), rgb_bytes)) break; // Receive the image data
-            cv::Mat right_rgb(rgb_height, rgb_width, CV_8UC3, right_buffer.data()); // Create Mat from buffer
-            if (right_rgb.empty() || right_rgb.rows != rgb_height || right_rgb.cols != rgb_width || right_rgb.type() != CV_8UC3) {
+            vector<uchar> right_buffer(gray_bytes); // Allocate buffer for right image
+            if (!recv_all(sock, (char*)right_buffer.data(), gray_bytes)) break; // Receive the image data
+            cv::Mat right_rgb(gray_height, gray_width, CV_8UC3, right_buffer.data()); // Create Mat from buffer
+            if (right_rgb.empty() || right_rgb.rows != gray_height || right_rgb.cols != gray_width || right_rgb.type() != CV_8UC3) {
                 log_event("[ERROR] right_rgb invalid after construction! Skipping frame.");
                 continue;  // or break, depending on your policy
             }
@@ -297,9 +297,9 @@ int main(int argc, char **argv) {
             {
                 std::ostringstream log;
                 log << "[DEBUG] Right image received: "
-                    << "height=" << rgb_height
-                    << ", width=" << rgb_width
-                    << ", expected bytes=" << rgb_bytes
+                    << "height=" << gray_height
+                    << ", width=" << gray_width
+                    << ", expected bytes=" << gray_bytes
                     << ", actual buffer size=" << right_buffer.size();
                 log_event(log.str());
 
@@ -575,7 +575,7 @@ int main(int argc, char **argv) {
                     << ", ORBFeatures=" << tracker->mCurrentFrame.N;
                 log_event(oss.str());
 
-                // Optional: save ORB keypoints on RGB image
+                // Optional: save ORB keypoints on grayscale image
                 if (frame_counter % 25 == 0) {
                     std::vector<cv::KeyPoint> orb_kps = tracker->mCurrentFrame.mvKeys;
                     cv::Mat rgb_kp;
