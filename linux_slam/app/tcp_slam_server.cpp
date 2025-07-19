@@ -443,37 +443,40 @@ int main(int argc, char **argv) {
                 log_event("[DEBUG] Timestamp at Frame #" + std::to_string(frame_counter) + ": " + std::to_string(timestamp));
 
                 cv::Mat Tcw_copy = Tcw.clone();  // Defensive copy of the pose matrix
-
-                log_event("Tcw_copy rows: " + std::to_string(Tcw_copy.rows) +
-                        ", cols: " + std::to_string(Tcw_copy.cols) +
-                        ", type: " + std::to_string(Tcw_copy.type()));
-                cv::Mat identity = cv::Mat::eye(4, 4, Tcw_copy.type());
-
-                // Check if Tcw_copy is close to identity matrix
-                double frobenius_norm = cv::norm(Tcw_copy - identity, cv::NORM_L2);
                 static int identity_frame_count = 0;  // Use static so it persists between frames
-                // Check if the identity matrix is detected (no motion)
-                if (frobenius_norm < 1e-3) {  // Identity matrix detected (no motion)
-                    identity_frame_count++;
+                if (Tcw_copy.empty() || Tcw_copy.rows != 4 || Tcw_copy.cols != 4) {
+                    log_event("[WARN] Tcw_copy invalid; skipping identity check.");
+                } else {
+                    log_event("Tcw_copy rows: " + std::to_string(Tcw_copy.rows) +
+                            ", cols: " + std::to_string(Tcw_copy.cols) +
+                            ", type: " + std::to_string(Tcw_copy.type()));
+                    cv::Mat identity = cv::Mat::eye(4, 4, Tcw_copy.type());
 
-                    if (identity_frame_count < MAX_GRACE_FRAMES) {
-                        // Still within grace period, just log and continue
-                        log_event("[INFO] Tcw appears to be an identity matrix — no motion detected. Count: " + std::to_string(identity_frame_count));
-                    } else {
-                        // Grace period exceeded, reset SLAM if no motion detected
-                        log_event("[ERROR] Too many frames with no motion, resetting SLAM.");
-                        SLAM.Reset();
-                        identity_frame_count = 0;  // Reset the counter after reset
+                    // Check if Tcw_copy is close to identity matrix
+                    double frobenius_norm = cv::norm(Tcw_copy - identity, cv::NORM_L2);
+                    // Check if the identity matrix is detected (no motion)
+                    if (frobenius_norm < 1e-3) {  // Identity matrix detected (no motion)
+                        identity_frame_count++;
+
+                        if (identity_frame_count < MAX_GRACE_FRAMES) {
+                            // Still within grace period, just log and continue
+                            log_event("[INFO] Tcw appears to be an identity matrix — no motion detected. Count: " + std::to_string(identity_frame_count));
+                        } else {
+                            // Grace period exceeded, reset SLAM if no motion detected
+                            log_event("[ERROR] Too many frames with no motion, resetting SLAM.");
+                            SLAM.Reset();
+                            identity_frame_count = 0;  // Reset the counter after reset
+                        }
                     }
-                }
 
-                if (identity_frame_count >= MAX_GRACE_FRAMES) {
-                    log_event("[INFO] Grace period over. Checking for motion.");
-                    if (frobenius_norm < 1e-3) {
-                        log_event("[WARN] No motion detected. Resetting SLAM.");
-                        SLAM.Reset();
-                    } else {
-                        log_event("[INFO] Motion detected. Continuing normal operation.");
+                    if (identity_frame_count >= MAX_GRACE_FRAMES) {
+                        log_event("[INFO] Grace period over. Checking for motion.");
+                        if (frobenius_norm < 1e-3) {
+                            log_event("[WARN] No motion detected. Resetting SLAM.");
+                            SLAM.Reset();
+                        } else {
+                            log_event("[INFO] Motion detected. Continuing normal operation.");
+                        }
                     }
                 }
 
