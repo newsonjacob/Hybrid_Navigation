@@ -6,6 +6,7 @@
 #include <sstream>  // for string stream operations
 #include <vector>   // for using vectors
 #include <unistd.h>  // for usleep and close
+#include <filesystem>
 #include <netinet/in.h> // for sockaddr_in and socket functions
 #include <arpa/inet.h>  // for inet_pton
 #include <chrono>   // for timing operations
@@ -32,12 +33,32 @@ bool SendPose(int sockfd, const cv::Mat& Tcw) {
 }
 
 int main(int argc, char **argv) {
-    string base_path = "/home/jacob/slam_ws/ORB_SLAM2_clean/app/"; // Base path for image files, adjust as needed
+    namespace fs = std::filesystem;
 
-    if (argc < 4 || argc > 5) {
-        cerr << "Usage: ./custom_slam path_to_vocabulary path_to_settings associate.txt [receiver_ip]" << endl;
+    string data_dir = "";
+    vector<string> args;
+
+    for (int i = 1; i < argc; ++i) {
+        string arg = argv[i];
+        const string prefix = "--data-dir=";
+        if (arg.rfind(prefix, 0) == 0) {
+            data_dir = arg.substr(prefix.size());
+        } else {
+            args.push_back(arg);
+        }
+    }
+
+    if (args.size() < 3 || args.size() > 4) {
+        cerr << "Usage: ./custom_slam [--data-dir=DIR] path_to_vocabulary path_to_settings associate.txt [receiver_ip]" << endl;
         return 1;
-    } 
+    }
+
+    fs::path base_path = data_dir.empty() ? fs::current_path() : fs::path(data_dir);
+
+    string vocab = args[0];
+    string settings = args[1];
+    string assoc_file = args[2];
+    string receiver_ip = (args.size() == 4) ? args[3] : "172.23.31.187"; // default IP or pass as argument
 
     string vocab = argv[1];
     string settings = argv[2];
@@ -104,15 +125,15 @@ int main(int argc, char **argv) {
 
     // Process each frame
     for (size_t i = 0; i < rgb_files.size(); ++i) {
-        string rgb_path = base_path + rgb_files[i];
-        string depth_path = base_path + depth_files[i];
+        fs::path rgb_path = base_path / rgb_files[i];
+        fs::path depth_path = base_path / depth_files[i];
 
         cout << "[DEBUG] Frame " << i << " timestamps - RGB: " << timestamps[i] << endl;
         cout << "[DEBUG] Loading RGB image from: " << rgb_path << endl;
         cout << "[DEBUG] Loading Depth image from: " << depth_path << endl;
 
-        cv::Mat imRGB = cv::imread(rgb_path, cv::IMREAD_UNCHANGED);
-        cv::Mat imD = cv::imread(depth_path, cv::IMREAD_UNCHANGED);
+        cv::Mat imRGB = cv::imread(rgb_path.string(), cv::IMREAD_UNCHANGED);
+        cv::Mat imD = cv::imread(depth_path.string(), cv::IMREAD_UNCHANGED);
 
         if (imRGB.empty() || imD.empty()) {
             cerr << "[Warning] Skipping frame " << i << " due to failed image load." << endl;
