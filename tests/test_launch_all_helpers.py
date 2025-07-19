@@ -27,7 +27,12 @@ def test_launch_slam_backend_invokes_subprocess(monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", lambda cmd, *a, **k: calls.append(cmd) or DummyProc())
     proc = lutils.launch_slam_backend("1.2.3.4", 6001)
     assert isinstance(proc, DummyProc)
-    assert calls and "POSE_RECEIVER_IP=1.2.3.4" in calls[0][-1]
+    assert calls
+    bash_cmd = calls[0][-1]
+    assert "POSE_RECEIVER_IP=1.2.3.4" in bash_cmd
+    assert "SLAM_FLAG_DIR=" in bash_cmd
+    assert "SLAM_LOG_DIR=" in bash_cmd
+    assert "SLAM_IMAGE_DIR=" in bash_cmd
 
 
 def test_record_slam_video_returns_path(monkeypatch):
