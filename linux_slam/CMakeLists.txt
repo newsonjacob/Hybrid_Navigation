@@ -13,8 +13,8 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall   -O3 -march=native")
 
 add_compile_options(-Wno-deprecated-declarations)
 
-# Use C++17 standard
-set(CMAKE_CXX_STANDARD 17)
+# Use C++14 standard
+set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 message(STATUS "Using C++ standard: ${CMAKE_CXX_STANDARD}")
 
