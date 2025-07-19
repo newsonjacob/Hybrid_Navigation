@@ -30,22 +30,19 @@ from uav.utils import (get_drone_state, retain_recent_logs, init_client)
 from uav.utils import retain_recent_files, retain_recent_views
 from uav import config
 from uav.logging_helpers import log_frame_data, write_video_frame, write_frame_output, handle_reset
+from uav.context import ParamRefs, NavContext
 from uav.perception_loop import perception_loop, start_perception_thread, process_perception_data
 from uav.navigation_core import detect_obstacle, determine_side_safety, handle_obstacle, navigation_step, apply_navigation_decision
 from uav.navigation_slam_boot import run_slam_bootstrap
-from uav.slam_utils import is_slam_stable
+from uav.paths import STOP_FLAG_PATH
+from uav.slam_utils import (
+    is_slam_stable,
+    is_obstacle_ahead,
+    generate_pose_comparison_plot,
+)
 
 logger = logging.getLogger("nav_loop")
 logger.warning("[TEST] __name__ = %s | handlers = %s", __name__, logger.handlers)
-
-frame_counter = 0
-MIN_INLIERS_THRESHOLD = 100  # Minimum inliers to consider SLAM stable
-
-# Grace period duration (seconds) after dodge/brake actions
-NAV_GRACE_PERIOD_SEC = 0.5
-
-# Flag file to stop the drone
-STOP_FLAG_PATH = "flags/stop.flag"
 
 # === Perception Processing ===
 
@@ -53,12 +50,7 @@ def setup_environment(args, client):
     """Initialize the navigation environment and return a context dict."""
     from uav.interface import exit_flag
     from uav.utils import retain_recent_logs
-    param_refs = {
-        'L': [0.0], 'C': [0.0], 'R': [0.0],
-        'prev_L': [0.0], 'prev_C': [0.0], 'prev_R': [0.0],
-        'delta_L': [0.0], 'delta_C': [0.0], 'delta_R': [0.0],
-        'state': [''], 'reset_flag': [False]
-    }
+    param_refs = ParamRefs()
     logger.info("Available vehicles: %s", client.listVehicles())
     init_client(client)
     client.takeoffAsync().join(); client.moveToPositionAsync(0, 0, -2, 2).join()
@@ -91,142 +83,266 @@ def setup_environment(args, client):
     out = cv2.VideoWriter(config.VIDEO_OUTPUT, fourcc, config.VIDEO_FPS, config.VIDEO_SIZE)
     frame_queue = Queue(maxsize=20)
     video_thread = start_video_writer_thread(frame_queue, out, exit_flag)
-    ctx = {
-        'exit_flag': exit_flag, 'param_refs': param_refs, 'tracker': tracker, 'flow_history': flow_history,
-        'navigator': navigator, 'state_history': state_history, 'pos_history': pos_history,
-        'frame_queue': frame_queue, 'video_thread': video_thread, 'out': out, 'log_file': log_file,
-        'log_buffer': [], 'timestamp': timestamp, 'start_time': start_time, 'fps_list': [], 'fourcc': fourcc,
-    }
+    ctx = NavContext(
+        exit_flag=exit_flag,
+        param_refs=param_refs,
+        tracker=tracker,
+        flow_history=flow_history,
+        navigator=navigator,
+        state_history=state_history,
+        pos_history=pos_history,
+        frame_queue=frame_queue,
+        video_thread=video_thread,
+        out=out,
+        log_file=log_file,
+        log_buffer=[],
+        timestamp=timestamp,
+        start_time=start_time,
+        fps_list=[],
+        fourcc=fourcc,
+    )
     return ctx
+
+# === Helper Functions ===
+
+def check_startup_grace(ctx, time_now):
+    """Return True when startup grace period has elapsed."""
+    if ctx.startup_grace_over:
+        return True
+    if time_now - ctx.start_time < config.GRACE_PERIOD_SEC:
+        ctx.param_refs.state[0] = "startup_grace"
+        if not ctx.grace_logged:
+            logger.info(
+                "Startup grace period active — waiting to start perception and nav"
+            )
+            ctx.grace_logged = True
+        time.sleep(0.05)
+        return False
+    ctx.startup_grace_over = True
+    logger.info("Startup grace period complete — beginning full nav logic")
+    return True
+
+
+def get_perception_data(ctx):
+    """Retrieve the latest perception result or None."""
+    try:
+        return ctx.perception_queue.get(timeout=1.0)
+    except Exception:
+        return None
+
+
+def update_navigation_state(client, args, ctx, data, frame_count, time_now, max_flow_mag):
+    """Process perception data and decide the next navigation action."""
+    processed = process_perception_data(
+        client,
+        args,
+        data,
+        frame_count,
+        ctx.frame_queue,
+        ctx.flow_history,
+        ctx.navigator,
+        ctx.param_refs,
+        time_now,
+        max_flow_mag,
+    )
+    if processed is None:
+        return None
+    (
+        vis_img,
+        good_old,
+        flow_vectors,
+        flow_std,
+        simgetimage_s,
+        decode_s,
+        processing_s,
+        smooth_L,
+        smooth_C,
+        smooth_R,
+        delta_L,
+        delta_C,
+        delta_R,
+        probe_mag,
+        probe_count,
+        left_count,
+        center_count,
+        right_count,
+        in_grace,
+    ) = processed
+    prev_state = ctx.param_refs.state[0]
+    nav_decision = apply_navigation_decision(
+        client,
+        ctx.navigator,
+        ctx.flow_history,
+        good_old,
+        flow_vectors,
+        flow_std,
+        smooth_L,
+        smooth_C,
+        smooth_R,
+        delta_L,
+        delta_C,
+        delta_R,
+        probe_mag,
+        probe_count,
+        left_count,
+        center_count,
+        right_count,
+        ctx.frame_queue,
+        vis_img,
+        time_now,
+        frame_count,
+        prev_state,
+        ctx.state_history,
+        ctx.pos_history,
+        ctx.param_refs,
+    )
+    return processed, nav_decision
+
+
+def log_and_record_frame(
+    client,
+    ctx,
+    loop_start,
+    frame_duration,
+    processed,
+    nav_decision,
+    frame_count,
+    time_now,
+):
+    """Overlay telemetry, log, and queue video frames."""
+    (
+        vis_img,
+        good_old,
+        flow_vectors,
+        flow_std,
+        simgetimage_s,
+        decode_s,
+        processing_s,
+        smooth_L,
+        smooth_C,
+        smooth_R,
+        delta_L,
+        delta_C,
+        delta_R,
+        probe_mag,
+        probe_count,
+        left_count,
+        center_count,
+        right_count,
+        in_grace,
+    ) = processed
+    (
+        state_str,
+        obstacle_detected,
+        side_safe,
+        brake_thres,
+        dodge_thres,
+        probe_req,
+    ) = nav_decision
+    return write_frame_output(
+        client,
+        vis_img,
+        ctx.frame_queue,
+        loop_start,
+        frame_duration,
+        ctx.fps_list,
+        ctx.start_time,
+        smooth_L,
+        smooth_C,
+        smooth_R,
+        delta_L,
+        delta_C,
+        delta_R,
+        left_count,
+        center_count,
+        right_count,
+        good_old,
+        flow_vectors,
+        in_grace,
+        frame_count,
+        time_now,
+        ctx.param_refs,
+        ctx.log_file,
+        ctx.log_buffer,
+        state_str,
+        obstacle_detected,
+        side_safe,
+        brake_thres,
+        dodge_thres,
+        probe_req,
+        simgetimage_s,
+        decode_s,
+        processing_s,
+        flow_std,
+    )
 
 def navigation_loop(args, client, ctx):
     """Main navigation loop processing perception results."""
-    exit_flag, flow_history, navigator = ctx['exit_flag'], ctx['flow_history'], ctx['navigator']
-    param_refs, state_history, pos_history = ctx['param_refs'], ctx['state_history'], ctx['pos_history']
-    perception_queue, frame_queue, video_thread = ctx['perception_queue'], ctx['frame_queue'], ctx['video_thread']
+    exit_flag = ctx.exit_flag
 
-    out, log_file, log_buffer = ctx['out'], ctx['log_file'], ctx['log_buffer']
-    start_time, timestamp, fps_list, fourcc = ctx['start_time'], ctx['timestamp'], ctx['fps_list'], ctx['fourcc']
+    max_flow_mag = config.MAX_FLOW_MAG
+    max_duration = args.max_duration
+    goal_x, goal_y = args.goal_x, config.GOAL_Y
+    frame_count = 0
+    frame_duration = 1.0 / config.TARGET_FPS
 
-    MAX_FLOW_MAG, MAX_VECTOR_COMPONENT = config.MAX_FLOW_MAG, config.MAX_VECTOR_COMPONENT
-    GRACE_PERIOD_SEC, MAX_SIM_DURATION = config.GRACE_PERIOD_SEC, args.max_duration
-    GOAL_X, GOAL_Y = args.goal_x, config.GOAL_Y
-    frame_count, target_fps, frame_duration = 0, config.TARGET_FPS, 1.0 / config.TARGET_FPS
-    grace_logged, startup_grace_over = False, False
     logger.info("[NavLoop] Starting navigation loop with args: %s", args)
+    loop_start = time.time()
     try:
-        loop_start = time.time()
         while not exit_flag.is_set():
             if os.path.exists(STOP_FLAG_PATH):
                 logger.info("Stop flag detected. Landing and shutting down.")
                 exit_flag.set()
                 break
+
             frame_count += 1
             time_now = time.time()
 
-            # Print real drone position from AirSim if available
-            if hasattr(client, "simGetVehiclePose"):
-                try:
-                    pose = client.simGetVehiclePose("UAV")
-                    pos = getattr(pose, "position", None)
-                    if pos is not None:
-                        pass  # Could log position here if desired
-                except Exception:
-                    pass
+            if not check_startup_grace(ctx, time_now):
+                continue
 
-            if not startup_grace_over:
-                if time_now - start_time < GRACE_PERIOD_SEC:
-                    param_refs['state'][0] = "startup_grace"
-                    if not grace_logged:
-                        logger.info("Startup grace period active — waiting to start perception and nav")
-                        grace_logged = True
-                    time.sleep(0.05)
-                    continue
-                else:
-                    startup_grace_over = True
-                    logger.info("Startup grace period complete — beginning full nav logic")
-            try: data = perception_queue.get(timeout=1.0)
-            except Exception: continue
-            prev_state = param_refs['state'][0]
-            # if navigator.settling and time_now >= navigator.settle_end_time:
-            #     logger.info("Settle period over — resuming evaluation")
-            #     navigator.settling = False
-            if time_now - start_time >= MAX_SIM_DURATION:
-                logger.info("Time limit reached — landing and stopping."); break
+            data = get_perception_data(ctx)
+            if data is None:
+                continue
+
+            if time_now - ctx.start_time >= max_duration:
+                logger.info("Time limit reached — landing and stopping.")
+                break
+
             pos_goal, _, _ = get_drone_state(client)
-            threshold = 0.5  # Define a threshold for goal position proximity
-            if abs(pos_goal.x_val - GOAL_X) < threshold and abs(pos_goal.y_val - GOAL_Y) < threshold:
+            if abs(pos_goal.x_val - goal_x) < 0.5 and abs(pos_goal.y_val - goal_y) < 0.5:
                 logger.info("Goal reached — landing.")
                 break
-            processed = process_perception_data(
-                client, args, data, frame_count, frame_queue, flow_history, navigator, param_refs, time_now, MAX_FLOW_MAG,
+
+            result = update_navigation_state(
+                client,
+                args,
+                ctx,
+                data,
+                frame_count,
+                time_now,
+                max_flow_mag,
             )
-            if processed is None: continue
-            (   vis_img, good_old, flow_vectors, flow_std, simgetimage_s, decode_s, processing_s,
-                smooth_L, smooth_C, smooth_R, delta_L, delta_C, delta_R,
-                probe_mag, probe_count, left_count, center_count, right_count, in_grace,
-            ) = processed
-            (
-                state_str, obstacle_detected, side_safe, brake_thres, dodge_thres, probe_req,
-            ) = apply_navigation_decision(
-                client, navigator, flow_history, good_old, flow_vectors, flow_std,
-                smooth_L, smooth_C, smooth_R, delta_L, delta_C, delta_R, probe_mag, probe_count,
-                left_count, center_count, right_count, frame_queue, vis_img,
-                time_now, frame_count, prev_state, state_history, pos_history, param_refs,
-            )
-            if param_refs['reset_flag'][0]:
-                frame_count = handle_reset(client, ctx, frame_count)
-                flow_history, navigator, log_file, video_thread, out = ctx['flow_history'], ctx['navigator'], ctx['log_file'], ctx['video_thread'], ctx['out']
+            if result is None:
                 continue
-            loop_start = write_frame_output(
-                client, vis_img, frame_queue, loop_start, frame_duration, fps_list, start_time,
-                smooth_L, smooth_C, smooth_R, delta_L, delta_C, delta_R,
-                left_count, center_count, right_count,
-                good_old, flow_vectors, in_grace, frame_count, time_now, param_refs,
-                log_file, log_buffer, state_str, obstacle_detected, side_safe,
-                brake_thres, dodge_thres, probe_req, simgetimage_s, decode_s, processing_s, flow_std,
+            processed, nav_decision = result
+
+            if ctx.param_refs.reset_flag[0]:
+                frame_count = handle_reset(client, ctx, frame_count)
+                continue
+
+            loop_start = log_and_record_frame(
+                client,
+                ctx,
+                loop_start,
+                frame_duration,
+                processed,
+                nav_decision,
+                frame_count,
+                time_now,
             )
     except KeyboardInterrupt:
         logger.info("Interrupted.")
-
-def is_obstacle_ahead(client, depth_threshold=2.0, vehicle_name="UAV"):
-    from airsim import ImageRequest, ImageType
-    logger.info("[Obstacle Check] Checking for obstacles ahead.")
-    try:
-        responses = client.simGetImages([
-            ImageRequest("oakd_camera", ImageType.DepthPlanar, True)
-        ], vehicle_name=vehicle_name)
-        if not responses or responses[0].height == 0:
-            logger.error("[Obstacle Check] No depth image received or image height is zero.")
-            return False, None
-        depth_image = airsim.get_pfm_array(responses[0])
-        h, w = depth_image.shape
-        cx, cy = w // 2, h // 2
-        roi = depth_image[cy-20:cy+20, cx-20:cx+20]
-        mean_depth = np.nanmean(roi)
-        return mean_depth < depth_threshold, mean_depth
-    except Exception as e:
-        logger.error("[Obstacle Check] Depth read failed: %s", e)
-        return False, None
-
-import subprocess
-
-def generate_pose_comparison_plot():
-    logger.info("[Plotting] Generating pose comparison plot.")
-    try:
-        logger.info("[Plotting] Running pose_comparison_plotter.py script.")
-        result = subprocess.run(
-            ["python", "slam_bridge/pose_comparison_plotter.py"],
-            check=True,
-            capture_output=True,
-            text=True
-        )
-        print("[Plotting] Pose comparison plot generated.")
-        print(result.stdout)
-    except subprocess.CalledProcessError as e:
-        logger.error("[Plotting] Failed to generate pose comparison plot.")
-        print("[Plotting] Failed to generate plot:")
-        print(e.stderr)
 
 def slam_navigation_loop(args, client, ctx):
     """
@@ -246,8 +362,8 @@ def slam_navigation_loop(args, client, ctx):
     navigator = None
     last_action = "none"
     if ctx is not None:
-        exit_flag = ctx.get("exit_flag", None)
-        navigator = ctx.get("navigator", None)
+        exit_flag = getattr(ctx, "exit_flag", None)
+        navigator = getattr(ctx, "navigator", None)
 
     # --- Initialize SLAM navigation parameters ---
     start_time = time.time()
@@ -393,95 +509,103 @@ def slam_navigation_loop(args, client, ctx):
         # generate_pose_comparison_plot()
     return last_action
 
+def shutdown_threads(ctx):
+    """Stop worker threads and wait for them to exit."""
+    if ctx is None:
+        return
+
+    exit_flag = getattr(ctx, "exit_flag", None)
+    if exit_flag is not None:
+        exit_flag.set()
+
+    frame_queue = getattr(ctx, "frame_queue", None)
+    if frame_queue is not None:
+        try:
+            frame_queue.put(None, block=False)
+        except Exception:
+            pass
+
+    for attr in ("video_thread", "perception_thread"):
+        thread = getattr(ctx, attr, None)
+        if thread is not None:
+            try:
+                thread.join()
+            except Exception:
+                pass
+
+
+def close_logging(ctx):
+    """Flush buffered log/video data and close file handles."""
+    if ctx is None:
+        return
+
+    out = getattr(ctx, "out", None)
+    if out is not None:
+        try:
+            out.release()
+        except Exception:
+            pass
+
+    log_file = getattr(ctx, "log_file", None)
+    log_buffer = getattr(ctx, "log_buffer", None)
+    if log_file is not None:
+        try:
+            if log_buffer:
+                log_file.writelines(log_buffer)
+                log_buffer.clear()
+            log_file.close()
+        except Exception as exc:
+            logger.warning("⚠️ Log file already closed or error writing: %s", exc)
+
+
+def shutdown_airsim(client):
+    """Land the drone and disable API control."""
+    if client is None:
+        return
+    try:
+        fut = client.landAsync()
+        fut.join()
+        client.armDisarm(False)
+        client.enableApiControl(False)
+    except Exception as exc:
+        logger.error("Landing error: %s", exc)
+
+
+def finalize_files(ctx):
+    """Generate flight analysis and clean up generated files."""
+    if ctx is None:
+        return
+
+    timestamp = getattr(ctx, "timestamp", None)
+    if timestamp:
+        try:
+            html_output = f"analysis/flight_view_{timestamp}.html"
+            subprocess.run(["python3", "-m", "analysis.visualise_flight", html_output])
+            logger.info("Flight path analysis saved to %s", html_output)
+        except Exception as exc:
+            logger.error("Error generating flight path analysis: %s", exc)
+
+    try:
+        retain_recent_views("analysis", 5)
+    except Exception as exc:
+        logger.error("Error retaining recent views: %s", exc)
+
+    try:
+        if os.path.exists(STOP_FLAG_PATH):
+            os.remove(STOP_FLAG_PATH)
+            logger.info("Removed stop flag file.")
+    except Exception as exc:
+        logger.error("Error removing stop flag file: %s", exc)
+
+
 def cleanup(client, sim_process, ctx):
     """Clean up resources and land the drone."""
     logger.info("Landing...")
 
-    if ctx is not None:
-        exit_flag = ctx.get('exit_flag')
-        frame_queue = ctx.get('frame_queue')
-        video_thread = ctx.get('video_thread')
-        perception_thread = ctx.get('perception_thread')
-        out = ctx.get('out')
-        log_file = ctx.get('log_file')
-        log_buffer = ctx.get('log_buffer')
-        timestamp = ctx.get('timestamp')
-        fps_list = ctx.get('fps_list')
-
-        if exit_flag:
-            exit_flag.set()
-
-        if frame_queue:
-            try: frame_queue.put(None)
-            except Exception: pass
-
-        if video_thread:
-            try: video_thread.join()
-            except Exception: pass
-
-        if perception_thread:
-            try: perception_thread.join()
-            except Exception: pass
-
-        if out:
-            try: out.release()
-            except Exception: pass
-
-        if log_file:
-            try:
-                if log_buffer:
-                    log_file.writelines(log_buffer)
-                    log_buffer.clear()
-                log_file.close()
-            except Exception as e:
-                logger.warning("⚠️ Log file already closed or error writing: %s", e)
-
-        try:
-            html_output = f"analysis/flight_view_{timestamp}.html"
-            subprocess.run(["python3", "-m", "analysis.visualize_flight", html_output])
-            logger.info("Flight path analysis saved to %s", html_output)
-        except Exception as e:
-            logger.error("Error generating flight path analysis: %s", e)
-
-        try:
-            retain_recent_views("analysis", 5)
-        except Exception as e:
-            logger.error("Error retaining recent views: %s", e)
-
-    try:
-        if client:
-            client.landAsync().join()
-            client.armDisarm(False)
-            client.enableApiControl(False)
-    except Exception as e:
-        logger.error("Landing error: %s", e)
-
-    # Wait after landing for graceful shutdown if early exit
-    if client and ctx is not None and ctx.get("exit_flag", None) and ctx["exit_flag"].is_set():
-        logger.info("🕒 Pausing briefly after landing for graceful shutdown...")
-        for _ in range(30):  # Wait up to 3 seconds
-            try:
-                pos = client.getMultirotorState().kinematics_estimated.position
-                if pos.z_val > -0.2:
-                    logger.info("Drone appears to be landed.")
-                    break
-                time.sleep(0.1)
-            except Exception:
-                break
-
-    try:
-        # Wait until the drone is landed or until a timeout (e.g., 15 seconds)
-        if client and ctx is not None and ctx.get("exit_flag", None) and ctx["exit_flag"].is_set():
-            logger.info("🕒 Waiting for drone to land for graceful shutdown...")
-            max_wait = 7  # seconds
-            start_wait = time.time()
-            while True:
-                if time.time() - start_wait > max_wait:
-                    logger.warning("Timeout waiting for drone to land.")
-                    break
-                time.sleep(0.1)
-    except Exception as e:
-        logger.error("Error during graceful shutdown wait: %s", e)
+    shutdown_threads(ctx)
+    close_logging(ctx)
+    shutdown_airsim(client)
+    finalize_files(ctx)
 
     if sim_process:
         sim_process.terminate()
@@ -490,14 +614,4 @@ def cleanup(client, sim_process, ctx):
         except Exception:
             sim_process.kill()
         logger.info("UE4 simulation closed.")
-
-    # --- New cleanup code ---
-    try:
-        # Ensure the stop flag file is removed on cleanup
-        if os.path.exists(STOP_FLAG_PATH):
-            os.remove(STOP_FLAG_PATH)
-            logger.info("Removed stop flag file.")
-    except Exception as e:
-        logger.error("Error removing stop flag file: %s", e)
-
 

@@ -2,6 +2,7 @@ import threading
 import time
 import os
 from pathlib import Path
+from uav.paths import STOP_FLAG_PATH
 import queue
 from datetime import datetime
 import cv2
@@ -44,7 +45,6 @@ flags_dir = Path("flags")
 flags_dir.mkdir(exist_ok=True)
 START_FLAG_PATH = flags_dir / "start_nav.flag"
 SETTINGS_PATH = r"C:\Users\Jacob\OneDrive\Documents\AirSim\settings.json"
-STOP_FLAG_PATH = flags_dir / "stop.flag"
 
 
 def get_settings_path(args, config):
