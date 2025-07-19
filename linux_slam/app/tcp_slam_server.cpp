@@ -16,6 +16,8 @@
 #include <filesystem>
 #include <sys/stat.h>
 #include <cerrno>
+#include <arpa/inet.h>
+#include <sys/socket.h>
 #ifdef _WIN32
 #include <direct.h>
 #endif
@@ -36,6 +38,8 @@ using slam_server::g_log_file_path;
 using slam_server::log_event;
 using slam_server::get_feature_inliers;
 using slam_server::get_pose_covariance_with_inliers;
+using slam_server::recv_all;
+using slam_server::send_pose;
 
 // ------- Main function to set up the TCP server, receive images, and process them with ORB-SLAM2 -------
 // Simple cross-platform helpers
