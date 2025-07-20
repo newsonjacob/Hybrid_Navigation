@@ -1,6 +1,12 @@
+"""Optical flow scoring helpers for region statistics."""
+
 import numpy as np
 
-def compute_region_stats(magnitudes: np.ndarray, good_old: np.ndarray, image_width: int):
+def compute_region_stats(
+    magnitudes: np.ndarray, good_old: np.ndarray, image_width: int
+) -> tuple:
+    """Return average flow magnitude in left/center/right/probe regions."""
+
     h = 720  # Fixed height based on 1280x720 resolution
     good_old = good_old.reshape(-1, 2)
     x_coords = good_old[:, 0]

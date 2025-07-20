@@ -1,3 +1,5 @@
+"""Helper functions for launching external processes and waiting on events."""
+
 import logging
 import subprocess
 import socket

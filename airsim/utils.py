@@ -1,4 +1,6 @@
-import numpy as np #pip install numpy
+"""Utility helpers used by the AirSim Python client."""
+
+import numpy as np  # pip install numpy
 import math
 import time
 import sys

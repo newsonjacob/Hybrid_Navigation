@@ -1,3 +1,5 @@
+"""Simplified client wrappers to interact with the AirSim simulator."""
+
 from __future__ import print_function
 
 from .utils import *

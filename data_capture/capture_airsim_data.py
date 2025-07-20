@@ -1,3 +1,5 @@
+"""Standalone script to capture images from AirSim runs."""
+
 import logging
 import airsim
 import os

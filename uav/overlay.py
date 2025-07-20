@@ -1,12 +1,29 @@
+"""Overlay utilities for drawing navigation info on frames."""
+
 import cv2
 import numpy as np
 
-def draw_overlay(vis_img, frame_count, speed, state, sim_time,
-                 smooth_L, smooth_C, smooth_R,
-                 delta_L, delta_C, delta_R,
-                 left_count, center_count, right_count,
-                 good_old, flow_vectors,
-                 in_grace=False):
+
+def draw_overlay(
+    vis_img,
+    frame_count,
+    speed,
+    state,
+    sim_time,
+    smooth_L,
+    smooth_C,
+    smooth_R,
+    delta_L,
+    delta_C,
+    delta_R,
+    left_count,
+    center_count,
+    right_count,
+    good_old,
+    flow_vectors,
+    in_grace=False,
+):
+    """Draw tracked features and text overlays onto ``vis_img``."""
     img = vis_img.copy()
     h, w = img.shape[:2]
     third = w // 3

@@ -1,4 +1,5 @@
-# uav/slam_utils.py
+"""Helpers for interfacing with the SLAM backend."""
+
 import logging
 import subprocess
 from typing import Tuple, Optional
