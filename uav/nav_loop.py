@@ -348,9 +348,8 @@ def slam_navigation_loop(args, client, ctx):
     """
     Main navigation loop for SLAM-based navigation with basic obstacle avoidance.
     """
-    # After drone takeoff and camera ready
-    # run_slam_bootstrap(client, duration=6.0)  # you can tune this
-    # time.sleep(1.0)  # Let SLAM settle after bootstrap
+    # After drone takeoff and camera ready, perform an initial calibration
+    # sequence so SLAM has diverse motion before waypoint navigation.
 
     # logger.info("[SLAMNav] Starting SLAM navigation loop.")
 
@@ -372,6 +371,11 @@ def slam_navigation_loop(args, client, ctx):
     goal_y = getattr(args, "goal_y", 0) if hasattr(args, "goal_y") else 0
     goal_z = getattr(args, "goal_z", -2) if hasattr(args, "goal_z") else -2
     threshold = 0.5  # meters
+
+    # Perform an initial SLAM calibration manoeuvre before navigating.
+    if max_duration != 0:
+        run_slam_bootstrap(client, duration=6.0)
+        time.sleep(1.0)  # Allow SLAM to settle after calibration
 
     # Simplified execution path used by tests
     if max_duration == 0 and navigator is not None:
