@@ -9,6 +9,7 @@ def run_slam_bootstrap(client, duration=8.0, vehicle_name="UAV"):
     """
     Perform rich camera motion to help SLAM initialize.
     Includes forward motion, lateral zigzag, and yaw rotations.
+    The drone ends the manoeuvre facing forward (yaw=0).
     """
     logger.info("[SLAM_BOOT] Starting SLAM bootstrap motion...")
 
@@ -45,7 +46,11 @@ def run_slam_bootstrap(client, duration=8.0, vehicle_name="UAV"):
 
         time.sleep(0.1)
 
-    # Stop the drone at the end
+    # Stop the drone at the end and ensure it faces forward
     client.moveByVelocityAsync(0, 0, 0, 1.0, vehicle_name=vehicle_name)
+    if hasattr(client, "rotateToYawAsync"):
+        client.rotateToYawAsync(0, vehicle_name=vehicle_name)
+    else:
+        logger.debug("rotateToYawAsync not available on client stub")
     logger.info("[SLAM_BOOT] Bootstrap motion complete.")
 
