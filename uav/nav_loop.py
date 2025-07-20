@@ -459,8 +459,8 @@ def slam_navigation_loop(args, client, ctx):
             logger.info(f"[SLAMNav] Current waypoint: {current_waypoint_index + 1} at ({goal_x}, {goal_y}, {goal_z})")
 
             # --- Calculate the distance to the current waypoint ---
-            distance_to_goal = np.sqrt((airsim_x - goal_x)**2 + (airsim_y - goal_y)**2)
-            # distance_to_goal = np.sqrt((x - goal_x)**2 + (y - goal_y)**2)
+            distance_to_goal = np.sqrt((x - goal_x)**2 + (y - goal_y)**2)
+            
             logger.info(f"Distance to waypoint: {distance_to_goal:.2f} meters")
 
             # --- If the drone is within the threshold of the waypoint, move to the next waypoint ---
@@ -472,7 +472,7 @@ def slam_navigation_loop(args, client, ctx):
             if navigator is None:
                 navigator = Navigator(client)
             # last_action = client.moveToPositionAsync(2,0,-2, 2)
-            last_action = navigator.slam_to_goal(None, (goal_x, goal_y, goal_z))
+            last_action = navigator.slam_to_goal(pose, (goal_x, goal_y, goal_z))
             # logger.info("[SLAMNav] Action: %s", last_action)
         
             # --- Check if the stop flag is set ---

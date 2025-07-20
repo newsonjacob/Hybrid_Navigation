@@ -161,11 +161,17 @@ class Navigator:
     #     self.client.moveByVelocityAsync(vx, vy, vz, duration=1, vehicle_name="UAV")
     #     return f"slam_nav vx={vx:.2f} vy={vy:.2f} vz={vz:.2f} dist={dist:.2f}"
     
-    def slam_to_goal(self, pose, goal, max_speed=1.5, threshold=0.5, settle_time=1.0, velocity_threshold=0.1):
-        # Use AirSim position instead of SLAM pose
+    def slam_to_goal(self, pose, goal, max_speed=1.5, threshold=0.5,
+                     settle_time=1.0, velocity_threshold=0.1):
+        """Move toward ``goal`` using the provided SLAM ``pose``."""
+
         state = self.client.getMultirotorState()
-        pos = state.kinematics_estimated.position
-        x, y, z = pos.x_val, pos.y_val, pos.z_val
+
+        if pose is None:
+            pos = state.kinematics_estimated.position
+            x, y, z = pos.x_val, pos.y_val, pos.z_val
+        else:
+            x, y, z = pose
 
         gx, gy, gz = goal
         dx = gx - x
