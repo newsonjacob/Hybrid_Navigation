@@ -3,6 +3,7 @@ import struct
 import threading
 import sys
 from types import SimpleNamespace
+import cv2
 
 import numpy as np
 
@@ -28,14 +29,14 @@ def test_image_streamer_sends_headers_and_data(monkeypatch):
     def handle_client():
         conn, _ = server.accept()
         with conn:
-            rgb_header = _recvall(conn, 12)
-            h, w, size = struct.unpack("!III", rgb_header)
-            rgb_data = _recvall(conn, size)
-            depth_header = _recvall(conn, 12)
-            dh, dw, dsize = struct.unpack("!III", depth_header)
-            depth_data = _recvall(conn, dsize)
-            results["rgb"] = (h, w, rgb_data)
-            results["depth"] = (dh, dw, depth_data)
+            left_header = _recvall(conn, 12)
+            h, w, size = struct.unpack("!III", left_header)
+            left_data = _recvall(conn, size)
+            right_header = _recvall(conn, 12)
+            rh, rw, rsize = struct.unpack("!III", right_header)
+            right_data = _recvall(conn, rsize)
+            results["left"] = (h, w, left_data)
+            results["right"] = (rh, rw, right_data)
 
     t = threading.Thread(target=handle_client)
     t.start()
@@ -44,20 +45,20 @@ def test_image_streamer_sends_headers_and_data(monkeypatch):
     airsim_stub = SimpleNamespace(ImageResponse=object, MultirotorClient=lambda: SimpleNamespace())
     monkeypatch.setitem(sys.modules, "airsim", airsim_stub)
     from slam_bridge.stream_airsim_image import ImageStreamer
-    streamer = ImageStreamer(host, port)
+    streamer = ImageStreamer(host, port, mode="stereo")
     streamer.connect()
 
-    rgb = np.arange(12, dtype=np.uint8).reshape(2, 2, 3)
-    depth = np.arange(4, dtype=np.float32).reshape(2, 2)
+    left_rgb = np.arange(12, dtype=np.uint8).reshape(2, 2, 3)
+    right_rgb = np.arange(12, 24, dtype=np.uint8).reshape(2, 2, 3)
     responses = [
         SimpleNamespace(
-            image_data_uint8=rgb.tobytes(),
+            image_data_uint8=left_rgb.tobytes(),
             height=2,
             width=2,
             time_stamp=1,
         ),
         SimpleNamespace(
-            image_data_float=depth.flatten().tolist(),
+            image_data_uint8=right_rgb.tobytes(),
             height=2,
             width=2,
             time_stamp=1,
@@ -69,5 +70,9 @@ def test_image_streamer_sends_headers_and_data(monkeypatch):
     t.join(timeout=1)
     server.close()
 
-    assert results["rgb"] == (2, 2, rgb.tobytes())
-    assert results["depth"] == (2, 2, depth.tobytes())
+    expected_gray = cv2.cvtColor(rgb, cv2.COLOR_BGR2GRAY).tobytes()
+    left_gray = np.dot(left_rgb[..., :3], [0.299, 0.587, 0.114]).astype(np.uint8)
+    right_gray = np.dot(right_rgb[..., :3], [0.299, 0.587, 0.114]).astype(np.uint8)
+
+    assert results["left"] == (2, 2, left_gray.tobytes())
+    assert results["right"] == (2, 2, right_gray.tobytes())

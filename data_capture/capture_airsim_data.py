@@ -38,13 +38,13 @@ def main() -> None:
         ])
 
         if len(responses) == 2:
-            # Left image
-            left_img = cv2.imdecode(responses[0].image_data_uint8, cv2.IMREAD_COLOR)
+            # Left image decoded directly as grayscale
+            left_img = cv2.imdecode(responses[0].image_data_uint8, cv2.IMREAD_GRAYSCALE)
             left_filename = os.path.join(output_dir, f"left_{i:05d}.png")
             cv2.imwrite(left_filename, left_img)
 
-            # Right image
-            right_img = cv2.imdecode(responses[1].image_data_uint8, cv2.IMREAD_COLOR)
+            # Right image decoded directly as grayscale
+            right_img = cv2.imdecode(responses[1].image_data_uint8, cv2.IMREAD_GRAYSCALE)
             right_filename = os.path.join(output_dir, f"right_{i:05d}.png")
             cv2.imwrite(right_filename, right_img)
             logger.info("Saved stereo pair %d", i)

@@ -27,9 +27,9 @@ int grace_frame_count = 0;  // Counter for frames with no detected motion
 const int MAX_GRACE_FRAMES = 30;  // Maximum number of frames to allow without motion
 
 // At the top of the file or near your other constants:
-const int MAX_IMAGE_WIDTH  = 1920;
-const int MAX_IMAGE_HEIGHT = 1080;
-const int MAX_IMAGE_BYTES  = MAX_IMAGE_WIDTH * MAX_IMAGE_HEIGHT * 3; // 3 for RGB
+const int MAX_IMAGE_WIDTH  = 1920; // Maximum width of the image
+const int MAX_IMAGE_HEIGHT = 1080; // Maximum height of the image
+const int MAX_IMAGE_BYTES  = MAX_IMAGE_WIDTH * MAX_IMAGE_HEIGHT * 1; // Assuming 1 byte per pixel for grayscale images
 
 using namespace std;
 
@@ -186,7 +186,7 @@ int main(int argc, char **argv) {
             uint32_t net_height, net_width, net_bytes;
             uint32_t rgb_height, rgb_width, rgb_bytes;
 
-            // --- Receive Left RGB Image ---
+            // --- Receive Left Grayscale Image ---
             char left_header[12];
             if (!recv_all(sock, left_header, 12)) break;
             memcpy(&net_height, left_header, 4);
@@ -209,28 +209,22 @@ int main(int argc, char **argv) {
             // Allocate buffer for left image
             vector<uchar> left_buffer(rgb_bytes);
             if (!recv_all(sock, (char*)left_buffer.data(), rgb_bytes)) break; // Receive the image data
-            cv::Mat left_rgb(rgb_height, rgb_width, CV_8UC3, left_buffer.data()); // Create Mat from buffer
-            if (left_rgb.empty() || left_rgb.rows != rgb_height || left_rgb.cols != rgb_width || left_rgb.type() != CV_8UC3) {
-                log_event("[ERROR] left_rgb invalid after construction! Skipping frame.");
+            cv::Mat left_gray(rgb_height, rgb_width, CV_8UC1, left_buffer.data()); // Create Mat from buffer
+            if (left_gray.empty() || left_gray.rows != rgb_height || left_gray.cols != rgb_width || left_gray.type() != CV_8UC1) {
+                log_event("[ERROR] left_gray invalid after construction! Skipping frame.");
                 continue;  // or break, depending on your policy
             }
 
-            log_event("Received Left image: height=" + std::to_string(left_rgb.rows) + ", width=" + std::to_string(left_rgb.cols));
-            imLeft = left_rgb.clone();  // save for snapshot + debug
-
-            if (!left_rgb.empty() && left_rgb.type() == CV_8UC3) { // Check if left_rgb is valid
-                cv::cvtColor(left_rgb, imLeftGray, cv::COLOR_RGB2GRAY);
-            } else {
-                log_event("[ERROR] Cannot convert left_rgb to grayscale: empty or wrong type.");
-                continue;
-            }
+            log_event("Received Left image: height=" + std::to_string(left_gray.rows) + ", width=" + std::to_string(left_gray.cols));
+            imLeftGray = left_gray.clone();
+            cv::cvtColor(left_gray, imLeft, cv::COLOR_GRAY2BGR); // for debug snapshots
 
             // --- DEBUG: Log right image properties ---
             {
                 std::ostringstream log;
                 log << "[DEBUG] Left image received: "
-                    << "height="<< left_rgb.rows
-                    << ", width=" << left_rgb.cols
+                    << "height="<< left_gray.rows
+                    << ", width=" << left_gray.cols
                     << ", expected bytes=" << rgb_bytes
                     << ", actual buffer size=" << left_buffer.size();
                 log_event(log.str());
@@ -254,7 +248,7 @@ int main(int argc, char **argv) {
                 log_event(csmsg.str());
             }
 
-            // --- Receive Right RGB Image ---
+            // --- Receive Right Grayscale Image ---
             char right_header[12];
             if (!recv_all(sock, right_header, 12)) break;
             memcpy(&net_height, right_header, 4);
@@ -277,21 +271,15 @@ int main(int argc, char **argv) {
 
             vector<uchar> right_buffer(rgb_bytes); // Allocate buffer for right image
             if (!recv_all(sock, (char*)right_buffer.data(), rgb_bytes)) break; // Receive the image data
-            cv::Mat right_rgb(rgb_height, rgb_width, CV_8UC3, right_buffer.data()); // Create Mat from buffer
-            if (right_rgb.empty() || right_rgb.rows != rgb_height || right_rgb.cols != rgb_width || right_rgb.type() != CV_8UC3) {
-                log_event("[ERROR] right_rgb invalid after construction! Skipping frame.");
+            cv::Mat right_gray(rgb_height, rgb_width, CV_8UC1, right_buffer.data()); // Create Mat from buffer
+            if (right_gray.empty() || right_gray.rows != rgb_height || right_gray.cols != rgb_width || right_gray.type() != CV_8UC1) {
+                log_event("[ERROR] right_gray invalid after construction! Skipping frame.");
                 continue;  // or break, depending on your policy
             }
 
-            log_event("Received Right image: height=" + std::to_string(right_rgb.rows) + ", width=" + std::to_string(right_rgb.cols));
-            imRight = right_rgb.clone();  // save for snapshot + debug
-            // Check if right_rgb is valid before converting
-            if (!right_rgb.empty() && right_rgb.type() == CV_8UC3) {
-                cv::cvtColor(right_rgb, imRightGray, cv::COLOR_RGB2GRAY);
-            } else {
-                log_event("[ERROR] Cannot convert right_rgb to grayscale: empty or wrong type.");
-                continue;
-            }
+            log_event("Received Right image: height=" + std::to_string(right_gray.rows) + ", width=" + std::to_string(right_gray.cols));
+            imRightGray = right_gray.clone();
+            cv::cvtColor(right_gray, imRight, cv::COLOR_GRAY2BGR); // for debug snapshots
 
             // --- DEBUG: Log right image properties ---
             {
@@ -456,36 +444,41 @@ int main(int argc, char **argv) {
 
                 cv::Mat Tcw_copy = Tcw.clone();  // Defensive copy of the pose matrix
 
-                log_event("Tcw_copy rows: " + std::to_string(Tcw_copy.rows) +
-                        ", cols: " + std::to_string(Tcw_copy.cols) +
-                        ", type: " + std::to_string(Tcw_copy.type()));
-                cv::Mat identity = cv::Mat::eye(4, 4, Tcw_copy.type());
-
-                // Check if Tcw_copy is close to identity matrix
-                double frobenius_norm = cv::norm(Tcw_copy - identity, cv::NORM_L2);
                 static int identity_frame_count = 0;  // Use static so it persists between frames
-                // Check if the identity matrix is detected (no motion)
-                if (frobenius_norm < 1e-3) {  // Identity matrix detected (no motion)
-                    identity_frame_count++;
 
-                    if (identity_frame_count < MAX_GRACE_FRAMES) {
-                        // Still within grace period, just log and continue
-                        log_event("[INFO] Tcw appears to be an identity matrix — no motion detected. Count: " + std::to_string(identity_frame_count));
-                    } else {
-                        // Grace period exceeded, reset SLAM if no motion detected
-                        log_event("[ERROR] Too many frames with no motion, resetting SLAM.");
-                        SLAM.Reset();
-                        identity_frame_count = 0;  // Reset the counter after reset
+                if (Tcw_copy.empty() || Tcw_copy.rows != 4 || Tcw_copy.cols != 4) {
+                    log_event("[WARN] Tcw_copy invalid; skipping identity check.");
+                } else {
+                    log_event("Tcw_copy rows: " + std::to_string(Tcw_copy.rows) +
+                            ", cols: " + std::to_string(Tcw_copy.cols) +
+                            ", type: " + std::to_string(Tcw_copy.type()));
+                    cv::Mat identity = cv::Mat::eye(4, 4, Tcw_copy.type());
+
+                    // Check if Tcw_copy is close to identity matrix
+                    double frobenius_norm = cv::norm(Tcw_copy - identity, cv::NORM_L2);
+                    // Check if the identity matrix is detected (no motion)
+                    if (frobenius_norm < 1e-3) {  // Identity matrix detected (no motion)
+                        identity_frame_count++;
+
+                        if (identity_frame_count < MAX_GRACE_FRAMES) {
+                            // Still within grace period, just log and continue
+                            log_event("[INFO] Tcw appears to be an identity matrix — no motion detected. Count: " + std::to_string(identity_frame_count));
+                        } else {
+                            // Grace period exceeded, reset SLAM if no motion detected
+                            log_event("[ERROR] Too many frames with no motion, resetting SLAM.");
+                            SLAM.Reset();
+                            identity_frame_count = 0;  // Reset the counter after reset
+                        }
                     }
-                }
 
-                if (identity_frame_count >= MAX_GRACE_FRAMES) {
-                    log_event("[INFO] Grace period over. Checking for motion.");
-                    if (frobenius_norm < 1e-3) {
-                        log_event("[WARN] No motion detected. Resetting SLAM.");
-                        SLAM.Reset();
-                    } else {
-                        log_event("[INFO] Motion detected. Continuing normal operation.");
+                    if (identity_frame_count >= MAX_GRACE_FRAMES) {
+                        log_event("[INFO] Grace period over. Checking for motion.");
+                        if (frobenius_norm < 1e-3) {
+                            log_event("[WARN] No motion detected. Resetting SLAM.");
+                            SLAM.Reset();
+                        } else {
+                            log_event("[INFO] Motion detected. Continuing normal operation.");
+                        }
                     }
                 }
 

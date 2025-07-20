@@ -16,6 +16,7 @@ from typing import List
 
 import airsim
 import numpy as np
+import cv2
 
 # ---Separate Process so requires logging setup---
 from uav.logging_config import setup_logging
@@ -38,17 +39,24 @@ print(f"[stream_airsim_image.py] Logging configured. Writing to logs/stream_airs
 logger = logging.getLogger("stream_airsim_image")
 
 class ImageStreamer:
-    """Stream RGB + Depth or Stereo RGB images from AirSim to a TCP server."""
+    """Stream grayscale + depth or stereo grayscale images from AirSim to a TCP server."""
 
+    # Parameters:
+    # - host: Hostname or IP address of the SLAM server
+    # - port: Port number of the SLAM server
+    # - mode: Streaming mode, either "rgbd" for RGB + Depth or "stereo" for Left + Right RGB
+    # - retries: Number of connection retries before giving up
     def __init__(self, host: str, port: int, mode: str = "rgbd", retries: int = 10) -> None:
         self.host = host
         self.port = port
-        self.mode = mode  # ✅ fixed typo
+        self.mode = mode 
         self.retries = retries
         self.sock: socket.socket | None = None
         self.client = airsim.MultirotorClient()
         self.frame_index = 0
 
+    # Connect to the SLAM server
+    # Retries connection up to `self.retries` times
     def connect(self) -> None:
         logger.info(f"[CONNECT] Attempting to connect to SLAM server at {self.host}:{self.port}")
         for attempt in range(1, self.retries + 1):
@@ -64,6 +72,7 @@ class ImageStreamer:
         logger.error(f"[CONNECT] Could not connect to {self.host}:{self.port} after {self.retries} attempts")
         raise ConnectionRefusedError(f"Could not connect to {self.host}:{self.port}")
 
+    # Send all data over the socket, retrying if necessary
     def _send_all(self, data: bytes) -> None:
         assert self.sock is not None
         total_sent = 0
@@ -76,40 +85,60 @@ class ImageStreamer:
             total_sent += sent
         logger.debug(f"[SEND] Sent {total_sent} bytes successfully")
 
+    # Send a single frame of images to the SLAM server
+    # Expects `responses` to contain two ImageResponse objects for stereo mode
     def _send_frame(self, responses: List[airsim.ImageResponse]) -> None:
         logger.debug(f"[FRAME] Preparing to send frame {self.frame_index}")
         if not responses or len(responses) != 2:
             logger.warning("[FRAME] Invalid stereo response count.")
             return
 
-        right_bytes = getattr(responses[1], "image_data_uint8", None)
-        if right_bytes is None and hasattr(responses[1], "image_data_float"):
-            right_bytes = np.array(responses[1].image_data_float, dtype=np.float32).tobytes()
-
-        if len(responses[0].image_data_uint8) == 0 or len(right_bytes or b"") == 0:
+        if len(responses[0].image_data_uint8) == 0 or len(responses[1].image_data_uint8) == 0:
             logger.warning("[FRAME] Empty stereo frame detected. Skipping this frame.")
             return
 
+        # Images are already grayscale from AirSim settings (ImageType: 5)
+        # Convert to numpy arrays
         try:
-            left = np.frombuffer(responses[0].image_data_uint8, dtype=np.uint8).reshape(
-                responses[0].height, responses[0].width, 3
-            )
-            if hasattr(responses[1], "image_data_uint8"):
-                right = np.frombuffer(responses[1].image_data_uint8, dtype=np.uint8).reshape(
+            # Debug: Log actual data sizes and expected dimensions
+            left_size = len(responses[0].image_data_uint8)
+            right_size = len(responses[1].image_data_uint8)
+            expected_size = responses[0].height * responses[0].width
+            logger.info(f"[DEBUG] Left data size: {left_size}, Right data size: {right_size}")
+            logger.info(f"[DEBUG] Expected size (H×W): {responses[0].height}×{responses[0].width} = {expected_size}")
+            logger.info(f"[DEBUG] Ratio: {left_size / expected_size:.1f} (3.0 = RGB, 1.0 = Grayscale)")
+            
+            # Check if data is actually RGB (3 channels) despite ImageType setting
+            if left_size == responses[0].height * responses[0].width * 3:
+                logger.warning("[DEBUG] Data appears to be RGB despite ImageType=5 setting. Converting...")
+                left_rgb = np.frombuffer(responses[0].image_data_uint8, dtype=np.uint8).reshape(
+                    responses[0].height, responses[0].width, 3
+                )
+                left = cv2.cvtColor(left_rgb, cv2.COLOR_BGR2GRAY)
+                
+                right_rgb = np.frombuffer(responses[1].image_data_uint8, dtype=np.uint8).reshape(
                     responses[1].height, responses[1].width, 3
                 )
+                right = cv2.cvtColor(right_rgb, cv2.COLOR_BGR2GRAY)
             else:
-                right = np.frombuffer(right_bytes, dtype=np.float32).reshape(
+                # Standard grayscale processing
+                left = np.frombuffer(responses[0].image_data_uint8, dtype=np.uint8).reshape(
+                    responses[0].height, responses[0].width
+                )
+                right = np.frombuffer(responses[1].image_data_uint8, dtype=np.uint8).reshape(
                     responses[1].height, responses[1].width
                 )
+            
             logger.debug(f"[FRAME] Left shape: {left.shape}, Right shape: {right.shape}")
-        except ValueError as e:
+        except ValueError as e: # Handle potential reshape errors
             logger.exception(f"[FRAME] Image reshape failed — skipping frame: {e}")
             return
 
+        # Check if timestamps are synchronized
         synced = responses[0].time_stamp == responses[1].time_stamp
         logger.info(f"[FRAME] Frame {self.frame_index} ts={responses[0].time_stamp} sync={synced} left={left.shape} right={right.shape}")
 
+        # Send headers and data for each image
         for img_idx, img in enumerate((left, right)):
             header = struct.pack("!III", img.shape[0], img.shape[1], img.nbytes)
             logger.debug(f"[SEND] Sending header for image {img_idx}: height={img.shape[0]}, width={img.shape[1]}, bytes={img.nbytes}")
@@ -120,12 +149,14 @@ class ImageStreamer:
         logger.info(f"[FRAME] Frame {self.frame_index} sent successfully")
         self.frame_index += 1
 
-
+    # Initialize the first frame by waiting for a valid image from AirSim
+    # This will retry up to 10 times
     def init_first_frame(self) -> None:
         logger.info("[INIT] Waiting for valid image from AirSim...")
         for attempt in range(10):
             responses = self.get_image_pair()
             logger.debug(f"[INIT] Attempt {attempt}: response lengths = {[len(r.image_data_uint8) for r in responses]}")
+            # Check if we have valid images
             if responses and responses[0].height > 0 and responses[1].height > 0:
                 logger.info("[INIT] Valid images received, sending first frame")
                 self._send_frame(responses)
@@ -136,6 +167,8 @@ class ImageStreamer:
         logger.error("[INIT] No valid image received from AirSim after 10 attempts")
         raise RuntimeError("No valid image received from AirSim")
 
+    # Get a pair of stereo images from AirSim
+    # Returns a list of two ImageResponse objects
     def get_image_pair(self) -> List[airsim.ImageResponse]:
         logger.debug("[GET] Requesting stereo images from AirSim")
         try:
@@ -152,6 +185,8 @@ class ImageStreamer:
             logger.error(f"[GET] Error getting stereo images: {e}")
             return []
 
+    # Main loop to continuously stream images
+    # This will run indefinitely until an error occurs or the process is stopped
     def stream_loop(self) -> None:
         logger.info("[STREAM] Starting main streaming loop")
         while True:
@@ -168,6 +203,8 @@ class ImageStreamer:
                 break
             time.sleep(0.05)
 
+    # Run the image streamer
+    # This will connect to the SLAM server, initialize the first frame, and start streaming
     def run(self) -> None:
         logger.info("[RUN] Starting streamer")
         self.connect()
@@ -178,7 +215,8 @@ class ImageStreamer:
         logger.info("[RUN] First frame initialized")
         self.stream_loop()
 
-
+# Parse command-line arguments for host, port, retries, and mode
+# Default values can be overridden by environment variables
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="AirSim image streamer")
     parser.add_argument("--host", default=os.environ.get("SLAM_SERVER_HOST", "127.0.0.1"))
@@ -190,7 +228,8 @@ def parse_args() -> argparse.Namespace:
         
     return parser.parse_args()
 
-
+# Main entry point to run the image streamer
+# This will parse arguments, set up logging, and start the streamer
 def main() -> None:
     log_name = f"airsim_stream_{datetime.now():%Y%m%d_%H%M%S}.log"
     Path("flags").mkdir(exist_ok=True)
@@ -204,6 +243,6 @@ def main() -> None:
         if streamer.sock:
             streamer.sock.close()
 
-
+# If this script is run directly, execute the main function
 if __name__ == "__main__":
     main()
