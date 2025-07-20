@@ -42,7 +42,6 @@ from uav.slam_utils import (
 )
 
 logger = logging.getLogger("nav_loop")
-logger.warning("[TEST] __name__ = %s | handlers = %s", __name__, logger.handlers)
 
 # === Perception Processing ===
 
