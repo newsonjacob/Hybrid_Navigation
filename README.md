@@ -20,6 +20,7 @@ This repository contains the implementation of a reactive obstacle avoidance sys
 - SLAM loop checks depth ahead and dodges obstacles before advancing
 - Performs an initial SLAM calibration manoeuvre after takeoff that returns the drone to face forward
 
+
 ---
 
 ## Installation
