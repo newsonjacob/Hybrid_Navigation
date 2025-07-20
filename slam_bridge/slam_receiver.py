@@ -119,9 +119,16 @@ class SlamReceiver:
 
                 assert self.pose_writer is not None
                 assert self.pose_log_file is not None
-                self.pose_writer.writerow(
-                    [timestamp, slam_x, slam_y, slam_z, gt_x, gt_y, gt_z]
-                )
+                # Format numbers to avoid scientific notation
+                self.pose_writer.writerow([
+                    f"{timestamp:.4f}",
+                    f"{slam_x:.4f}",
+                    f"{slam_y:.4f}",
+                    f"{slam_z:.4f}",
+                    f"{gt_x:.4f}",
+                    f"{gt_y:.4f}",
+                    f"{gt_z:.4f}"
+                ])
                 self.pose_log_file.flush()
             except Exception as e:
                 logger.warning("[PoseLogger] Error while logging poses: %s", e)

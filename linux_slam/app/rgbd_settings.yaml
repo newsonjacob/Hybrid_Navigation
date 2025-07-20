@@ -15,10 +15,10 @@ Camera.width: 640
 Camera.height: 360
 
 # === Stereo baseline * fx ===
-Camera.bf: 28.58   
+Camera.bf: 28.58 # 0.075 * 381.1
 
 # === Stereo mode only ===
-Camera.RGB: 0
+Camera.RGB: 1 # 0: RGB, 1: Stereo, 2: RGBD
 
 # === ORB extractor params ===
 ORBextractor.nFeatures: 1200
