@@ -65,4 +65,3 @@ def test_wait_helpers_cancel(tmp_path, monkeypatch):
 
     monkeypatch.setattr(lutils.socket, "create_connection", lambda *a, **k: (_ for _ in ()).throw(OSError()))
     assert lutils.wait_for_port("127.0.0.1", 1234, timeout=0.1) is False
-    

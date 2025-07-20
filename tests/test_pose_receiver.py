@@ -30,3 +30,4 @@ def test_receives_pose():
     pose = receiver.get_latest_pose()
     receiver.stop()
     assert pose == (3.0, 7.0, 11.0)
+

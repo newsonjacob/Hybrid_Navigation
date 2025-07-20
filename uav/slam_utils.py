@@ -14,7 +14,7 @@ __all__ = [
     "generate_pose_comparison_plot",
 ]
 # You should define these thresholds as constants.
-SOME_THRESHOLD = 1.0  # Example threshold for pose covariance
+COVARIANCE_THRESHOLD = 1.0  # Example threshold for pose covariance
 MIN_INLIERS_THRESHOLD = 50  # Example threshold for the minimum number of inliers
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ def is_slam_stable():
         return True
     
     # Check if pose covariance is within acceptable limits
-    if pose_covariance > SOME_THRESHOLD:
+    if pose_covariance > COVARIANCE_THRESHOLD:
         logger.warning("[SLAM] High pose covariance detected. SLAM is unstable.")
         return False
     

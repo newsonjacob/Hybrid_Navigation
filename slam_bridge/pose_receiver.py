@@ -114,7 +114,6 @@ class PoseReceiver:
         logger.info(f"[PoseReceiver] Listening on {self.host}:{self.port}")
 
         retry_count = 0
-        max_retries = None
         
         logger.info(f"[PoseReceiver] stop_event is set? {self._stop_event.is_set()}")
         while not self._stop_event.is_set():
@@ -161,8 +160,12 @@ class PoseReceiver:
 
                     # Log the received pose
                     tx, ty, tz = matrix[0][3], matrix[1][3], matrix[2][3]
-                    print(f"[PoseReceiver] Received Twc translation: ({tx:.3f}, {ty:.3f}, {tz:.3f})")
-                    logger.debug(f"[PoseReceiver] Received Twc translation: ({tx:.3f}, {ty:.3f}, {tz:.3f})")
+                    logger.info(
+                        f"[PoseReceiver] Received Twc translation: ({tx:.3f}, {ty:.3f}, {tz:.3f})"
+                    )
+                    logger.debug(
+                        f"[PoseReceiver] Received Twc translation: ({tx:.3f}, {ty:.3f}, {tz:.3f})"
+                    )
 
                 # Clean up connection after client disconnects
                 if self._conn:
@@ -172,9 +175,7 @@ class PoseReceiver:
             except Exception as e:
                 retry_count += 1
                 logger.error(f"[PoseReceiver] accept() or recv loop error (retry {retry_count}): {e}")
-                if max_retries is not None and retry_count >= max_retries:
-                    logger.error("[PoseReceiver] Maximum retries reached, stopping receiver loop.")
-                    break
+                # No maximum retry limit; continue attempting to accept connections
                 time.sleep(2)
 
         logger.info("PoseReceiver stopped")

@@ -156,11 +156,11 @@ def main() -> None:
         ctx = setup_environment(args, client)
         start_perception_thread(ctx)
 
-        # ✅ Logging: startup debug
+        # Logging: startup debug
         logger.info(f"🧭 Navigation loop starting with mode: {nav_mode}")
-        logger.info(f"📌 Navigator object: {ctx['navigator']}")
-        logger.info(f"🗺️  Initial state: {ctx['param_refs']['state'][0]}")
-        logger.info(f"📦 Perception thread running: {ctx['perception_thread'].is_alive()}")
+        logger.info(f"📌 Navigator object: {ctx.navigator}")
+        logger.info(f"🗺️  Initial state: {ctx.param_refs.state[0]}")
+        logger.info(f"📦 Perception thread running: {ctx.perception_thread.is_alive()}")
 
         # The navigation loop internally checks ``navigator.settling`` and
         # should proceed normally at this level.
@@ -174,10 +174,10 @@ def main() -> None:
                 except FileNotFoundError:
                     pass
 
-            # ✅ Close dummy log file to avoid warnings or open handles
-            if ctx.get("log_file"):
+            # Close dummy log file to avoid warnings or open handles
+            if ctx.log_file:
                 try:
-                    ctx["log_file"].close()
+                    ctx.log_file.close()
                 except Exception:
                     pass
 
