@@ -402,19 +402,28 @@ def slam_navigation_loop(args, client, ctx):
 
             # --- Get the latest SLAM pose ---
             pose = get_latest_pose()
-            if pose is None: # No pose received, hover to recover
-                logger.warning("[SLAMNav] No pose received – hovering to recover.")
-                # client.hoverAsync().join()
-                time.sleep(1.0)  # allow SLAM to reinitialize
+            if pose is None or not is_slam_stable():
+                logger.warning(
+                    "[SLAMNav] SLAM tracking lost. Attempting reinitialisation."
+                )
+                while True:
+                    run_slam_bootstrap(client, duration=4.0)
+                    time.sleep(1.0)
+                    pose = get_latest_pose()
+                    if pose is not None and is_slam_stable():
+                        logger.info(
+                            "[SLAMNav] SLAM reinitialised. Resuming navigation."
+                        )
+                        break
+                    if (exit_flag is not None and exit_flag.is_set()) or os.path.exists(
+                        STOP_FLAG_PATH
+                    ):
+                        logger.info(
+                            "[SLAMNav] Exit signal during reinitialisation."
+                        )
+                        client.landAsync().join()
+                        return last_action
                 continue
-
-            # --- Check if SLAM is stable ---
-            if not is_slam_stable():  # Check SLAM stability
-                logger.warning("[SLAMNav] SLAM is unstable. Pausing navigation.")
-                # client.hoverAsync().join()  # Pause the drone (hover)
-                continue  # Exit the loop or you can reset/restart SLAM if necessary
-            # else:
-            #     logger.info("[SLAMNav] SLAM is stable. Continuing navigation.")
 
             x_slam, y_slam, z_slam = pose
             x, y, z = x_slam, y_slam, -z_slam  # Adjust z for AirSim
