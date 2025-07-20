@@ -443,7 +443,9 @@ int main(int argc, char **argv) {
                 log_event("[DEBUG] Timestamp at Frame #" + std::to_string(frame_counter) + ": " + std::to_string(timestamp));
 
                 cv::Mat Tcw_copy = Tcw.clone();  // Defensive copy of the pose matrix
+
                 static int identity_frame_count = 0;  // Use static so it persists between frames
+
                 if (Tcw_copy.empty() || Tcw_copy.rows != 4 || Tcw_copy.cols != 4) {
                     log_event("[WARN] Tcw_copy invalid; skipping identity check.");
                 } else {
