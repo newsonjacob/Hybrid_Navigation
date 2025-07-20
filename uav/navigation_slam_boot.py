@@ -1,3 +1,5 @@
+"""SLAM initialization maneuvers for AirSim flights."""
+
 import airsim
 import time
 import math

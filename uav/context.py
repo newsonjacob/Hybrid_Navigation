@@ -1,3 +1,5 @@
+"""Shared navigation context and thread primitives."""
+
 from dataclasses import dataclass, field
 from typing import Any, Deque, List, Optional
 from queue import Queue

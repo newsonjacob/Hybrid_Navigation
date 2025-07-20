@@ -1,4 +1,5 @@
-# === Perception Loop Module ===
+"""Threaded perception loop handling image capture and optical flow."""
+
 import logging
 import time
 from queue import Queue

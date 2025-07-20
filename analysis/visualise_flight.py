@@ -1,3 +1,5 @@
+"""Tools for plotting flight paths and scene obstacles in 3D."""
+
 import numpy as np
 import plotly.graph_objects as go
 from typing import List, Dict

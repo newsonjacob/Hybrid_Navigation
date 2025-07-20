@@ -1,3 +1,5 @@
+"""AirSim Python client convenience imports."""
+
 from .client import *
 from .utils import *
 from .types import *

@@ -1,4 +1,5 @@
-# === Standard Library Imports ===
+"""Main navigation loop responsible for moving the UAV."""
+
 import os
 import cv2
 import time
