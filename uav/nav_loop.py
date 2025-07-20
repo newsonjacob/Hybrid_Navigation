@@ -401,6 +401,9 @@ def slam_navigation_loop(args, client, ctx):
                 break
 
             # --- Get the latest SLAM pose ---
+            # If SLAM is unstable, reinitialise it
+            # This is a basic stability check that can be improved.
+            # Need to ensure that this check is continuously performed during the waypoint navigation. 
             pose = get_latest_pose()
             if pose is None or not is_slam_stable():
                 logger.warning(
