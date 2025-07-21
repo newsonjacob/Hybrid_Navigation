@@ -363,7 +363,7 @@ def slam_navigation_loop(args, client, ctx):
 
     # logger.info("[SLAMNav] Starting SLAM navigation loop.")
 
-    from slam_bridge.slam_receiver import get_latest_pose, get_pose_history
+    from slam_bridge.slam_receiver import get_latest_pose_matrix, get_pose_history
     from slam_bridge.frontier_detection import detect_frontiers  
 
     # --- Incorporate exit_flag from ctx for GUI stop button ---
@@ -389,8 +389,8 @@ def slam_navigation_loop(args, client, ctx):
 
     # Simplified execution path used by tests
     if max_duration == 0 and navigator is not None:
-        pose = get_latest_pose()
-        return navigator.slam_to_goal(pose, (goal_x, goal_y, goal_z))
+        pose_mat = get_latest_pose_matrix()
+        return navigator.slam_to_goal(pose_mat, (goal_x, goal_y, goal_z))
 
     # --- Define waypoints for SLAM navigation ---
     waypoints = [
@@ -415,7 +415,7 @@ def slam_navigation_loop(args, client, ctx):
             # If SLAM is unstable, reinitialise it
             # This is a basic stability check that can be improved.
             # Need to ensure that this check is continuously performed during the waypoint navigation. 
-            pose = get_latest_pose()
+            pose = get_latest_pose_matrix()
             if pose is None or not is_slam_stable():
                 logger.warning(
                     "[SLAMNav] SLAM tracking lost. Attempting reinitialisation."
@@ -423,7 +423,7 @@ def slam_navigation_loop(args, client, ctx):
                 while True:
                     run_slam_bootstrap(client, duration=4.0)
                     time.sleep(1.0)
-                    pose = get_latest_pose()
+                    pose = get_latest_pose_matrix()
                     if pose is not None and is_slam_stable():
                         logger.info(
                             "[SLAMNav] SLAM reinitialised. Resuming navigation."
@@ -439,7 +439,7 @@ def slam_navigation_loop(args, client, ctx):
                         return last_action
                 continue
 
-            x_slam, y_slam, z_slam = pose
+            x_slam, y_slam, z_slam = pose[0][3], pose[1][3], pose[2][3]
             x, y, z = x_slam, y_slam, -z_slam  # Adjust z for AirSim
             # logger.info(f"[SLAMNav] Received pose: x={x:.2f}, y={y:.2f}, z={z:.2f}")
             # logger.debug("[SLAM Pose] x=%.2f, y=%.2f, z=%.2f", x, y, z)

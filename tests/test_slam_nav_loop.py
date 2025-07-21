@@ -20,7 +20,8 @@ def test_slam_navigation_calls_navigator(monkeypatch):
 
     import slam_bridge.slam_receiver as sr
     import slam_bridge.frontier_detection as fd
-    monkeypatch.setattr(sr, 'get_latest_pose', lambda: (0.0, 0.0, -2.0))
+    sample_matrix = [[1, 0, 0, 0.0], [0, 1, 0, 0.0], [0, 0, 1, -2.0]]
+    monkeypatch.setattr(sr, 'get_latest_pose_matrix', lambda: sample_matrix)
     monkeypatch.setattr(sr, 'get_pose_history', lambda: [])
     monkeypatch.setattr(fd, 'detect_frontiers', lambda m: nl.np.empty((0, 3)))
     monkeypatch.setattr(nl, 'is_obstacle_ahead', lambda *a, **k: (False, None))
@@ -61,7 +62,7 @@ def test_slam_navigation_calls_navigator(monkeypatch):
     result = nl.slam_navigation_loop(args, client, ctx)
 
     assert result == 'slam_nav'
-    slam_mock.assert_called_once_with((0.0, 0.0, -2.0), (1.0, 2.0, -2.0))
+    slam_mock.assert_called_once_with(sample_matrix, (1.0, 2.0, -2.0))
 
 
 def test_slam_navigation_performs_bootstrap(monkeypatch):
@@ -78,7 +79,8 @@ def test_slam_navigation_performs_bootstrap(monkeypatch):
 
     import slam_bridge.slam_receiver as sr
     import slam_bridge.frontier_detection as fd
-    monkeypatch.setattr(sr, "get_latest_pose", lambda: (0.0, 0.0, -2.0))
+    sample_matrix = [[1, 0, 0, 0.0], [0, 1, 0, 0.0], [0, 0, 1, -2.0]]
+    monkeypatch.setattr(sr, "get_latest_pose_matrix", lambda: sample_matrix)
     monkeypatch.setattr(sr, "get_pose_history", lambda: [])
     monkeypatch.setattr(fd, "detect_frontiers", lambda m: nl.np.empty((0, 3)))
     monkeypatch.setattr(nl, "is_obstacle_ahead", lambda *a, **k: (False, None))
@@ -137,8 +139,8 @@ def test_slam_bootstrap_runs_when_tracking_lost(monkeypatch):
 
     import slam_bridge.slam_receiver as sr
     import slam_bridge.frontier_detection as fd
-    poses = [None, (0.0, 0.0, -2.0)]
-    monkeypatch.setattr(sr, "get_latest_pose", lambda: poses.pop(0) if poses else (0.0, 0.0, -2.0))
+    poses = [None, [[1,0,0,0.0],[0,1,0,0.0],[0,0,1,-2.0]]]
+    monkeypatch.setattr(sr, "get_latest_pose_matrix", lambda: poses.pop(0) if poses else [[1,0,0,0.0],[0,1,0,0.0],[0,0,1,-2.0]])
     monkeypatch.setattr(sr, "get_pose_history", lambda: [])
     monkeypatch.setattr(fd, "detect_frontiers", lambda m: nl.np.empty((0, 3)))
 

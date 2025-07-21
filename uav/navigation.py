@@ -4,6 +4,7 @@ import time
 import math
 import logging
 import airsim
+from uav import config
 
 logger = logging.getLogger(__name__)
 
@@ -163,15 +164,33 @@ class Navigator:
     
     def slam_to_goal(self, pose, goal, max_speed=1.5, threshold=0.5,
                      settle_time=1.0, velocity_threshold=0.1):
-        """Move toward ``goal`` using the provided SLAM ``pose``."""
+        """Move toward ``goal`` using the provided SLAM ``pose``.
+
+        ``pose`` may be a translation tuple ``(x, y, z)`` or a 3x4 pose
+        matrix. When a matrix is provided the yaw angle is extracted from the
+        rotation part and adjusted by ``config.SLAM_YAW_OFFSET``.
+        """
 
         state = self.client.getMultirotorState()
 
+        yaw = 0.0
         if pose is None:
             pos = state.kinematics_estimated.position
             x, y, z = pos.x_val, pos.y_val, pos.z_val
         else:
-            x, y, z = pose
+            if isinstance(pose, (list, tuple)) and len(pose) == 3:
+                x, y, z = pose
+            else:
+                # Assume pose is a 3x4 matrix
+                x = pose[0][3]
+                y = pose[1][3]
+                z = pose[2][3]
+                # Extract yaw from rotation matrix and apply offset
+                try:
+                    yaw = math.degrees(math.atan2(pose[1][0], pose[0][0]))
+                except Exception:
+                    yaw = 0.0
+                yaw += getattr(config, "SLAM_YAW_OFFSET", 0.0)
 
         gx, gy, gz = goal
         dx = gx - x
@@ -198,5 +217,12 @@ class Navigator:
             return "airsim_stop"
         vx, vy = dx / dist * max_speed, dy / dist * max_speed
         vz = 0.0  # Don't change altitude, just hold current Z
-        self.client.moveByVelocityAsync(vx, vy, vz, duration=1, vehicle_name="UAV")
-        return f"airsim_nav vx={vx:.2f} vy={vy:.2f} vz={vz:.2f} dist={dist:.2f}"
+        self.client.moveByVelocityAsync(
+            vx,
+            vy,
+            vz,
+            duration=1,
+            vehicle_name="UAV",
+            yaw_mode=airsim.YawMode(False, yaw),
+        )
+        return f"airsim_nav vx={vx:.2f} vy={vy:.2f} vz={vz:.2f} dist={dist:.2f} yaw={yaw:.2f}"

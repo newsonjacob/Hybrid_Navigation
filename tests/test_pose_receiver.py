@@ -31,3 +31,17 @@ def test_receives_pose():
     receiver.stop()
     assert pose == (3.0, 7.0, 11.0)
 
+
+def test_receives_pose_matrix():
+    receiver = PoseReceiver(host="127.0.0.1", port=0)
+    receiver.start()
+    port = receiver.port
+    time.sleep(0.1)
+    matrix_values = list(range(12))
+    _send_pose("127.0.0.1", port, matrix_values)
+    time.sleep(0.1)
+    matrix = receiver.get_latest_pose_matrix()
+    receiver.stop()
+    expected = [matrix_values[i * 4 : (i + 1) * 4] for i in range(3)]
+    assert matrix == expected
+
