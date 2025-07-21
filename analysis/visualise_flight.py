@@ -69,8 +69,35 @@ def draw_box(location, dimensions, rotation):
     return [mesh]
 
 
-def build_plot(telemetry: np.ndarray, obstacles: List[Dict], offset: np.ndarray, scale: float = 1.0) -> go.Figure:
-    """Create a simple 3D plot of the flight path and obstacles."""
+def build_plot(
+    telemetry: np.ndarray,
+    obstacles: List[Dict],
+    offset: np.ndarray,
+    scale: float = 1.0,
+    log=None,
+    colour_by: str | None = None,
+    orientations: np.ndarray | None = None,
+) -> go.Figure:
+    """Create a simple 3D plot of the flight path and obstacles.
+
+    Parameters
+    ----------
+    telemetry : ndarray
+        Nx3 array of XYZ positions in the local frame.
+    obstacles : list
+        Obstacle dictionaries describing the scene.
+    offset : ndarray
+        XYZ translation applied to ``telemetry``.
+    scale : float, optional
+        Multiplicative scale factor for the coordinates.
+    log : DataFrame or dict, optional
+        Flight log providing ``time`` and ``speed`` columns.
+    colour_by : {'time', 'speed'}, optional
+        If provided, colour the trajectory by this value.
+    orientations : ndarray, optional
+        Yaw angles in degrees for orientation arrows.
+    """
+
     telemetry = np.asarray(telemetry, dtype=float)
     offset = np.asarray(offset, dtype=float)
 
@@ -79,7 +106,26 @@ def build_plot(telemetry: np.ndarray, obstacles: List[Dict], offset: np.ndarray,
     path[:, 1] = offset[1] - telemetry[:, 1] * scale
     path[:, 2] = offset[2] + telemetry[:, 2] * scale
 
-    traces = [go.Scatter3d(x=path[:, 0], y=path[:, 1], z=path[:, 2], mode="lines", name="path")]
+    line_opts: dict = {}
+    if colour_by in ("time", "speed") and log is not None:
+        try:
+            values = log[colour_by]  # type: ignore[index]
+            values = np.asarray(values, dtype=float)
+            if len(values) == len(path):
+                line_opts = {"color": values, "colorscale": "Viridis", "showscale": True}
+        except Exception:
+            pass
+
+    traces = [
+        go.Scatter3d(
+            x=path[:, 0],
+            y=path[:, 1],
+            z=path[:, 2],
+            mode="lines",
+            name="path",
+            line=line_opts,
+        )
+    ]
 
     for obs in obstacles:
         if obs.get("name", "").startswith("UCX"):
@@ -94,6 +140,30 @@ def build_plot(telemetry: np.ndarray, obstacles: List[Dict], offset: np.ndarray,
                 traces.extend(box_traces)
         except Exception:
             # Ignore errors to keep the plot valid.
+            pass
+
+    if orientations is not None:
+        try:
+            yaws = np.asarray(orientations, dtype=float).reshape(-1)
+            arrow_len = 0.5 * scale
+            xs, ys, zs = [], [], []
+            for pos, yaw in zip(path, yaws):
+                dx = arrow_len * np.cos(np.radians(yaw))
+                dy = arrow_len * np.sin(np.radians(yaw))
+                xs.extend([pos[0], pos[0] + dx, None])
+                ys.extend([pos[1], pos[1] + dy, None])
+                zs.extend([pos[2], pos[2], None])
+            traces.append(
+                go.Scatter3d(
+                    x=xs,
+                    y=ys,
+                    z=zs,
+                    mode="lines",
+                    name="orientation",
+                    line=dict(color="orange"),
+                )
+            )
+        except Exception:
             pass
 
     fig = go.Figure(traces)
