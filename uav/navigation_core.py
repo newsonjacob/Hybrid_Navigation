@@ -22,7 +22,37 @@ def detect_obstacle(
     pose_goal=None,
     pose_threshold=0.5,
 ):
-    """Detect obstacle ahead using optical flow or SLAM/depth."""
+    """Detect an obstacle using optical flow or SLAM data.
+
+    Parameters
+    ----------
+    smooth_C : float, optional
+        Smoothed center flow magnitude.
+    delta_C : float, optional
+        Change in center flow magnitude between frames.
+    center_count : int, optional
+        Number of tracked features in the center region.
+    brake_thres : float, optional
+        Threshold above which braking should occur in reactive mode.
+    mode : {"reactive", "slam"}, optional
+        Detection mode. ``"reactive"`` uses optical flow, ``"slam"`` uses SLAM
+        depth or pose information.
+    depth : float, optional
+        Measured depth ahead of the drone when using SLAM depth.
+    depth_threshold : float, optional
+        Depth threshold used to trigger an obstacle in SLAM mode.
+    pose : sequence, optional
+        Current SLAM pose ``(x, y, z)``.
+    pose_goal : sequence, optional
+        Target pose to compare against in SLAM mode.
+    pose_threshold : float, optional
+        Distance threshold for pose based detection.
+
+    Returns
+    -------
+    bool
+        ``True`` if an obstacle is considered detected.
+    """
     if mode == "reactive":
         if smooth_C is None or delta_C is None or center_count is None or brake_thres is None:
             raise ValueError("Reactive mode requires smooth_C, delta_C, center_count, brake_thres")
@@ -57,7 +87,22 @@ def determine_side_safety(
     center_count,
     right_count,
 ):
-    """Determine if the left and right sides are safe for dodging."""
+    """Determine if the left and right sides are safe for dodging.
+
+    Parameters
+    ----------
+    smooth_L, smooth_R : float
+        Smoothed flow magnitudes for the left and right regions.
+    brake_thres : float
+        Threshold above which a side is considered blocked.
+    left_count, center_count, right_count : int
+        Number of tracked features in each region.
+
+    Returns
+    -------
+    Tuple[bool, bool, bool]
+        Flags ``(left_safe, right_safe, side_safe)``.
+    """
     valid_L = left_count >= config.MIN_FEATURES_PER_ZONE
     valid_R = right_count >= config.MIN_FEATURES_PER_ZONE
 
@@ -92,7 +137,30 @@ def handle_obstacle(
     left_count,
     right_count,
 ):
-    """Handle obstacle avoidance manoeuvres and return an action string."""
+    """Handle obstacle avoidance manoeuvres.
+
+    Parameters
+    ----------
+    navigator : Navigator
+        Navigator instance controlling the drone.
+    obstacle_detected : bool
+        Whether an obstacle is currently detected ahead.
+    side_safe : bool
+        ``True`` if both sides are considered safe for dodging.
+    left_safe, right_safe : bool
+        Individual side safety flags.
+    left_clearing, right_clearing : bool
+        Flags indicating if a previously blocked side is clearing.
+    smooth_L, smooth_C, smooth_R : float
+        Smoothed flow magnitudes for logging.
+    left_count, right_count : int
+        Number of features on each side.
+
+    Returns
+    -------
+    str
+        Action string executed by the navigator.
+    """
     state_str = "none"
 
     if obstacle_detected and side_safe and not navigator.dodging:
@@ -136,7 +204,11 @@ def handle_obstacle(
 
 
 def handle_grace_period(time_now, navigator, frame_queue, vis_img, param_refs):
-    """Return True if still in start-up grace period."""
+    """Return ``True`` if the start-up grace period is active.
+
+    Frames are queued without navigation actions until the grace period
+    expires.
+    """
     if in_grace_period(time_now, navigator):
         param_refs.state[0] = "\U0001F552 grace"
         try:
@@ -149,7 +221,13 @@ def handle_grace_period(time_now, navigator, frame_queue, vis_img, param_refs):
 
 
 def decide_low_feature_action(navigator, smooth_L, smooth_C, smooth_R):
-    """Choose an action when few optical-flow features are tracked."""
+    """Choose an action when few optical-flow features are tracked.
+
+    Returns
+    -------
+    str
+        Action chosen by the navigator.
+    """
     if smooth_L > 1.5 and smooth_R > 1.5 and smooth_C < 0.2:
         return navigator.brake()
     return navigator.blind_forward()
@@ -157,7 +235,30 @@ def decide_low_feature_action(navigator, smooth_L, smooth_C, smooth_R):
 
 def update_dodge_history(client, state_history, pos_history, state_str, navigator,
                          smooth_L, smooth_C, smooth_R, param_refs):
-    """Extend dodge time if the UAV oscillates without progress."""
+    """Extend dodge time if the UAV oscillates without progress.
+
+    Parameters
+    ----------
+    client : airsim.MultirotorClient
+        AirSim client for retrieving position.
+    state_history : deque
+        Recent navigation actions.
+    pos_history : deque
+        Recent position history.
+    state_str : str
+        Current action string.
+    navigator : Navigator
+        Navigator controlling the drone.
+    smooth_L, smooth_C, smooth_R : float
+        Current smoothed flow magnitudes.
+    param_refs : ParamRefs
+        Parameter reference object for state updates.
+
+    Returns
+    -------
+    str
+        Possibly updated action string.
+    """
     pos_hist, _, _ = get_drone_state(client)
     state_history.append(state_str)
     pos_history.append((pos_hist.x_val, pos_hist.y_val))
@@ -175,7 +276,13 @@ def update_dodge_history(client, state_history, pos_history, state_str, navigato
 
 def recovery_actions(navigator, speed, smooth_C, smooth_L, smooth_R, brake_thres,
                      time_now, frame_count):
-    """Return a recovery action if no obstacle manoeuvre was triggered."""
+    """Return a recovery action if no obstacle manoeuvre was triggered.
+
+    Returns
+    -------
+    str
+        Action string chosen to recover progress.
+    """
     if (
         navigator.braked
         and smooth_C < brake_thres * 0.8
@@ -225,11 +332,50 @@ def navigation_step(
 ):
     """Evaluate flow data and choose the next UAV action.
 
-    The step runs after perception processing and is responsible for:
-    1. Handling the initial grace period.
-    2. Deciding motion when few features are detected.
-    3. Performing obstacle avoidance manoeuvres.
-    4. Triggering recovery behaviours if stuck.
+    Parameters
+    ----------
+    client : airsim.MultirotorClient
+        AirSim client used for telemetry queries.
+    navigator : Navigator
+        Navigator controlling the drone.
+    flow_history : FlowHistory
+        Rolling buffer of recent flow magnitudes.
+    good_old : list
+        Previous frame feature points.
+    flow_vectors : np.ndarray
+        Optical flow vectors for the current frame.
+    flow_std : float
+        Standard deviation of flow magnitudes.
+    smooth_L, smooth_C, smooth_R : float
+        Smoothed flow magnitudes.
+    delta_L, delta_C, delta_R : float
+        Change in flow magnitudes between frames.
+    left_count, center_count, right_count : int
+        Feature counts per region.
+    frame_queue : Queue
+        Queue for video frames to be written.
+    vis_img : np.ndarray
+        Visualisation image for this frame.
+    time_now : float
+        Current timestamp.
+    frame_count : int
+        Current frame index.
+    prev_state : str
+        Previous navigation state.
+    state_history, pos_history : deque
+        Recent navigation states and positions.
+    param_refs : ParamRefs
+        Shared parameter references.
+    probe_mag : float, optional
+        Magnitude of probe flow, defaults to ``0.0``.
+    probe_count : int, optional
+        Number of probe features, defaults to ``0``.
+
+    Returns
+    -------
+    Tuple[str, int, bool, float, float, float]
+        Tuple containing the selected state string, obstacle flag, side safety
+        flag and dynamic thresholds.
     """
     state_str = "none"
     brake_thres = 0.0
@@ -342,7 +488,13 @@ def apply_navigation_decision(
     pos_history,
     param_refs,
 ):
-    """Wrapper around :func:`navigation_step` for clarity."""
+    """Wrapper around :func:`navigation_step` for clarity.
+
+    Returns
+    -------
+    Tuple[str, int, bool, float, float, float]
+        Output of :func:`navigation_step`.
+    """
     return navigation_step(
         client,
         navigator,
