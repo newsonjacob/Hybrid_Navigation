@@ -123,7 +123,7 @@ def test_slam_navigation_performs_bootstrap(monkeypatch):
 
     boot_mock.assert_called_once()
 
-def test_slam_navigation_reinitialises_when_tracking_lost(monkeypatch):
+def test_slam_bootstrap_runs_when_tracking_lost(monkeypatch):
     """If SLAM loses tracking, the loop should rerun the bootstrap motion."""
     airsim_stub = types.SimpleNamespace(
         ImageRequest=object,
