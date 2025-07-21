@@ -6,6 +6,7 @@ import time
 import subprocess
 import numpy as np
 import logging
+import sys
 from datetime import datetime
 from queue import Queue
 from threading import Thread
@@ -630,11 +631,33 @@ def finalize_files(ctx):
     timestamp = getattr(ctx, "timestamp", None)
     if timestamp:
         try:
+            log_csv = f"flow_logs/full_log_{timestamp}.csv"
             html_output = f"analysis/flight_view_{timestamp}.html"
-            subprocess.run(["python3", "-m", "analysis.visualise_flight", html_output])
-            logger.info("Flight path analysis saved to %s", html_output)
+            subprocess.run([
+                sys.executable,
+                "-m",
+                "analysis.visualise_flight",
+                html_output,
+                "--log",
+                log_csv,
+            ])
+
+            report_path = f"analysis/flight_report_{timestamp}.html"
+            subprocess.run([
+                sys.executable,
+                "-m",
+                "analysis.analyze",
+                log_csv,
+                "-o",
+                report_path,
+            ])
+
+            from uav import slam_utils
+            slam_utils.generate_pose_comparison_plot()
+
+            logger.info("Flight analysis saved to %s and %s", html_output, report_path)
         except Exception as exc:
-            logger.error("Error generating flight path analysis: %s", exc)
+            logger.error("Error generating flight analysis: %s", exc)
 
     try:
         retain_recent_views("analysis", 5)
