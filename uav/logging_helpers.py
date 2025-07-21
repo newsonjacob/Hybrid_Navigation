@@ -10,6 +10,7 @@ from uav import config
 from uav.video_utils import start_video_writer_thread
 from uav.logging_utils import format_log_line
 from uav.utils import retain_recent_logs, retain_recent_files, get_drone_state
+from uav.performance import get_cpu_percent, get_memory_info
 from uav.overlay import draw_overlay
 from uav.perception import FlowHistory
 from uav.navigation import Navigator
@@ -99,6 +100,8 @@ def write_frame_output(
     loop_elapsed = time.time() - loop_start
     actual_fps = 1 / max(loop_elapsed, 1e-6)
     loop_start = time.time()
+    cpu_percent = get_cpu_percent()
+    mem_rss = get_memory_info().rss
     fps_list.append(actual_fps)
     log_line = format_log_line(
         frame_count,
@@ -129,6 +132,8 @@ def write_frame_output(
         decode_s,
         processing_s,
         loop_elapsed,
+        cpu_percent,
+        mem_rss,
     )
     log_frame_data(log_file, log_buffer, log_line)
     logger.debug("Actual FPS: %.2f", actual_fps)
@@ -175,7 +180,7 @@ def handle_reset(client, ctx, frame_count):
             "brake_thres,dodge_thres,probe_req,fps,"
             "state,collided,obstacle,side_safe,"
             "pos_x,pos_y,pos_z,yaw,speed,"
-            "time,features,simgetimage_s,decode_s,processing_s,loop_s\n"
+            "time,features,simgetimage_s,decode_s,processing_s,loop_s,cpu_percent,memory_rss\n"
         )
     log_file = open(log_path, 'a')
     ctx.log_file = log_file

@@ -68,7 +68,7 @@ def setup_environment(args, client):
         "brake_thres,dodge_thres,probe_req,fps,"
         "state,collided,obstacle,side_safe,"
         "pos_x,pos_y,pos_z,yaw,speed,"
-        "time,features,simgetimage_s,decode_s,processing_s,loop_s\n"
+        "time,features,simgetimage_s,decode_s,processing_s,loop_s,cpu_percent,memory_rss\n"
     )
     retain_recent_logs("flow_logs")
     retain_recent_logs("logs")
