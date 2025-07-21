@@ -209,6 +209,7 @@ setup_logging("run.log")  # also prints to stdout
 - 3D trajectory plots are saved in `analysis/` as interactive `.html` files
 - Runtime messages are configured via `uav.logging_config.setup_logging` using the standard `logging` module
 - SLAM pose and feature debugging is printed to stdout and stored in `logs/`
+- Generate HTML summaries with `analyze-flight LOG.csv`
 
 ---
 

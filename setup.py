@@ -20,6 +20,7 @@ setup(
         'console_scripts': [
             'hybrid-nav=main:main',
             'airsim-streamer=slam_bridge.stream_airsim_image:main',
+            'analyze-flight=analysis.analyze:main',
         ],
     },
 )
