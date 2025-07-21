@@ -36,11 +36,7 @@ from uav.perception_loop import perception_loop, start_perception_thread, proces
 from uav.navigation_core import detect_obstacle, determine_side_safety, handle_obstacle, navigation_step, apply_navigation_decision
 from uav.navigation_slam_boot import run_slam_bootstrap
 from uav.paths import STOP_FLAG_PATH
-from uav.slam_utils import (
-    is_slam_stable,
-    is_obstacle_ahead,
-    generate_pose_comparison_plot,
-)
+from uav.slam_utils import (is_slam_stable, generate_pose_comparison_plot,)
 
 logger = logging.getLogger("nav_loop")
 
@@ -454,15 +450,15 @@ def slam_navigation_loop(args, client, ctx, config=None):
                         return last_action
                 continue
 
+            # --- Extract the UAV position from the SLAM pose ---
+            # The pose is a 4x4 matrix, we extract the position from it.
+            # The pose is in the format [[R11, R12, R13, x],
+            #                             [R21, R22, R23, y],
+            #                             [R31, R32, R33, z], [0, 0, 0, 1]]
+            # We need to adjust the z-coordinate for AirSim's coordinate system.
             x_slam, y_slam, z_slam = pose[0][3], pose[1][3], pose[2][3]
             x, y, z = x_slam, y_slam, -z_slam  # Adjust z for AirSim
-            # logger.info(f"[SLAMNav] Received pose: x={x:.2f}, y={y:.2f}, z={z:.2f}")
-            # logger.debug("[SLAM Pose] x=%.2f, y=%.2f, z=%.2f", x, y, z)
 
-            # Print real drone position from AirSim
-            # Air_pose = client.simGetVehiclePose("UAV")
-            # pos = Air_pose.position
-            # airsim_x, airsim_y, airsim_z = pos.x_val, pos.y_val, pos.z_val
             if hasattr(client, "simGetVehiclePose"):
                 Air_pose = client.simGetVehiclePose("UAV")
                 pos = getattr(Air_pose, "position", None)

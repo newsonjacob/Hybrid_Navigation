@@ -1,4 +1,4 @@
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 from .pose_receiver import PoseReceiver
 
@@ -19,13 +19,20 @@ PORT = 6001
 class SlamReceiver:
     """Manage a :class:`PoseReceiver` and log SLAM poses."""
 
-    def __init__(self, host: str = HOST, port: int = PORT) -> None:
+    def __init__(
+        self, host: str = HOST, port: int = PORT, state_ref: Optional[List[str]] = None
+    ) -> None:
         self.receiver = PoseReceiver(host, port)
         self.pose_writer = None
         self.pose_log_file = None
         self.airsim_client = None
         self.log_thread_running = False
         self._log_thread: Optional[threading.Thread] = None
+        self.state_ref = state_ref
+
+    def set_state_ref(self, state_ref: List[str]) -> None:
+        """Attach a mutable state reference for logging."""
+        self.state_ref = state_ref
 
     @property
     def port(self) -> int:
@@ -51,6 +58,10 @@ class SlamReceiver:
                 "gt_y",
                 "slam_z",
                 "gt_z",
+                "covariance",
+                "inliers",
+                "slam_confidence",
+                "state",
             ])
 
             try:
@@ -106,6 +117,11 @@ class SlamReceiver:
 
                 slam_x, slam_y, slam_z = slam_pose
                 gt_x, gt_y, gt_z = gt_pose.x_val, gt_pose.y_val, gt_pose.z_val
+                covariance = self.get_latest_covariance()
+                inliers = self.get_latest_inliers()
+                confidence = None
+                if covariance is not None:
+                    confidence = 1.0 / (1.0 + float(covariance))
 
                 logger.debug(
                     "[PoseLogger] SLAM: (%.2f, %.2f, %.2f) | GT: (%.2f, %.2f, %.2f)",
@@ -119,16 +135,22 @@ class SlamReceiver:
 
                 assert self.pose_writer is not None
                 assert self.pose_log_file is not None
+                state = self.state_ref[0] if self.state_ref else ""
                 # Format numbers to avoid scientific notation
-                self.pose_writer.writerow([
+                row = [
                     f"{timestamp:.4f}",
                     f"{slam_x:.4f}",
                     f"{gt_x:.4f}",
                     f"{slam_y:.4f}",
                     f"{gt_y:.4f}",
                     f"{slam_z:.4f}",
-                    f"{gt_z:.4f}"
-                ])
+                    f"{gt_z:.4f}",
+                    f"{covariance:.4f}" if covariance is not None else "",
+                    str(inliers) if inliers is not None else "",
+                    f"{confidence:.4f}" if confidence is not None else "",
+                    state,
+                ]
+                self.pose_writer.writerow(row)
                 self.pose_log_file.flush()
             except Exception as e:
                 logger.warning("[PoseLogger] Error while logging poses: %s", e)
@@ -161,11 +183,14 @@ def get_latest_covariance() -> Optional[float]:
 
 _manager: Optional[SlamReceiver] = None
 
-def start_receiver(host: str = HOST, port: int = PORT) -> Optional[threading.Thread]:
+def start_receiver(host: str = HOST, port: int = PORT, state_ref: Optional[List[str]] = None) -> Optional[threading.Thread]:
     global _manager
     if _manager is None:
-        _manager = SlamReceiver(host, port)
+        _manager = SlamReceiver(host, port, state_ref)
         _manager.start()
+    else:
+        if state_ref is not None:
+            _manager.set_state_ref(state_ref)
     return _manager._log_thread
 
 
@@ -175,6 +200,11 @@ def stop_receiver() -> None:
     if _manager is not None:
         _manager.stop()
         _manager = None
+
+def set_state_ref(state_ref: List[str]) -> None:
+    """Update the state reference used by the running receiver."""
+    if _manager is not None:
+        _manager.set_state_ref(state_ref)
 
 
 def get_latest_pose() -> Optional[Tuple[float, float, float]]:
