@@ -20,11 +20,53 @@ def find_alignment_marker(obstacles: List[Dict], marker_name: str = "PlayerStart
 
 
 def draw_box(location, dimensions, rotation):
-    """Placeholder that returns an empty list of traces.
+    """Return Plotly traces for a 3D box.
 
-    In the real project this would create Plotly traces describing a 3D box.
+    Parameters
+    ----------
+    location : array-like
+        XYZ centre of the box.
+    dimensions : array-like
+        Width, depth and height of the box.
+    rotation : array-like
+        Euler rotation angles in degrees (roll, pitch, yaw).
     """
-    return []
+
+    location = np.asarray(location, dtype=float)
+    dims = np.asarray(dimensions, dtype=float)
+    rot = np.asarray(rotation, dtype=float)
+
+    # Compute vertices of the unit box centred on the origin
+    half = dims / 2.0
+    base_vertices = np.array([
+        [-half[0], -half[1], -half[2]],
+        [ half[0], -half[1], -half[2]],
+        [ half[0],  half[1], -half[2]],
+        [-half[0],  half[1], -half[2]],
+        [-half[0], -half[1],  half[2]],
+        [ half[0], -half[1],  half[2]],
+        [ half[0],  half[1],  half[2]],
+        [-half[0],  half[1],  half[2]],
+    ])
+
+    try:
+        from scipy.spatial.transform import Rotation as R
+
+        rot_matrix = R.from_euler("xyz", rot, degrees=True).as_matrix()
+    except Exception:
+        rot_matrix = np.eye(3)
+
+    vertices = base_vertices @ rot_matrix.T + location
+    x, y, z = vertices.T
+
+    faces_i = [0, 0, 0, 3, 4, 4, 4, 7, 1, 2, 5, 6]
+    faces_j = [1, 2, 3, 2, 5, 6, 7, 6, 5, 3, 6, 3]
+    faces_k = [2, 3, 1, 0, 6, 7, 5, 4, 2, 6, 4, 7]
+
+    mesh = go.Mesh3d(x=x, y=y, z=z, i=faces_i, j=faces_j, k=faces_k,
+                     opacity=0.5, color="lightgrey", showscale=False)
+
+    return [mesh]
 
 
 def build_plot(telemetry: np.ndarray, obstacles: List[Dict], offset: np.ndarray, scale: float = 1.0) -> go.Figure:
@@ -46,10 +88,12 @@ def build_plot(telemetry: np.ndarray, obstacles: List[Dict], offset: np.ndarray,
         dims = obs.get("dimensions", [1, 1, 1])
         rot = obs.get("rotation", [0, 0, 0])
         # draw_box may be patched in tests to avoid heavy computation.
-        # Ignore any returned objects to keep the plot valid.
         try:
-            draw_box(loc, dims, rot)
+            box_traces = draw_box(loc, dims, rot)
+            if isinstance(box_traces, list):
+                traces.extend(box_traces)
         except Exception:
+            # Ignore errors to keep the plot valid.
             pass
 
     fig = go.Figure(traces)
