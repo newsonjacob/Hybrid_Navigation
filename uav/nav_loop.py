@@ -399,17 +399,22 @@ def slam_navigation_loop(args, client, ctx):
 
             # --- Get the latest SLAM pose ---
             pose = get_latest_pose()
-            if pose is None: # No pose received, hover to recover
-                logger.warning("[SLAMNav] No pose received – hovering to recover.")
-                # client.hoverAsync().join()
+            if pose is None:  # No pose received, attempt recovery
+                logger.warning(
+                    "[SLAMNav] No pose received – running SLAM bootstrap."
+                )
+                run_slam_bootstrap(client, duration=6.0)
                 time.sleep(1.0)  # allow SLAM to reinitialize
                 continue
 
             # --- Check if SLAM is stable ---
             if not is_slam_stable():  # Check SLAM stability
-                logger.warning("[SLAMNav] SLAM is unstable. Pausing navigation.")
-                # client.hoverAsync().join()  # Pause the drone (hover)
-                continue  # Exit the loop or you can reset/restart SLAM if necessary
+                logger.warning(
+                    "[SLAMNav] SLAM is unstable. Running bootstrap recovery."
+                )
+                run_slam_bootstrap(client, duration=6.0)
+                time.sleep(1.0)  # Let SLAM settle after bootstrap
+                continue
             # else:
             #     logger.info("[SLAMNav] SLAM is stable. Continuing navigation.")
 
