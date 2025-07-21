@@ -40,6 +40,13 @@ pip install -e .
 - The UAV avoids obstacles by adjusting yaw based on zone flow magnitudes
 - After the first forward command a brief grace period suppresses additional navigation actions
 
+### Navigation Workflow
+
+1. `navigation_loop` polls perception results and checks for exit conditions.
+2. `update_navigation_state` converts perception data into a navigation decision.
+3. `navigation_step` performs obstacle detection, dodging and recovery.
+4. `log_and_record_frame` overlays telemetry and records the frame for analysis.
+
 ---
 
 ## 🔧 Setup Instructions

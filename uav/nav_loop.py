@@ -123,6 +123,22 @@ def check_startup_grace(ctx, time_now):
     return True
 
 
+def check_exit_conditions(client, ctx, time_now, max_duration, goal_x, goal_y):
+    """Return True if navigation loop should terminate."""
+    if os.path.exists(STOP_FLAG_PATH):
+        logger.info("Stop flag detected. Landing and shutting down.")
+        ctx.exit_flag.set()
+        return True
+    if time_now - ctx.start_time >= max_duration:
+        logger.info("Time limit reached — landing and stopping.")
+        return True
+    pos_goal, _, _ = get_drone_state(client)
+    if abs(pos_goal.x_val - goal_x) < 0.5 and abs(pos_goal.y_val - goal_y) < 0.5:
+        logger.info("Goal reached — landing.")
+        return True
+    return False
+
+
 def get_perception_data(ctx):
     """Retrieve the latest perception result or None."""
     try:
@@ -277,7 +293,12 @@ def log_and_record_frame(
     )
 
 def navigation_loop(args, client, ctx):
-    """Main navigation loop processing perception results."""
+    """Run the reactive navigation cycle.
+
+    Each iteration retrieves perception data, checks exit conditions and
+    delegates decision making to :func:`update_navigation_state` before
+    logging the frame.
+    """
     exit_flag = ctx.exit_flag
 
     max_flow_mag = config.MAX_FLOW_MAG
@@ -290,11 +311,6 @@ def navigation_loop(args, client, ctx):
     loop_start = time.time()
     try:
         while not exit_flag.is_set():
-            if os.path.exists(STOP_FLAG_PATH):
-                logger.info("Stop flag detected. Landing and shutting down.")
-                exit_flag.set()
-                break
-
             frame_count += 1
             time_now = time.time()
 
@@ -305,13 +321,7 @@ def navigation_loop(args, client, ctx):
             if data is None:
                 continue
 
-            if time_now - ctx.start_time >= max_duration:
-                logger.info("Time limit reached — landing and stopping.")
-                break
-
-            pos_goal, _, _ = get_drone_state(client)
-            if abs(pos_goal.x_val - goal_x) < 0.5 and abs(pos_goal.y_val - goal_y) < 0.5:
-                logger.info("Goal reached — landing.")
+            if check_exit_conditions(client, ctx, time_now, max_duration, goal_x, goal_y):
                 break
 
             result = update_navigation_state(
