@@ -395,8 +395,12 @@ def slam_navigation_loop(args, client, ctx, config=None):
 
     # Perform an initial SLAM calibration manoeuvre before navigating.
     if max_duration != 0:
+        if ctx is not None and getattr(ctx, "param_refs", None):
+            ctx.param_refs.state[0] = "bootstrap"
         run_slam_bootstrap(client, duration=6.0)
         time.sleep(1.0)  # Allow SLAM to settle after calibration
+        if ctx is not None and getattr(ctx, "param_refs", None):
+            ctx.param_refs.state[0] = "waypoint_nav"
 
     # Simplified execution path used by tests
     if max_duration == 0 and navigator is not None:
@@ -432,6 +436,8 @@ def slam_navigation_loop(args, client, ctx, config=None):
                     "[SLAMNav] SLAM tracking lost. Attempting reinitialisation."
                 )
                 while True:
+                    if ctx is not None and getattr(ctx, "param_refs", None):
+                        ctx.param_refs.state[0] = "bootstrap"
                     run_slam_bootstrap(client, duration=4.0)
                     time.sleep(1.0)
                     pose = get_latest_pose_matrix()
@@ -439,6 +445,8 @@ def slam_navigation_loop(args, client, ctx, config=None):
                         logger.info(
                             "[SLAMNav] SLAM reinitialised. Resuming navigation."
                         )
+                        if ctx is not None and getattr(ctx, "param_refs", None):
+                            ctx.param_refs.state[0] = "waypoint_nav"
                         break
                     if (exit_flag is not None and exit_flag.is_set()) or os.path.exists(
                         STOP_FLAG_PATH
@@ -493,6 +501,8 @@ def slam_navigation_loop(args, client, ctx, config=None):
 
             # --- Get the current waypoint (goal) ---
             goal_x, goal_y, goal_z = waypoints[current_waypoint_index]
+            if ctx is not None and getattr(ctx, "param_refs", None):
+                ctx.param_refs.state[0] = f"waypoint_{current_waypoint_index + 1}"
             logger.info(f"[SLAMNav] Current waypoint: {current_waypoint_index + 1} at ({goal_x}, {goal_y}, {goal_z})")
 
             # --- Calculate the distance to the current waypoint ---
@@ -515,12 +525,16 @@ def slam_navigation_loop(args, client, ctx, config=None):
             # --- Check if the stop flag is set ---
             if os.path.exists(STOP_FLAG_PATH):
                 logger.info("Stop flag detected. Landing and shutting down.")
+                if ctx is not None and getattr(ctx, "param_refs", None):
+                    ctx.param_refs.state[0] = "landing"
                 client.landAsync().join()
                 break
 
             # End condition
             if time.time() - start_time > max_duration:
                 logger.info("[SLAMNav] Max duration reached, ending navigation.")
+                if ctx is not None and getattr(ctx, "param_refs", None):
+                    ctx.param_refs.state[0] = "landing"
                 client.landAsync().join()
                 break
 

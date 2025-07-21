@@ -31,7 +31,9 @@ def test_slam_receiver_parses_and_handles_disconnects(monkeypatch, tmp_path):
     )
 
     monkeypatch.chdir(tmp_path)
-    receiver = SlamReceiver(host="127.0.0.1", port=0)
+    (tmp_path / "flags").mkdir()
+    state = ["bootstrap"]
+    receiver = SlamReceiver(host="127.0.0.1", port=0, state_ref=state)
     receiver.start()
     port = receiver.port
     time.sleep(0.1)
@@ -49,4 +51,5 @@ def test_slam_receiver_parses_and_handles_disconnects(monkeypatch, tmp_path):
 
     assert "covariance" in header and "inliers" in header and "slam_confidence" in header
     assert len(row) == len(header)
+    assert row[-1] == "bootstrap"
 
