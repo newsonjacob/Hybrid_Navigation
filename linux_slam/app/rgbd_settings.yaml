@@ -1,10 +1,10 @@
 %YAML:1.0
 ---
 # === Camera intrinsics ===
-Camera.fx: 381.1
-Camera.fy: 381.1
+Camera.fx: 440.5  # Updated for 72° HFOV
+Camera.fy: 440.5  # Updated for 72° HFOV
 Camera.cx: 320.0
-Camera.cy: 180.0
+Camera.cy: 205.5   # Updated: 411/2
 
 Camera.k1: 0.0
 Camera.k2: 0.0
@@ -12,10 +12,10 @@ Camera.p1: 0.0
 Camera.p2: 0.0
 
 Camera.width: 640
-Camera.height: 360
+Camera.height: 411  # Changed from 360
 
 # === Stereo baseline * fx ===
-Camera.bf: 28.58 # 0.075 * 381.1
+Camera.bf: 33.04  # Updated: 0.075 × 440.5
 
 # === Stereo mode only ===
 Camera.RGB: 1 # 0: Grayscale, 1: RGB
