@@ -238,3 +238,22 @@ def test_navigation_skips_actions_during_grace_after_blind_forward(monkeypatch):
 
     assert result[0] == "none"
     assert client.moveByVelocityZAsync.call_count == 1
+
+
+def test_slam_to_goal_accepts_pose_matrix(monkeypatch):
+    client = DummyClient()
+    nav = Navigator(client)
+
+    from uav import config
+    monkeypatch.setattr(config, "SLAM_YAW_OFFSET", 10.0, raising=False)
+
+    pose = [
+        [0, -1, 0, 5.0],
+        [1, 0, 0, 3.0],
+        [0, 0, 1, -2.0],
+    ]
+    nav.slam_to_goal(pose, (6.0, 3.0, -2.0), max_speed=1.0)
+
+    name, args, kwargs, fut = client.calls[-1]
+    assert name == "moveByVelocityAsync"
+    assert abs(kwargs["yaw_mode"].yaw_or_rate - 100.0) < 1e-3

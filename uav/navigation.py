@@ -178,10 +178,14 @@ class Navigator:
             pos = state.kinematics_estimated.position
             x, y, z = pos.x_val, pos.y_val, pos.z_val
         else:
-            if isinstance(pose, (list, tuple)) and len(pose) == 3:
+            if (
+                isinstance(pose, (list, tuple))
+                and len(pose) == 3
+                and not isinstance(pose[0], (list, tuple))
+            ):
                 x, y, z = pose
             else:
-                # Assume pose is a 3x4 matrix
+                # Assume pose is a 3x4 matrix-like object
                 x = pose[0][3]
                 y = pose[1][3]
                 z = pose[2][3]
