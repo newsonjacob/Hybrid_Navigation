@@ -63,36 +63,6 @@ def is_slam_stable(
     
     return True
 
-
-def is_obstacle_ahead(
-    client, depth_threshold: float = 2.0, vehicle_name: str = "UAV"
-) -> Tuple[bool, Optional[float]]:
-    """Check if a depth obstacle is within ``depth_threshold`` meters."""
-    from airsim import ImageRequest, ImageType
-
-    logger.info("[Obstacle Check] Checking for obstacles ahead.")
-    try:
-        responses = client.simGetImages(
-            [ImageRequest("oakd_camera", ImageType.DepthPlanar, True)],
-            vehicle_name=vehicle_name,
-        )
-        if not responses or responses[0].height == 0:
-            logger.error(
-                "[Obstacle Check] No depth image received or image height is zero."
-            )
-            return False, None
-
-        depth_image = airsim.get_pfm_array(responses[0])
-        h, w = depth_image.shape
-        cx, cy = w // 2, h // 2
-        roi = depth_image[cy - 20 : cy + 20, cx - 20 : cx + 20]
-        mean_depth = np.nanmean(roi)
-        return mean_depth < depth_threshold, float(mean_depth)
-    except Exception as e:  # pragma: no cover - defensive
-        logger.error("[Obstacle Check] Depth read failed: %s", e)
-        return False, None
-
-
 def generate_pose_comparison_plot() -> None:
     """Invoke the pose comparison plotting helper script."""
     logger.info("[Plotting] Generating pose comparison plot.")
