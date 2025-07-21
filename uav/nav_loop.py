@@ -424,7 +424,6 @@ def slam_navigation_loop(args, client, ctx, config=None):
             # --- Check for exit_flag to allow GUI stop button to interrupt navigation ---
             if (exit_flag is not None and exit_flag.is_set()) or os.path.exists(STOP_FLAG_PATH):
                 logger.info("[SLAMNav] Stop flag detected. Landing and exiting navigation loop.")
-                client.landAsync().join()
                 break
 
             # --- Get the latest SLAM pose ---
@@ -432,30 +431,39 @@ def slam_navigation_loop(args, client, ctx, config=None):
             # This is a basic stability check that can be improved.
             # Need to ensure that this check is continuously performed during the waypoint navigation. 
             pose = get_latest_pose_matrix()
+
+            # Check if the pose is None or SLAM is unstable
             if pose is None or not is_slam_stable(cov_thres, inlier_thres):
                 logger.warning(
                     "[SLAMNav] SLAM tracking lost. Attempting reinitialisation."
                 )
                 while True:
+
+                    # Run SLAM bootstrap to reinitialise the SLAM system
                     if ctx is not None and getattr(ctx, "param_refs", None):
                         ctx.param_refs.state[0] = "bootstrap"
                     run_slam_bootstrap(client, duration=4.0)
                     time.sleep(1.0)
                     pose = get_latest_pose_matrix()
+
+                    # Check if SLAM is stable after reinitialisation
                     if pose is not None and is_slam_stable(cov_thres, inlier_thres):
                         logger.info(
                             "[SLAMNav] SLAM reinitialised. Resuming navigation."
                         )
+
+                        # Reset the waypoint index to start from the first waypoint
                         if ctx is not None and getattr(ctx, "param_refs", None):
                             ctx.param_refs.state[0] = "waypoint_nav"
                         break
+
+                    # Check for exit conditions during reinitialisation
                     if (exit_flag is not None and exit_flag.is_set()) or os.path.exists(
                         STOP_FLAG_PATH
                     ):
                         logger.info(
                             "[SLAMNav] Exit signal during reinitialisation."
                         )
-                        client.landAsync().join()
                         return last_action
                 continue
 
@@ -528,7 +536,6 @@ def slam_navigation_loop(args, client, ctx, config=None):
                 logger.info("Stop flag detected. Landing and shutting down.")
                 if ctx is not None and getattr(ctx, "param_refs", None):
                     ctx.param_refs.state[0] = "landing"
-                client.landAsync().join()
                 break
 
             # End condition
@@ -536,7 +543,6 @@ def slam_navigation_loop(args, client, ctx, config=None):
                 logger.info("[SLAMNav] Max duration reached, ending navigation.")
                 if ctx is not None and getattr(ctx, "param_refs", None):
                     ctx.param_refs.state[0] = "landing"
-                client.landAsync().join()
                 break
 
             # # Depth-based obstacle check before moving toward the goal # Depth check optional
@@ -555,11 +561,10 @@ def slam_navigation_loop(args, client, ctx, config=None):
             time.sleep(0.1)  # Allow for periodic updates
     except KeyboardInterrupt:
         logger.info("[SLAMNav] Interrupted by user.")
-        client.landAsync().join()
     finally:
         logger.info("[SLAMNav] SLAM navigation loop finished.")
-        # generate_pose_comparison_plot()
-    return last_action
+        generate_pose_comparison_plot()
+    return last_action # Return the last action taken
 
 def shutdown_threads(ctx):
     """Stop worker threads and wait for them to exit."""

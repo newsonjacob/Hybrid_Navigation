@@ -159,6 +159,7 @@ def main() -> None:
                     flag.unlink()
                 except FileNotFoundError:
                     pass
+            logger.info("[main.py] SLAM navigation loop finished - Calling cleanup.")
             cleanup(client, sim_process, ctx if ctx is not None else None)
     elif nav_mode == "reactive":
         if STOP_FLAG_PATH.exists():

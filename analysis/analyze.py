@@ -1,6 +1,6 @@
 import argparse
 from pathlib import Path
-from typing import List
+from typing import List, Union  # Add Union import
 
 import numpy as np
 import pandas as pd
@@ -64,14 +64,14 @@ def analyse_logs(log_paths: List[str], output: str) -> None:
         print(f"Average loop time: {np.mean(loop_vals):.3f}s")
 
 
-def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
+def parse_args(argv: Union[List[str], None] = None) -> argparse.Namespace:  # Change | to Union
     parser = argparse.ArgumentParser(description="Analyze flight logs")
     parser.add_argument("logs", nargs="+", help="CSV log files")
     parser.add_argument("-o", "--output", default="analysis/flight_view.html", help="Output HTML file")
     return parser.parse_args(argv)
 
 
-def main(argv: List[str] | None = None) -> None:
+def main(argv: Union[List[str], None] = None) -> None:  # Change | to Union None:  # Change | to Union
     args = parse_args(argv)
     analyse_logs(args.logs, args.output)
 

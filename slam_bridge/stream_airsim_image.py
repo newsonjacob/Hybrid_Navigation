@@ -11,7 +11,7 @@ import socket
 import struct
 import time
 
-from typing import List
+from typing import List, Union
 
 import airsim
 import numpy as np
@@ -50,7 +50,7 @@ class ImageStreamer:
         self.port = port
         self.mode = mode 
         self.retries = retries
-        self.sock: socket.socket | None = None
+        self.sock: Union[socket.socket, None] = None  # Fix | to Union
         self.client = airsim.MultirotorClient()
         self.frame_index = 0
 

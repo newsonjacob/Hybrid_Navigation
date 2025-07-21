@@ -78,7 +78,7 @@ def write_frame_output(
         vis_img,
         frame_count,
         speed,
-        param_refs['state'][0],
+        param_refs.state[0],
         time_now - start_time,
         smooth_L,
         smooth_C,

@@ -3,14 +3,14 @@
 import argparse
 import json
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Union, Dict, Any  # Add Dict, Any imports
 
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
 
-def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
+def parse_args(argv: Union[List[str], None] = None) -> argparse.Namespace:  # Change | to Union
     """Parse command line arguments for the CLI."""
     parser = argparse.ArgumentParser(description="Visualise a flight path")
     parser.add_argument("output", help="Output HTML file")
@@ -19,7 +19,7 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def find_alignment_marker(obstacles: List[Dict], marker_name: str = "PlayerStart_3") -> np.ndarray:
+def find_alignment_marker(obstacles: List[Dict[str, Any]], marker_name: str = "PlayerStart_3") -> np.ndarray:
     """Return the location of an obstacle by name.
 
     Raises
@@ -85,12 +85,12 @@ def draw_box(location, dimensions, rotation):
 
 def build_plot(
     telemetry: np.ndarray,
-    obstacles: List[Dict],
+    obstacles: List[Dict[str, Any]],  # Fix Dict type
     offset: np.ndarray,
     scale: float = 1.0,
     log=None,
-    colour_by: str | None = None,
-    orientations: np.ndarray | None = None,
+    colour_by: Union[str, None] = None,  # Fix | to Union
+    orientations: Union[np.ndarray, None] = None,  # Fix | to Union
 ) -> go.Figure:
     """Create a simple 3D plot of the flight path and obstacles.
 
@@ -185,7 +185,7 @@ def build_plot(
     return fig
 
 
-def main(argv: List[str] | None = None) -> None:
+def main(argv: Union[List[str], None] = None) -> None:  # Fix | to Union
     """Entry point for the ``python -m`` interface."""
     args = parse_args(argv)
 
