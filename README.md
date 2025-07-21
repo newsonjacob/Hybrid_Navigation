@@ -4,7 +4,6 @@
 This repository contains the implementation of a reactive obstacle avoidance system for a simulated UAV using optical flow. The UAV operates in a GPS-denied environment simulated via AirSim and Unreal Engine 4.
 
 ---
-
 ## 📦 Features
 
 - Real-time optical flow tracking using Lucas-Kanade method
@@ -16,10 +15,12 @@ This repository contains the implementation of a reactive obstacle avoidance sys
 - Stereo images are streamed in grayscale to reduce processing overhead
 - Works with auto-launched AirSim simulation
 - Receives SLAM poses via a `PoseReceiver` that can be started and stopped programmatically
+- SLAM poses now include orientation and are corrected by `Navigator.slam_to_goal` using `config.SLAM_YAW_OFFSET`
 - Integrated frontier-based exploration using SLAM map points
 - SLAM loop checks depth ahead and dodges obstacles before advancing
 - Performs an initial SLAM calibration manoeuvre after takeoff that returns the drone to face forward
 
+SLAM poses contain both position and orientation. When a pose matrix is passed to `Navigator.slam_to_goal`, the yaw angle is extracted and corrected by `config.SLAM_YAW_OFFSET` before commanding the drone.
 
 ---
 
@@ -153,6 +154,15 @@ The `hybrid-nav` entry point exposes several options:
 | `--slam-covariance-threshold FLOAT` | Covariance threshold for SLAM stability |
 | `--slam-inlier-threshold INT` | Minimum inliers for SLAM stability |
 | `--log-timestamp STR` | Timestamp used to sync logging across modules |
+
+### SLAM Stability
+
+`is_slam_stable()` evaluates the pose covariance and inlier count to decide if
+tracking is reliable. The default thresholds are defined in
+`uav.slam_utils` as `COVARIANCE_THRESHOLD = 1.0` and
+`MIN_INLIERS_THRESHOLD = 50`. They can be overridden on the command line using
+`--slam-covariance-threshold` and `--slam-inlier-threshold` or in the `[slam]`
+section of `config.ini`.
 
 Example quick start:
 
