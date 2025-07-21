@@ -46,10 +46,10 @@ class SlamReceiver:
             self.pose_writer.writerow([
                 "timestamp",
                 "slam_x",
-                "slam_y",
-                "slam_z",
                 "gt_x",
+                "slam_y",
                 "gt_y",
+                "slam_z",
                 "gt_z",
             ])
 
@@ -110,10 +110,10 @@ class SlamReceiver:
                 logger.debug(
                     "[PoseLogger] SLAM: (%.2f, %.2f, %.2f) | GT: (%.2f, %.2f, %.2f)",
                     slam_x,
-                    slam_y,
-                    slam_z,
                     gt_x,
+                    slam_y,
                     gt_y,
+                    slam_z,
                     gt_z,
                 )
 
@@ -123,10 +123,10 @@ class SlamReceiver:
                 self.pose_writer.writerow([
                     f"{timestamp:.4f}",
                     f"{slam_x:.4f}",
-                    f"{slam_y:.4f}",
-                    f"{slam_z:.4f}",
                     f"{gt_x:.4f}",
+                    f"{slam_y:.4f}",
                     f"{gt_y:.4f}",
+                    f"{slam_z:.4f}",
                     f"{gt_z:.4f}"
                 ])
                 self.pose_log_file.flush()
