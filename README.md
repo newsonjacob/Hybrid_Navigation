@@ -10,6 +10,7 @@ This repository contains the implementation of a reactive obstacle avoidance sys
 - Zone-based obstacle avoidance using vector summation
 - Modular helpers for obstacle detection and side safety
 - Logs flight data to CSV for post-flight analysis
+- The pose comparison CSV now records the current navigation state
 - Visualises 3D flight paths with interactive HTML output
 - Compatible with a custom stereo camera setup (`oakd_camera`)
 - Stereo images are streamed in grayscale to reduce processing overhead
