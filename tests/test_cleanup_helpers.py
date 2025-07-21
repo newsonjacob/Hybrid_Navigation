@@ -96,9 +96,12 @@ def test_finalize_files(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(nl.subprocess, 'run', lambda cmd: calls.append(cmd))
     monkeypatch.setattr(nl, 'retain_recent_views', lambda *a, **k: calls.append(('retain', a, k)))
+    monkeypatch.setattr('uav.slam_utils.generate_pose_comparison_plot', lambda: calls.append('pose_plot'))
     nl.STOP_FLAG_PATH = tmp_path/'stop.flag'
     nl.STOP_FLAG_PATH.write_text('1')
     ctx = types.SimpleNamespace(timestamp='1234')
     nl.finalize_files(ctx)
     assert any('analysis.visualise_flight' in ' '.join(c) for c in calls)
+    assert any('analysis.analyze' in ' '.join(c) for c in calls)
+    assert 'pose_plot' in calls
     assert not nl.STOP_FLAG_PATH.exists()
