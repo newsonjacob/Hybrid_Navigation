@@ -30,6 +30,8 @@ def format_log_line(
     decode_s,
     processing_s,
     loop_elapsed,
+    cpu_percent,
+    mem_rss,
 ) -> str:
     """Return a formatted CSV line for logging navigation state."""
 
@@ -41,5 +43,6 @@ def format_log_line(
         f"{state_str},{collided},{obstacle_detected},{int(side_safe)},"
         f"{pos.x_val:.2f},{pos.y_val:.2f},{pos.z_val:.2f},{yaw:.2f},{speed:.2f},"
         f"{time_now:.2f},{len(good_old)},"
-        f"{simgetimage_s:.3f},{decode_s:.3f},{processing_s:.3f},{loop_elapsed:.3f}\n"
+        f"{simgetimage_s:.3f},{decode_s:.3f},{processing_s:.3f},{loop_elapsed:.3f},"
+        f"{cpu_percent:.1f},{mem_rss}\n"
     )
