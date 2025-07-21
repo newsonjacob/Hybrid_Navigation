@@ -46,9 +46,9 @@ def is_slam_stable(
 
     if pose_covariance is None or inliers is None:
         logger.warning(
-            "[SLAM] Covariance or inlier data unavailable. Assuming stable."
+            "[SLAM] Covariance or inlier data unavailable. SLAM is unstable."
         )
-        return True
+        return False
     
     # Check if pose covariance is within acceptable limits
     if pose_covariance > covariance_threshold:

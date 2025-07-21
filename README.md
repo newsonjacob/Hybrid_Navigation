@@ -163,7 +163,8 @@ tracking is reliable. The default thresholds are defined in
 `uav.slam_utils` as `COVARIANCE_THRESHOLD = 1.0` and
 `MIN_INLIERS_THRESHOLD = 50`. They can be overridden on the command line using
 `--slam-covariance-threshold` and `--slam-inlier-threshold` or in the `[slam]`
-section of `config.ini`.
+section of `config.ini`. If either covariance or inlier data is unavailable the
+system now treats SLAM tracking as unstable and triggers reinitialisation.
 
 Example quick start:
 

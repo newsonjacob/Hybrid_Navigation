@@ -71,3 +71,12 @@ def test_is_slam_stable_respects_inlier_threshold(monkeypatch):
     assert su.is_slam_stable() is False
     assert su.is_slam_stable(inlier_threshold=20) is True
 
+
+def test_is_slam_stable_handles_missing_data(monkeypatch):
+    su = _load_module(monkeypatch)
+    monkeypatch.setattr(su.slam_receiver, "get_latest_pose", lambda: (0, 0, 0))
+    monkeypatch.setattr(su.slam_receiver, "get_latest_covariance", lambda: None)
+    monkeypatch.setattr(su.slam_receiver, "get_latest_inliers", lambda: None)
+
+    assert su.is_slam_stable() is False
+
