@@ -88,3 +88,26 @@ def test_obstacles_add_traces():
     fig = vis.build_plot(telemetry, obstacles, vis.np.array([0, 0, 0]))
 
     assert len(fig.data) > base_count
+
+
+def test_colour_and_orientation(monkeypatch):
+    telemetry = vis.np.array([[0, 0, 0], [1, 0, 0], [2, 0, 0]])
+    log = {"time": [0, 1, 2], "speed": [1, 2, 3]}
+    orientations = vis.np.array([0, 45, 90])
+
+    monkeypatch.setattr(vis, "draw_box", lambda *a, **k: [], raising=False)
+
+    fig = vis.build_plot(
+        telemetry,
+        [],
+        vis.np.array([0, 0, 0]),
+        log=log,
+        colour_by="time",
+        orientations=orientations,
+    )
+
+    # Expect an extra orientation trace
+    assert len(fig.data) >= 2
+    # First trace should include line colour information
+    path_trace = fig.data[0]
+    assert path_trace.kwargs.get("line", {}).get("color") is not None
