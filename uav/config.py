@@ -14,6 +14,7 @@ VIDEO_FPS = 8.0
 VIDEO_SIZE = (1280, 720)
 VIDEO_OUTPUT = 'flow_output.avi'
 FLOW_STD_MAX = 50.0
+SLAM_YAW_OFFSET = 0.0
 
 def load_app_config(config_path: str = "config.ini"):
     """Load application config from an INI file."""

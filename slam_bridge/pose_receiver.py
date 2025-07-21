@@ -96,6 +96,13 @@ class PoseReceiver:
                 logger.error(f"[PoseReceiver] Pose extraction failed: {e}")
                 return None
 
+    def get_latest_pose_matrix(self) -> Optional[List[List[float]]]:
+        """Return a copy of the latest received 3x4 pose matrix."""
+        with self._lock:
+            if self._latest_pose is None:
+                return None
+            return [row[:] for row in self._latest_pose]
+
     def get_latest_inliers(self) -> Optional[int]:
         with self._lock:
             return self._latest_inliers
