@@ -73,3 +73,18 @@ def test_find_alignment_marker_success_and_failure():
 
     with pytest.raises(ValueError):
         vis.find_alignment_marker([], marker_name="missing")
+
+
+def test_obstacles_add_traces():
+    telemetry = vis.np.array([[0, 0, 0], [1, 1, 1]])
+
+    no_obs_fig = vis.build_plot(telemetry, [], vis.np.array([0, 0, 0]))
+    base_count = len(no_obs_fig.data)
+
+    obstacles = [
+        {"name": "Box1", "location": [0, 0, 0], "dimensions": [1, 1, 1], "rotation": [0, 0, 0]},
+    ]
+
+    fig = vis.build_plot(telemetry, obstacles, vis.np.array([0, 0, 0]))
+
+    assert len(fig.data) > base_count
