@@ -135,6 +135,67 @@ def handle_obstacle(
     return state_str
 
 
+def handle_grace_period(time_now, navigator, frame_queue, vis_img, param_refs):
+    """Return True if still in start-up grace period."""
+    if in_grace_period(time_now, navigator):
+        param_refs.state[0] = "\U0001F552 grace"
+        try:
+            frame_queue.get_nowait()
+        except Exception:
+            pass
+        frame_queue.put(vis_img)
+        return True
+    return False
+
+
+def decide_low_feature_action(navigator, smooth_L, smooth_C, smooth_R):
+    """Choose an action when few optical-flow features are tracked."""
+    if smooth_L > 1.5 and smooth_R > 1.5 and smooth_C < 0.2:
+        return navigator.brake()
+    return navigator.blind_forward()
+
+
+def update_dodge_history(client, state_history, pos_history, state_str, navigator,
+                         smooth_L, smooth_C, smooth_R, param_refs):
+    """Extend dodge time if the UAV oscillates without progress."""
+    pos_hist, _, _ = get_drone_state(client)
+    state_history.append(state_str)
+    pos_history.append((pos_hist.x_val, pos_hist.y_val))
+    if len(state_history) == state_history.maxlen:
+        if all(s == state_history[-1] for s in state_history) and state_history[-1].startswith("dodge"):
+            dx = pos_history[-1][0] - pos_history[0][0]
+            dy = pos_history[-1][1] - pos_history[0][1]
+            if abs(dx) < 0.5 and abs(dy) < 1.0:
+                logger.warning("Repeated dodges detected — extending dodge")
+                state_str = navigator.dodge(smooth_L, smooth_C, smooth_R, duration=3.0)
+                state_history[-1] = state_str
+                param_refs.state[0] = state_str
+    return state_str
+
+
+def recovery_actions(navigator, speed, smooth_C, smooth_L, smooth_R, brake_thres,
+                     time_now, frame_count):
+    """Return a recovery action if no obstacle manoeuvre was triggered."""
+    if (
+        navigator.braked
+        and smooth_C < brake_thres * 0.8
+        and smooth_L < brake_thres * 0.8
+        and smooth_R < brake_thres * 0.8
+        and time_now >= navigator.grace_period_end_time
+    ):
+        logger.info("Brake released — resuming forward at frame %s", frame_count)
+        return navigator.resume_forward()
+    if not navigator.braked and not navigator.dodging and time_now - navigator.last_movement_time > 2:
+        return navigator.reinforce()
+    if (
+        navigator.braked or navigator.dodging
+    ) and speed < 0.2 and smooth_C < 5 and smooth_L < 5 and smooth_R < 5:
+        return navigator.nudge_forward()
+    if time_now - navigator.last_movement_time > 4:
+        return navigator.timeout_recover()
+    return "none"
+
+
 def navigation_step(
     client,
     navigator,
@@ -162,7 +223,14 @@ def navigation_step(
     probe_mag=0.0,
     probe_count=0,
 ):
-    """Decide and execute navigation action based on perception and state."""
+    """Evaluate flow data and choose the next UAV action.
+
+    The step runs after perception processing and is responsible for:
+    1. Handling the initial grace period.
+    2. Deciding motion when few features are detected.
+    3. Performing obstacle avoidance manoeuvres.
+    4. Triggering recovery behaviours if stuck.
+    """
     state_str = "none"
     brake_thres = 0.0
     dodge_thres = 0.0
@@ -178,23 +246,13 @@ def navigation_step(
 
     logger.debug("Flow Magnitudes — L: %.2f, C: %.2f, R: %.2f", smooth_L, smooth_C, smooth_R)
 
-    if in_grace_period(time_now, navigator):
-        param_refs.state[0] = "\U0001F552 grace"
-        obstacle_detected = 0
-        try:
-            frame_queue.get_nowait()
-        except Exception:
-            pass
-        frame_queue.put(vis_img)
+    if handle_grace_period(time_now, navigator, frame_queue, vis_img, param_refs):
         return state_str, obstacle_detected, side_safe, brake_thres, dodge_thres, probe_req
 
     navigator.just_resumed = False
 
     if len(good_old) < 10:
-        if smooth_L > 1.5 and smooth_R > 1.5 and smooth_C < 0.2:
-            state_str = navigator.brake()
-        else:
-            state_str = navigator.blind_forward()
+        state_str = decide_low_feature_action(navigator, smooth_L, smooth_C, smooth_R)
     else:
         pos, yaw, speed = get_drone_state(client)
         brake_thres, dodge_thres = compute_thresholds(speed)
@@ -227,38 +285,30 @@ def navigation_step(
             state_str = action
 
     if state_str == "none":
-        if (
-            navigator.braked
-            and smooth_C < brake_thres * 0.8
-            and smooth_L < brake_thres * 0.8
-            and smooth_R < brake_thres * 0.8
-            and time_now >= navigator.grace_period_end_time
-        ):
-            logger.info("Brake released — resuming forward at frame %s", frame_count)
-            state_str = navigator.resume_forward()
-        elif not navigator.braked and not navigator.dodging and time_now - navigator.last_movement_time > 2:
-            state_str = navigator.reinforce()
-        elif (
-            navigator.braked or navigator.dodging
-        ) and speed < 0.2 and smooth_C < 5 and smooth_L < 5 and smooth_R < 5:
-            state_str = navigator.nudge_forward()
-        elif time_now - navigator.last_movement_time > 4:
-            state_str = navigator.timeout_recover()
+        state_str = recovery_actions(
+            navigator,
+            speed,
+            smooth_C,
+            smooth_L,
+            smooth_R,
+            brake_thres,
+            time_now,
+            frame_count,
+        )
 
     param_refs.state[0] = state_str
 
-    pos_hist, _, _ = get_drone_state(client)
-    state_history.append(state_str)
-    pos_history.append((pos_hist.x_val, pos_hist.y_val))
-    if len(state_history) == state_history.maxlen:
-        if all(s == state_history[-1] for s in state_history) and state_history[-1].startswith("dodge"):
-            dx = pos_history[-1][0] - pos_history[0][0]
-            dy = pos_history[-1][1] - pos_history[0][1]
-            if abs(dx) < 0.5 and abs(dy) < 1.0:
-                logger.warning("Repeated dodges detected — extending dodge")
-                state_str = navigator.dodge(smooth_L, smooth_C, smooth_R, duration=3.0)
-                state_history[-1] = state_str
-                param_refs.state[0] = state_str
+    state_str = update_dodge_history(
+        client,
+        state_history,
+        pos_history,
+        state_str,
+        navigator,
+        smooth_L,
+        smooth_C,
+        smooth_R,
+        param_refs,
+    )
 
     pos, yaw, speed = get_drone_state(client)
     brake_thres, dodge_thres = compute_thresholds(speed)
