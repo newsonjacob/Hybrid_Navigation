@@ -1,8 +1,22 @@
 """Tools for plotting flight paths and scene obstacles in 3D."""
 
-import numpy as np
-import plotly.graph_objects as go
+import argparse
+import json
+from pathlib import Path
 from typing import List, Dict
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+
+
+def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
+    """Parse command line arguments for the CLI."""
+    parser = argparse.ArgumentParser(description="Visualise a flight path")
+    parser.add_argument("output", help="Output HTML file")
+    parser.add_argument("--log", help="CSV log containing pos_x/pos_y/pos_z")
+    parser.add_argument("--obstacles", help="JSON file with obstacle list")
+    return parser.parse_args(argv)
 
 
 def find_alignment_marker(obstacles: List[Dict], marker_name: str = "PlayerStart_3") -> np.ndarray:
@@ -169,3 +183,32 @@ def build_plot(
     fig = go.Figure(traces)
     fig.update_layout(scene=dict(aspectmode="data"))
     return fig
+
+
+def main(argv: List[str] | None = None) -> None:
+    """Entry point for the ``python -m`` interface."""
+    args = parse_args(argv)
+
+    if args.log:
+        df = pd.read_csv(args.log)
+        telemetry = df[["pos_x", "pos_y", "pos_z"]].to_numpy(dtype=float)
+        log = df
+    else:
+        telemetry = np.zeros((0, 3))
+        log = None
+
+    if args.obstacles:
+        with open(args.obstacles, "r", encoding="utf-8") as f:
+            obstacles = json.load(f)
+    else:
+        obstacles = []
+
+    fig = build_plot(telemetry, obstacles, np.array([0, 0, 0]), log=log,
+                     colour_by="time" if log is not None else None)
+
+    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+    fig.write_html(args.output)
+
+
+if __name__ == "__main__":
+    main()

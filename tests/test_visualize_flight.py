@@ -1,4 +1,5 @@
 import sys
+import subprocess
 import types
 import pytest
 # Replace potential numpy stub from conftest with the real package
@@ -111,3 +112,16 @@ def test_colour_and_orientation(monkeypatch):
     # First trace should include line colour information
     path_trace = fig.data[0]
     assert path_trace.kwargs.get("line", {}).get("color") is not None
+
+
+def test_visualise_cli_writes_html(tmp_path):
+    out_path = tmp_path / "plot.html"
+
+    result = subprocess.run(
+        [sys.executable, "-m", "analysis.visualise_flight", str(out_path)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert out_path.exists()
+    assert "<html" in out_path.read_text().lower()
