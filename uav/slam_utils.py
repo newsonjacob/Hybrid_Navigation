@@ -2,6 +2,7 @@
 
 import logging
 import subprocess
+import sys
 from typing import Tuple, Optional
 
 import numpy as np
@@ -91,14 +92,12 @@ def generate_pose_comparison_plot() -> None:
     try:
         logger.info("[Plotting] Running pose_comparison_plotter.py script.")
         result = subprocess.run(
-            ["python", "slam_bridge/pose_comparison_plotter.py"],
+            [sys.executable, "slam_bridge/pose_comparison_plotter.py"],
             check=True,
             capture_output=True,
             text=True,
         )
-        print("[Plotting] Pose comparison plot generated.")
-        print(result.stdout)
+        logger.info("[Plotting] Pose comparison plot generated.")
+        logger.info(result.stdout)
     except subprocess.CalledProcessError as e:  # pragma: no cover - defensive
-        logger.error("[Plotting] Failed to generate pose comparison plot.")
-        print("[Plotting] Failed to generate plot:")
-        print(e.stderr)
+        logger.error(e.stderr)

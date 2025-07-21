@@ -45,7 +45,7 @@ def test_generate_pose_comparison_plot_invokes_subprocess(monkeypatch):
     monkeypatch.setattr(su.subprocess, "run", run_mock)
     su.generate_pose_comparison_plot()
     run_mock.assert_called_once_with(
-        ["python", "slam_bridge/pose_comparison_plotter.py"],
+        [sys.executable, "slam_bridge/pose_comparison_plotter.py"],
         check=True,
         capture_output=True,
         text=True,
