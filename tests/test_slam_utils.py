@@ -51,3 +51,23 @@ def test_generate_pose_comparison_plot_invokes_subprocess(monkeypatch):
         text=True,
     )
 
+
+def test_is_slam_stable_respects_cov_threshold(monkeypatch):
+    su = _load_module(monkeypatch)
+    monkeypatch.setattr(su.slam_receiver, "get_latest_pose", lambda: (0, 0, 0))
+    monkeypatch.setattr(su.slam_receiver, "get_latest_covariance", lambda: 2.0)
+    monkeypatch.setattr(su.slam_receiver, "get_latest_inliers", lambda: 100)
+
+    assert su.is_slam_stable() is False
+    assert su.is_slam_stable(covariance_threshold=3.0) is True
+
+
+def test_is_slam_stable_respects_inlier_threshold(monkeypatch):
+    su = _load_module(monkeypatch)
+    monkeypatch.setattr(su.slam_receiver, "get_latest_pose", lambda: (0, 0, 0))
+    monkeypatch.setattr(su.slam_receiver, "get_latest_covariance", lambda: 0.1)
+    monkeypatch.setattr(su.slam_receiver, "get_latest_inliers", lambda: 25)
+
+    assert su.is_slam_stable() is False
+    assert su.is_slam_stable(inlier_threshold=20) is True
+

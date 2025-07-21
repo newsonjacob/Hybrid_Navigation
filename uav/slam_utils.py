@@ -21,12 +21,19 @@ MIN_INLIERS_THRESHOLD = 50  # Example threshold for the minimum number of inlier
 
 logger = logging.getLogger(__name__)
 
-def is_slam_stable():
+def is_slam_stable(
+    covariance_threshold: Optional[float] = COVARIANCE_THRESHOLD,
+    inlier_threshold: Optional[int] = MIN_INLIERS_THRESHOLD,
+) -> bool:
+    """Check the SLAM system stability.
+
+    Thresholds can be overridden to tune the stability check.
     """
-    Checks the stability of the SLAM system.
-    
-    Returns True if SLAM is stable, otherwise False.
-    """
+    if covariance_threshold is None:
+        covariance_threshold = COVARIANCE_THRESHOLD
+    if inlier_threshold is None:
+        inlier_threshold = MIN_INLIERS_THRESHOLD
+
     pose = slam_receiver.get_latest_pose()
     
     if pose is None:
@@ -44,13 +51,13 @@ def is_slam_stable():
         return True
     
     # Check if pose covariance is within acceptable limits
-    if pose_covariance > COVARIANCE_THRESHOLD:
+    if pose_covariance > covariance_threshold:
         logger.warning("[SLAM] High pose covariance detected. SLAM is unstable.")
         return False
     
     # Check the number of inliers detected by SLAM
 
-    if inliers < MIN_INLIERS_THRESHOLD:
+    if inliers < inlier_threshold:
         logger.warning("[SLAM] Low inlier count. SLAM is unstable.")
         return False
     

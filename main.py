@@ -77,6 +77,21 @@ def main() -> None:
     config = load_app_config(args.config)
     settings_path = get_settings_path(args, config)
 
+    if args.slam_covariance_threshold is None:
+        try:
+            args.slam_covariance_threshold = config.getfloat(
+                "slam", "covariance_threshold"
+            )
+        except Exception:
+            pass
+    if args.slam_inlier_threshold is None:
+        try:
+            args.slam_inlier_threshold = config.getint(
+                "slam", "inlier_threshold"
+            )
+        except Exception:
+            pass
+
     slam_server_host = args.slam_server_host or config.get("network", "slam_server_host", fallback="127.0.0.1")
     slam_server_port = int(args.slam_server_port or config.get("network", "slam_server_port", fallback="6000"))
     slam_receiver_host = "0.0.0.0"
@@ -130,7 +145,7 @@ def main() -> None:
 
             ctx = setup_environment(args, client)
             start_perception_thread(ctx)
-            slam_navigation_loop(args, client, ctx)
+            slam_navigation_loop(args, client, ctx, config)
         finally:
             if receiver_thread:
                 logger.info("[main.py] Stopping SLAM receiver thread...")

@@ -354,9 +354,11 @@ def navigation_loop(args, client, ctx):
     except KeyboardInterrupt:
         logger.info("Interrupted.")
 
-def slam_navigation_loop(args, client, ctx):
-    """
-    Main navigation loop for SLAM-based navigation with basic obstacle avoidance.
+def slam_navigation_loop(args, client, ctx, config=None):
+    """SLAM-based navigation loop with basic obstacle avoidance.
+
+    ``config`` or ``args`` may provide custom SLAM stability thresholds which
+    are forwarded to :func:`is_slam_stable`.
     """
     # After drone takeoff and camera ready, perform an initial calibration
     # sequence so SLAM has diverse motion before waypoint navigation.
@@ -381,6 +383,19 @@ def slam_navigation_loop(args, client, ctx):
     goal_y = getattr(args, "goal_y", 0) if hasattr(args, "goal_y") else 0
     goal_z = getattr(args, "goal_z", -2) if hasattr(args, "goal_z") else -2
     threshold = 0.5  # meters
+
+    cov_thres = getattr(args, "slam_covariance_threshold", None)
+    inlier_thres = getattr(args, "slam_inlier_threshold", None)
+    if cov_thres is None and config is not None:
+        try:
+            cov_thres = config.getfloat("slam", "covariance_threshold")
+        except Exception:
+            cov_thres = None
+    if inlier_thres is None and config is not None:
+        try:
+            inlier_thres = config.getint("slam", "inlier_threshold")
+        except Exception:
+            inlier_thres = None
 
     # Perform an initial SLAM calibration manoeuvre before navigating.
     if max_duration != 0:
@@ -416,7 +431,7 @@ def slam_navigation_loop(args, client, ctx):
             # This is a basic stability check that can be improved.
             # Need to ensure that this check is continuously performed during the waypoint navigation. 
             pose = get_latest_pose_matrix()
-            if pose is None or not is_slam_stable():
+            if pose is None or not is_slam_stable(cov_thres, inlier_thres):
                 logger.warning(
                     "[SLAMNav] SLAM tracking lost. Attempting reinitialisation."
                 )
@@ -424,7 +439,7 @@ def slam_navigation_loop(args, client, ctx):
                     run_slam_bootstrap(client, duration=4.0)
                     time.sleep(1.0)
                     pose = get_latest_pose_matrix()
-                    if pose is not None and is_slam_stable():
+                    if pose is not None and is_slam_stable(cov_thres, inlier_thres):
                         logger.info(
                             "[SLAMNav] SLAM reinitialised. Resuming navigation."
                         )

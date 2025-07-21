@@ -150,6 +150,8 @@ The `hybrid-nav` entry point exposes several options:
 | `--slam-server-port PORT` | SLAM server TCP port |
 | `--slam-receiver-host HOST` | Pose receiver IP address |
 | `--slam-receiver-port PORT` | Pose receiver TCP port |
+| `--slam-covariance-threshold FLOAT` | Covariance threshold for SLAM stability |
+| `--slam-inlier-threshold INT` | Minimum inliers for SLAM stability |
 | `--log-timestamp STR` | Timestamp used to sync logging across modules |
 
 Example quick start:
