@@ -27,7 +27,17 @@ def is_slam_stable(
 ) -> bool:
     """Check the SLAM system stability.
 
-    Thresholds can be overridden to tune the stability check.
+    Parameters
+    ----------
+    covariance_threshold : float, optional
+        Maximum allowed pose covariance.
+    inlier_threshold : int, optional
+        Minimum number of map inliers required.
+
+    Returns
+    -------
+    bool
+        ``True`` if the latest SLAM pose data is deemed stable.
     """
     if covariance_threshold is None:
         covariance_threshold = COVARIANCE_THRESHOLD
@@ -64,7 +74,11 @@ def is_slam_stable(
     return True
 
 def generate_pose_comparison_plot() -> None:
-    """Invoke the pose comparison plotting helper script."""
+    """Invoke the pose comparison plotting helper script.
+
+    The helper script compares the logged SLAM trajectory against the
+    ground truth and saves an HTML report.
+    """
     logger.info("[Plotting] Generating pose comparison plot.")
     try:
         logger.info("[Plotting] Running pose_comparison_plotter.py script.")

@@ -10,8 +10,17 @@ logger = logging.getLogger(__name__)
 
 
 class Navigator:
-    """Issue high level movement commands and track state."""
+    """High level movement controller for an AirSim drone."""
+
     def __init__(self, client):
+        """Create a new ``Navigator``.
+
+        Parameters
+        ----------
+        client : airsim.MultirotorClient
+            AirSim client instance used to send movement commands.
+        """
+
         self.client = client
         self.braked = False
         self.dodging = False
@@ -24,7 +33,13 @@ class Navigator:
         self.resume_grace_end_time = 0
 
     def get_state(self):
-        """Return the drone position, yaw angle and speed."""
+        """Return the drone position, yaw angle and speed.
+
+        Returns
+        -------
+        Tuple[airsim.Vector3r, float, float]
+            Position vector, yaw in degrees and speed magnitude in m/s.
+        """
         state = self.client.getMultirotorState()
         pos = state.kinematics_estimated.position
         ori = state.kinematics_estimated.orientation
@@ -34,7 +49,16 @@ class Navigator:
         return pos, yaw, speed
 
     def brake(self):
-        """Stop the drone immediately with a reverse velocity proportional to current speed."""
+        """Immediately halt forward motion.
+
+        Sends a short reverse velocity command proportional to the current
+        forward speed.
+
+        Returns
+        -------
+        str
+            The action name ``"brake"`` for logging.
+        """
         try:
             # Get current velocity
             state = self.client.getMultirotorState()
@@ -49,6 +73,23 @@ class Navigator:
         return "brake"
 
     def dodge(self, smooth_L, smooth_C, smooth_R, duration: float = 2.0, direction: str = None): # type: ignore
+        """Sidestep left or right to avoid an obstacle.
+
+        Parameters
+        ----------
+        smooth_L, smooth_C, smooth_R : float
+            Smoothed optical flow magnitudes used for logging.
+        duration : float, optional
+            How long to apply the dodge command in seconds. Defaults to ``2.0``.
+        direction : {"left", "right"}, optional
+            Side to dodge toward. ``None`` defaults to left.
+
+        Returns
+        -------
+        str
+            Action string describing the dodge.
+        """
+
         lateral = 1.0 if direction == "right" else -1.0
         # strength = 0.75 if max(smooth_L, smooth_R) > 100 else 1.0
         strength = 1.0
@@ -67,13 +108,19 @@ class Navigator:
         return f"dodge_{direction}"
 
     def maintain_dodge(self):
-        """Maintain the dodge movement."""
+        """Continue the dodge while an obstacle is still detected."""
         if self.dodging:
             lateral = 1.0 if self.dodge_direction == "right" else -1.0
             self.client.moveByVelocityBodyFrameAsync(0.0, lateral * self.dodge_strength, 0, duration=0.3)
 
     def resume_forward(self):
-        """Resume normal forward velocity."""
+        """Resume normal forward flight after braking or dodging.
+
+        Returns
+        -------
+        str
+            The action name ``"resume"``.
+        """
 
         # Stop before resuming forward motion
         self.client.moveByVelocityAsync(0, 0, 0, 0)
@@ -92,7 +139,13 @@ class Navigator:
         return "resume"
 
     def blind_forward(self):
-        """Move forward when no features are detected."""
+        """Move forward despite having no optical-flow features.
+
+        Returns
+        -------
+        str
+            The action name ``"blind_forward"``.
+        """
         logger.warning(
             "\u26A0\uFE0F No features — continuing blind forward motion")
         state = self.client.getMultirotorState()
@@ -108,7 +161,13 @@ class Navigator:
         return "blind_forward"
 
     def nudge_forward(self):
-        """Gently push the drone forward when stalled."""
+        """Gently push the drone forward when stalled.
+
+        Returns
+        -------
+        str
+            The action name ``"nudge"``.
+        """
         logger.warning(
             "\u26A0\uFE0F Low flow + zero velocity — nudging forward"
         )
@@ -119,7 +178,13 @@ class Navigator:
         return "nudge"
 
     def reinforce(self):
-        """Reissue the forward command to reinforce motion."""
+        """Reissue the forward command to reinforce motion.
+
+        Returns
+        -------
+        str
+            The action name ``"resume_reinforce"``.
+        """
         logger.info("\U0001F501 Reinforcing forward motion")
         state = self.client.getMultirotorState()
         z = state.kinematics_estimated.position.z_val  # NED: z is negative up
@@ -142,7 +207,13 @@ class Navigator:
         return "resume_reinforce"
 
     def timeout_recover(self):
-        """Move slowly forward after a command timeout."""
+        """Move slowly forward after a command timeout.
+
+        Returns
+        -------
+        str
+            The action name ``"timeout_nudge"``.
+        """
         logger.warning("\u23F3 Timeout — forcing recovery motion")
         self.client.moveByVelocityAsync(0.5, 0, 0, 1)
         self.last_movement_time = time.time()
@@ -166,9 +237,25 @@ class Navigator:
                      settle_time=1.0, velocity_threshold=0.1):
         """Move toward ``goal`` using the provided SLAM ``pose``.
 
-        ``pose`` may be a translation tuple ``(x, y, z)`` or a 3x4 pose
-        matrix. When a matrix is provided the yaw angle is extracted from the
-        rotation part and adjusted by ``config.SLAM_YAW_OFFSET``.
+        Parameters
+        ----------
+        pose : tuple or list
+            Current SLAM pose as ``(x, y, z)`` or a 3x4 matrix.
+        goal : Tuple[float, float, float]
+            Target ``(x, y, z)`` position in AirSim coordinates.
+        max_speed : float, optional
+            Maximum forward speed in m/s.
+        threshold : float, optional
+            Distance threshold for considering the goal reached.
+        settle_time : float, optional
+            How long to wait for the drone to settle once at the goal.
+        velocity_threshold : float, optional
+            Minimum velocity considered as settled.
+
+        Returns
+        -------
+        str
+            Action string describing the command issued.
         """
 
         state = self.client.getMultirotorState()
