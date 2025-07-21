@@ -136,6 +136,9 @@ class SlamReceiver:
 
     def get_latest_pose(self) -> Optional[Tuple[float, float, float]]:
         return self.receiver.get_latest_pose()
+
+    def get_latest_pose_matrix(self):
+        return self.receiver.get_latest_pose_matrix()
     
     def get_pose_history(self):
         return self.receiver.get_pose_history()
@@ -180,6 +183,12 @@ def get_latest_pose() -> Optional[Tuple[float, float, float]]:
         logger.debug("[slam_receiver] Latest pose matrix: %s", matrix)
         if matrix is not None and isinstance(matrix, (list, tuple)) and len(matrix) == 3:
             return tuple(matrix)
+    return None
+
+
+def get_latest_pose_matrix():
+    if _manager is not None:
+        return _manager.get_latest_pose_matrix()
     return None
 
 
