@@ -52,9 +52,10 @@ def main():
     fig.write_html(traj_path)
     logger.info(f"[✓] Saved 3D plot to: {traj_path}")
 
-    # Call the other two plotting functions
+    # Call the other two plotting functions and the translation error plot
     plot_ground_truth_only(df)
     plot_slam_only(df)
+    plot_translation_error(df)
 
 def plot_ground_truth_only(df, save_dir="analysis"):
     import plotly.graph_objects as go
@@ -108,6 +109,31 @@ def plot_slam_only(df, save_dir="analysis"):
     fig.write_html(path)
     logger.info(f"[✓] Saved SLAM only plot to: {path}")
 
+
+def plot_translation_error(df, save_dir="analysis"):
+    """Plot translational error magnitude versus time."""
+    import plotly.graph_objects as go
+    from pathlib import Path
+    from datetime import datetime
+
+    err = ((df['gt_x'] - df['slam_x']) ** 2 +
+           (df['gt_y'] - df['slam_y']) ** 2 +
+           (df['gt_z'] - df['slam_z']) ** 2) ** 0.5
+
+    xvals = df['timestamp'] if 'timestamp' in df.columns else df.index
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=xvals, y=err, mode='lines', name='error'))
+    fig.update_layout(
+        title="Translation Error Over Time",
+        xaxis_title="Time (s)" if 'timestamp' in df.columns else 'Index',
+        yaxis_title="Error (m)",
+    )
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    path = Path(save_dir) / f"slam_error_vs_time_{ts}.html"
+    fig.write_html(path)
+    logger.info(f"[✓] Saved translation error plot to: {path}")
 
 if __name__ == "__main__":
     main()
