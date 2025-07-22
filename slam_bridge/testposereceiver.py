@@ -5,5 +5,5 @@ import logging
 logging.basicConfig(level=logging.INFO)
 
 # Start PoseReceiver on the default host (0.0.0.0) and port (6001)
-receiver = PoseReceiver(host='0.0.0.0', port=6001)
-receiver.start()
+with PoseReceiver(host='0.0.0.0', port=6001) as receiver:
+    logging.info("PoseReceiver running...")

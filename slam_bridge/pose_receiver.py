@@ -26,6 +26,16 @@ class PoseReceiver:
         self._history = deque(maxlen=history_size)
         self._conn: Optional[socket.socket] = None
 
+    def __enter__(self):
+        """Start the receiver when entering a context."""
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        """Ensure the receiver is stopped when leaving a context."""
+        self.stop()
+        return False
+
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -75,6 +85,7 @@ class PoseReceiver:
             self._thread.join()
             if self._thread.is_alive():
                 logger.warning("[PoseReceiver] Thread did not exit cleanly after stop().")
+            self._thread = None
 
     def get_latest_pose(self) -> Optional[Tuple[float, float, float]]:
         """
