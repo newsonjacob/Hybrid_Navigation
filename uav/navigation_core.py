@@ -10,6 +10,78 @@ from uav import config
 logger = logging.getLogger(__name__)
 
 
+def detect_obstacle_with_hysteresis(
+    navigator,
+    smooth_C=None,
+    delta_C=None,
+    center_count=None,
+    brake_thres=None,
+    mode="reactive",
+    depth=None,
+    depth_threshold=2.0,
+    pose=None,
+    pose_goal=None,
+    pose_threshold=0.5,
+):
+    """Detect an obstacle using optical flow or SLAM data with hysteresis.
+
+    Parameters
+    ----------
+    navigator : Navigator
+        Navigator instance to track detection state.
+    ... (other parameters same as detect_obstacle)
+
+    Returns
+    -------
+    tuple
+        (confirmed_detection, sudden_rise, center_blocked, combination_flow, minimum_flow)
+    """
+    # Get raw detection result (without hysteresis)
+    raw_result = detect_obstacle(
+        smooth_C, delta_C, center_count, brake_thres, mode,
+        depth, depth_threshold, pose, pose_goal, pose_threshold
+    )
+    
+    if isinstance(raw_result, tuple):
+        raw_detection, sudden_rise, center_blocked, combination_flow, minimum_flow = raw_result
+    else:
+        # For SLAM mode or older detection function
+        raw_detection = raw_result
+        sudden_rise = center_blocked = combination_flow = minimum_flow = False
+    
+    # Apply hysteresis logic
+    if raw_detection:
+        # Obstacle detected - increment detection counter
+        navigator.obstacle_detection_count += 1
+        navigator.obstacle_clear_count = 0  # Reset clear counter
+        
+        # Confirm obstacle only after required number of detections
+        if navigator.obstacle_detection_count >= navigator.DETECTION_THRESHOLD:
+            if not navigator.obstacle_confirmed:
+                logger.info(f"[HYSTERESIS] Obstacle CONFIRMED after {navigator.obstacle_detection_count} frames")
+            navigator.obstacle_confirmed = True
+    else:
+        # No obstacle detected - increment clear counter
+        navigator.obstacle_clear_count += 1
+        navigator.obstacle_detection_count = 0  # Reset detection counter
+        
+        # Clear obstacle only after required number of clear frames
+        if navigator.obstacle_clear_count >= navigator.DETECTION_THRESHOLD and navigator.obstacle_confirmed:
+            logger.info(f"[HYSTERESIS] Obstacle CLEARED after {navigator.obstacle_clear_count} frames")
+            navigator.obstacle_confirmed = False
+    
+    # Store condition states for logging
+    navigator.last_sudden_rise = sudden_rise
+    navigator.last_center_blocked = center_blocked
+    navigator.last_combination_flow = combination_flow
+    navigator.last_minimum_flow = minimum_flow
+    
+    logger.debug(f"[HYSTERESIS] Raw: {raw_detection}, Detection count: {navigator.obstacle_detection_count}, "
+                f"Clear count: {navigator.obstacle_clear_count}, Confirmed: {navigator.obstacle_confirmed}")
+    
+    return navigator.obstacle_confirmed, sudden_rise, center_blocked, combination_flow, minimum_flow
+
+
 def detect_obstacle(
     smooth_C=None,
     delta_C=None,
@@ -58,13 +130,14 @@ def detect_obstacle(
             raise ValueError("Reactive mode requires smooth_C, delta_C, center_count, brake_thres")
         
         # Calculate individual conditions
-        sudden_rise = delta_C > 1 and center_count >= 10
-        center_blocked = smooth_C > brake_thres and center_count >= 10
-        combination_flow = center_count > 100 and (smooth_C > brake_thres * 0.5 or delta_C > 0.5)
-        minimum_flow = delta_C > 0.5 and smooth_C > brake_thres * 0.5 and center_count > 50
+        sudden_rise = delta_C > 1 and center_count >= 5
+        center_blocked = smooth_C > brake_thres and center_count >= 5 and delta_C > 0
+        combination_flow = center_count > 75 and (smooth_C > brake_thres * 0.75 or delta_C > 0.75)
+        minimum_flow = delta_C > 0.6 and smooth_C > brake_thres * 0.25 and center_count > 50
+        test_flow = delta_C > 0.6 and smooth_C > brake_thres * 0.5 and center_count >= 5
 
         # Overall obstacle detection logic
-        obstacle_detected = sudden_rise or center_blocked or combination_flow or minimum_flow
+        obstacle_detected = sudden_rise or center_blocked or combination_flow or minimum_flow or test_flow
 
         # Log which conditions triggered the detection
         if obstacle_detected:
@@ -441,8 +514,11 @@ def navigation_step(
             smooth_L, smooth_R, brake_thres, left_count, center_count, right_count
         )
 
-        # Get detailed obstacle detection results
-        detection_result = detect_obstacle(smooth_C, delta_C, center_count, brake_thres)
+        # Use hysteresis-based obstacle detection instead of raw detection
+        detection_result = detect_obstacle_with_hysteresis(
+            navigator, smooth_C, delta_C, center_count, brake_thres
+        )
+
         if isinstance(detection_result, tuple):
             obstacle_detected, sudden_rise, center_blocked, combination_flow, minimum_flow = detection_result
             obstacle_detected = int(obstacle_detected)

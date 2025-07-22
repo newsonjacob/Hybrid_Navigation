@@ -32,6 +32,18 @@ class Navigator:
         self.just_resumed = False
         self.resume_grace_end_time = 0
 
+        # Add obstacle detection hysteresis tracking
+        self.obstacle_detection_count = 0
+        self.obstacle_clear_count = 0
+        self.obstacle_confirmed = False
+        self.DETECTION_THRESHOLD = 2  # Frames required to confirm detection/clearing
+        
+        # Store individual condition states for logging
+        self.last_sudden_rise = False
+        self.last_center_blocked = False
+        self.last_combination_flow = False
+        self.last_minimum_flow = False
+
     def get_state(self):
         """Return the drone position, yaw angle and speed.
 
