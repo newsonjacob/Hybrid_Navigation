@@ -36,4 +36,8 @@ def test_setup_environment_header_includes_perf(monkeypatch, tmp_path):
     header = log_file.read_text().splitlines()[0]
     assert "cpu_percent" in header
     assert "memory_rss" in header
+    assert "sudden_rise" in header
+    assert "center_blocked" in header
+    assert "combination_flow" in header
+    assert "minimum_flow" in header
 

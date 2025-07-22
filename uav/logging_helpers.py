@@ -69,6 +69,10 @@ def write_frame_output(
     decode_s,
     processing_s,
     flow_std,
+    sudden_rise,
+    center_blocked,
+    combination_flow,
+    minimum_flow,
 ):
     """Overlay telemetry, write video, and log the frame."""
     pos, yaw, speed = get_drone_state(client)
@@ -134,6 +138,10 @@ def write_frame_output(
         loop_elapsed,
         cpu_percent,
         mem_rss,
+        sudden_rise,
+        center_blocked,
+        combination_flow,
+        minimum_flow,
     )
     log_frame_data(log_file, log_buffer, log_line)
     logger.debug("Actual FPS: %.2f", actual_fps)
@@ -180,7 +188,8 @@ def handle_reset(client, ctx, frame_count):
             "brake_thres,dodge_thres,probe_req,fps,"
             "state,collided,obstacle,side_safe,"
             "pos_x,pos_y,pos_z,yaw,speed,"
-            "time,features,simgetimage_s,decode_s,processing_s,loop_s,cpu_percent,memory_rss\n"
+            "time,features,simgetimage_s,decode_s,processing_s,loop_s,cpu_percent,memory_rss,"
+            "sudden_rise,center_blocked,combination_flow,minimum_flow\n"
         )
     log_file = open(log_path, 'a')
     ctx.log_file = log_file

@@ -386,9 +386,9 @@ def navigation_step(
 
     Returns
     -------
-    Tuple[str, int, bool, float, float, float]
+    Tuple[str, int, bool, float, float, float, bool, bool, bool, bool]
         Tuple containing the selected state string, obstacle flag, side safety
-        flag and dynamic thresholds.
+        flag, dynamic thresholds and detailed obstacle condition flags.
     """
     state_str = "none"
     brake_thres = 0.0
@@ -412,7 +412,18 @@ def navigation_step(
     logger.debug("Flow Magnitudes — L: %.2f, C: %.2f, R: %.2f", smooth_L, smooth_C, smooth_R)
 
     if handle_grace_period(time_now, navigator, frame_queue, vis_img, param_refs):
-        return state_str, obstacle_detected, side_safe, brake_thres, dodge_thres, probe_req
+        return (
+            state_str,
+            obstacle_detected,
+            side_safe,
+            brake_thres,
+            dodge_thres,
+            probe_req,
+            sudden_rise,
+            center_blocked,
+            combination_flow,
+            minimum_flow,
+        )
 
     navigator.just_resumed = False
 
@@ -483,7 +494,18 @@ def navigation_step(
 
     pos, yaw, speed = get_drone_state(client)
     brake_thres, dodge_thres = compute_thresholds(speed)
-    return state_str, obstacle_detected, side_safe, brake_thres, dodge_thres, probe_req
+    return (
+        state_str,
+        obstacle_detected,
+        side_safe,
+        brake_thres,
+        dodge_thres,
+        probe_req,
+        sudden_rise,
+        center_blocked,
+        combination_flow,
+        minimum_flow,
+    )
 
 
 def apply_navigation_decision(
@@ -517,7 +539,7 @@ def apply_navigation_decision(
 
     Returns
     -------
-    Tuple[str, int, bool, float, float, float]
+    Tuple[str, int, bool, float, float, float, bool, bool, bool, bool]
         Output of :func:`navigation_step`.
     """
     return navigation_step(
