@@ -22,22 +22,38 @@ def main():
         logger.error(f"CSV file is empty or contains only null values.")
         sys.exit(1)
 
-    # Plot both trajectories together
+    # Apply coordinate transformation to SLAM data
+    # Correct SLAM coordinate mapping: Z→X, X→Y, Y→Z
+    df['slam_x_corrected'] = df['slam_z']    # SLAM Z → Display X
+    df['slam_y_corrected'] = -df['slam_x']    # SLAM X → Display Y
+    df['slam_z_corrected'] = df['slam_y']    # SLAM Y → Display Z
+    
+    # Apply coordinate transformation to ground truth data  
+    # Transform AirSim coordinates to match display coordinate system
+    df['gt_x_corrected'] = df['gt_x']        # X stays the same
+    df['gt_y_corrected'] = -df['gt_y']       # Invert Y axis
+    df['gt_z_corrected'] = -df['gt_z']       # Invert Z axis
+    
+    logger.info("[COORD] Applied coordinate transformations:")
+    logger.info("[COORD] SLAM: Z→X, X→Y, Y→Z")
+    logger.info("[COORD] Ground Truth: Y and Z axes inverted")
+
+    # Plot both trajectories together using corrected coordinates
     fig = go.Figure()
     fig.add_trace(go.Scatter3d(
-        x=df['gt_x'], y=df['gt_y'], z=df['gt_z'],
-        mode='lines', name='Ground Truth',
+        x=df['gt_x_corrected'], y=df['gt_y_corrected'], z=df['gt_z_corrected'],
+        mode='lines', name='Ground Truth (Corrected)',
         line=dict(color='green')
     ))
 
     fig.add_trace(go.Scatter3d(
-        x=df['slam_x'], y=df['slam_y'], z=df['slam_z'],
-        mode='lines', name='SLAM Trajectory',
+        x=df['slam_x_corrected'], y=df['slam_y_corrected'], z=df['slam_z_corrected'],
+        mode='lines', name='SLAM Trajectory (Corrected)',
         line=dict(color='blue', width=3)
     ))
 
     fig.update_layout(
-        title="SLAM vs Ground Truth Trajectory",
+        title="SLAM vs Ground Truth Trajectory (Both Coordinate Corrected)",
         scene=dict(
             xaxis_title="X (m)",
             yaxis_title="Y (m)",
@@ -52,7 +68,7 @@ def main():
     fig.write_html(traj_path)
     logger.info(f"[✓] Saved 3D plot to: {traj_path}")
 
-    # Call the other two plotting functions and the translation error plot
+    # Call the other plotting functions with corrected data
     plot_ground_truth_only(df)
     plot_slam_only(df)
     plot_translation_error(df)
@@ -64,13 +80,13 @@ def plot_ground_truth_only(df, save_dir="analysis"):
 
     fig = go.Figure()
     fig.add_trace(go.Scatter3d(
-        x=df['gt_x'], y=df['gt_y'], z=df['gt_z'],
+        x=df['gt_x_corrected'], y=df['gt_y_corrected'], z=df['gt_z_corrected'],  # Use corrected coordinates
         mode='lines',
-        name='Ground Truth',
+        name='Ground Truth (Corrected)',
         line=dict(color='green', width=4)
     ))
     fig.update_layout(
-        title="Ground Truth Trajectory Only",
+        title="Ground Truth Trajectory Only (Coordinate Corrected)",
         scene=dict(
             xaxis_title="X (m)",
             yaxis_title="Y (m)",
@@ -84,19 +100,20 @@ def plot_ground_truth_only(df, save_dir="analysis"):
     logger.info(f"[✓] Saved Ground Truth only plot to: {path}")
 
 def plot_slam_only(df, save_dir="analysis"):
+    """Plot SLAM trajectory with corrected coordinates."""
     import plotly.graph_objects as go
     from pathlib import Path
     from datetime import datetime
 
     fig = go.Figure()
     fig.add_trace(go.Scatter3d(
-        x=df['slam_x'], y=df['slam_y'], z=df['slam_z'],
+        x=df['slam_x_corrected'], y=df['slam_y_corrected'], z=df['slam_z_corrected'],
         mode='lines',
-        name='SLAM Trajectory',
+        name='SLAM Trajectory (Corrected)',
         line=dict(color='blue', width=4)
     ))
     fig.update_layout(
-        title="SLAM Trajectory Only",
+        title="SLAM Trajectory Only (Coordinate Corrected: Z→X, X→Y, Y→Z)",
         scene=dict(
             xaxis_title="X (m)",
             yaxis_title="Y (m)",
@@ -109,23 +126,23 @@ def plot_slam_only(df, save_dir="analysis"):
     fig.write_html(path)
     logger.info(f"[✓] Saved SLAM only plot to: {path}")
 
-
 def plot_translation_error(df, save_dir="analysis"):
-    """Plot translational error magnitude versus time."""
+    """Plot translational error magnitude versus time using corrected coordinates."""
     import plotly.graph_objects as go
     from pathlib import Path
     from datetime import datetime
 
-    err = ((df['gt_x'] - df['slam_x']) ** 2 +
-           (df['gt_y'] - df['slam_y']) ** 2 +
-           (df['gt_z'] - df['slam_z']) ** 2) ** 0.5
+    # Calculate error using both corrected coordinate systems
+    err = ((df['gt_x_corrected'] - df['slam_x_corrected']) ** 2 +
+           (df['gt_y_corrected'] - df['slam_y_corrected']) ** 2 +
+           (df['gt_z_corrected'] - df['slam_z_corrected']) ** 2) ** 0.5
 
     xvals = df['timestamp'] if 'timestamp' in df.columns else df.index
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=xvals, y=err, mode='lines', name='error'))
     fig.update_layout(
-        title="Translation Error Over Time",
+        title="Translation Error Over Time (Both Coordinates Corrected)",
         xaxis_title="Time (s)" if 'timestamp' in df.columns else 'Index',
         yaxis_title="Error (m)",
     )

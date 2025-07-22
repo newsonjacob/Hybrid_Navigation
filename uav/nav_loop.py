@@ -467,26 +467,32 @@ def slam_navigation_loop(args, client, ctx, config=None):
                         return last_action
                 continue
 
-            # --- Extract the UAV position from the SLAM pose ---
-            # The pose is a 4x4 matrix, we extract the position from it.
-            # The pose is in the format [[R11, R12, R13, x],
-            #                             [R21, R22, R23, y],
-            #                             [R31, R32, R33, z], [0, 0, 0, 1]]
-            # We need to adjust the z-coordinate for AirSim's coordinate system.
+            # --- Transform SLAM pose to AirSim coordinates ---
+            # Replace the inline transformation:
+            # x_slam, y_slam, z_slam = pose[0][3], pose[1][3], pose[2][3]
+            # x, y, z = z_slam, x_slam, - y_slam  # Old inline method
+            
+            # Use the transformation function instead:
+            transformed_pose, (x, y, z) = transform_slam_to_airsim(pose)
+            
+            # Original position for debugging
             x_slam, y_slam, z_slam = pose[0][3], pose[1][3], pose[2][3]
-            x, y, z = x_slam, y_slam, -z_slam  # Adjust z for AirSim
 
             if hasattr(client, "simGetVehiclePose"):
-                Air_pose = client.simGetVehiclePose("UAV")
-                pos = getattr(Air_pose, "position", None)
-                if pos is not None:
-                    airsim_x, airsim_y, airsim_z = pos.x_val, pos.y_val, pos.z_val
-                else:
-                    airsim_x, airsim_y, airsim_z = x, y, z
-            else:
-                airsim_x, airsim_y, airsim_z = x_slam, y_slam, z_slam
-            # logger.debug("[UAV Pose] x=%.2f, y=%.2f, z=%.2f", pos.x_val, pos.y_val, pos.z_val)
-
+                airsim_pose = client.simGetVehiclePose("UAV")
+                airsim_pos = airsim_pose.position
+                
+                # Debug coordinate alignment
+                logger.debug("SLAM pose: (%.2f, %.2f, %.2f)", x_slam, y_slam, z_slam)
+                logger.debug("AirSim pose: (%.2f, %.2f, %.2f)", airsim_pos.x_val, airsim_pos.y_val, airsim_pos.z_val)
+                logger.debug("Transformed: (%.2f, %.2f, %.2f)", x, y, z)
+                
+                # Calculate differences to see alignment
+                diff_x = x - airsim_pos.x_val
+                diff_y = y - airsim_pos.y_val  
+                diff_z = z - airsim_pos.z_val
+                logger.debug("Differences: (%.2f, %.2f, %.2f)", diff_x, diff_y, diff_z)
+            
             # Detect exploration frontiers from accumulated SLAM poses
             history = get_pose_history()
             map_pts = np.array(
@@ -524,11 +530,9 @@ def slam_navigation_loop(args, client, ctx, config=None):
                 logger.info(f"Reached waypoint {current_waypoint_index + 1}, moving to next waypoint.")
                 current_waypoint_index = (current_waypoint_index + 1) % len(waypoints)  # Move to next waypoint
 
-            # --- Use SLAM for deliberative navigation ---
-            if navigator is None:
-                navigator = Navigator(client)
-            # last_action = client.moveToPositionAsync(2,0,-2, 2)
-            last_action = navigator.slam_to_goal(pose, (goal_x, goal_y, goal_z))
+            # --- Use transformed pose for navigation ---
+            # Pass the transformed pose instead of the original
+            last_action = navigator.slam_to_goal(transformed_pose, (goal_x, goal_y, goal_z))
             # logger.info("[SLAMNav] Action: %s", last_action)
         
             # --- Check if the stop flag is set ---
@@ -565,6 +569,43 @@ def slam_navigation_loop(args, client, ctx, config=None):
         logger.info("[SLAMNav] SLAM navigation loop finished.")
         generate_pose_comparison_plot()
     return last_action # Return the last action taken
+
+def transform_slam_to_airsim(slam_pose_matrix):
+    """Transform SLAM pose matrix to AirSim coordinate system."""
+    
+    # Convert to numpy array if it's a list
+    if isinstance(slam_pose_matrix, list):
+        slam_pose_matrix = np.array(slam_pose_matrix)
+    
+    # Extract position
+    x_slam, y_slam, z_slam = slam_pose_matrix[0, 3], slam_pose_matrix[1, 3], slam_pose_matrix[2, 3]
+    
+    # Transform position (adjust as needed for your setup)
+    x_airsim = z_slam
+    y_airsim = x_slam  
+    z_airsim = -y_slam
+    
+    # Extract rotation matrix (3x3 upper-left block)
+    R_slam = slam_pose_matrix[:3, :3]
+    
+    # Define transformation matrix for coordinate system conversion
+    T_slam_to_airsim = np.array([
+        [0,  0,  1],   # SLAM Z-axis → AirSim X-axis
+        [1,  0,  0],   # SLAM X-axis → AirSim Y-axis  
+        [0, -1,  0]    # SLAM Y-axis → AirSim -Z-axis
+    ])
+    
+    # Transform rotation
+    R_airsim = T_slam_to_airsim @ R_slam @ T_slam_to_airsim.T
+    
+    # Create transformed pose matrix
+    transformed_pose = np.eye(4)
+    transformed_pose[:3, :3] = R_airsim
+    transformed_pose[0, 3] = x_airsim
+    transformed_pose[1, 3] = y_airsim
+    transformed_pose[2, 3] = z_airsim
+    
+    return transformed_pose, (x_airsim, y_airsim, z_airsim)
 
 def shutdown_threads(ctx):
     """Stop worker threads and wait for them to exit."""
