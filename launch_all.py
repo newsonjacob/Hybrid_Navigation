@@ -27,6 +27,10 @@ SLAM_FAILED_FLAG = flags_dir / "slam_failed.flag"
 START_NAV_FLAG = flags_dir / "start_nav.flag"
 STOP_FLAG = flags_dir / "stop.flag"
 
+# When a shutdown is requested we wait this long for the main process to exit
+# before forcibly terminating it.
+GRACE_TIME = 5
+
 # keep lutils in sync with our stop flag
 lutils.STOP_FLAG = STOP_FLAG
 
@@ -96,6 +100,31 @@ def record_slam_video(window_substring: str = "ORB-SLAM2", duration: int = 60):
     return lutils.record_slam_video(window_substring, duration)
 
 # ---------------------------------------------------------------------------
+# Shutdown helpers
+# ---------------------------------------------------------------------------
+
+def request_shutdown(proc: Optional[subprocess.Popen], logger: logging.Logger, timeout: float = GRACE_TIME) -> bool:
+    """Signal ``main.py`` to stop and wait for it to exit.
+
+    Returns ``True`` if the process exited gracefully within the timeout."""
+    if proc is None:
+        return True
+
+    STOP_FLAG.touch()
+
+    if getattr(proc, "poll", lambda: None)() is not None:
+        return True
+
+    try:
+        logger.info("[SHUTDOWN] Waiting up to %.1fs for main process to exit...", timeout)
+        proc.wait(timeout=timeout)
+        logger.info("[SHUTDOWN] Main process exited gracefully.")
+        return True
+    except subprocess.TimeoutExpired:
+        logger.warning("[SHUTDOWN] Main process did not exit within grace period.")
+        return False
+
+# ---------------------------------------------------------------------------
 # Launcher dataclass managing subprocesses
 # ---------------------------------------------------------------------------
 
@@ -145,14 +174,17 @@ class Launcher:
                 self.logger.warning("[SHUTDOWN] Forcing screen recorder shutdown...")
                 self.ffmpeg_proc.kill()
 
-        if self.main_proc is not None:
-            self.logger.info("[SHUTDOWN] Terminating main script (PID %s)", getattr(self.main_proc, "pid", "n/a"))
-            self.main_proc.terminate()
-            try:
-                self.main_proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.logger.warning("[SHUTDOWN] Forcing main script shutdown...")
-                self.main_proc.kill()
+        graceful = request_shutdown(self.main_proc, self.logger)
+
+        if self.main_proc is not None and getattr(self.main_proc, "poll", lambda: None)() is None:
+            if not graceful:
+                self.logger.info("[SHUTDOWN] Terminating main script (PID %s)", getattr(self.main_proc, "pid", "n/a"))
+                self.main_proc.terminate()
+                try:
+                    self.main_proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.logger.warning("[SHUTDOWN] Forcing main script shutdown...")
+                    self.main_proc.kill()
 
         pid_file = flags_dir / "ue4_sim.pid"
         if pid_file.exists():
