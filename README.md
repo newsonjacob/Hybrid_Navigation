@@ -16,7 +16,7 @@ This repository contains the implementation of a reactive obstacle avoidance sys
 - Compatible with a custom stereo camera setup (`oakd_camera`)
 - Stereo images are streamed in grayscale to reduce processing overhead
 - Works with auto-launched AirSim simulation
-- Receives SLAM poses via a `PoseReceiver` that can be started and stopped programmatically
+- Receives SLAM poses via a `PoseReceiver` that can be started and stopped programmatically or used as a context manager for automatic cleanup
 - SLAM poses now include orientation and are corrected by `Navigator.slam_to_goal` using `config.SLAM_YAW_OFFSET`
 - Integrated frontier-based exploration using SLAM map points
 - SLAM loop checks depth ahead and dodges obstacles before advancing
