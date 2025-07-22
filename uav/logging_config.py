@@ -30,7 +30,7 @@ def setup_logging(
         Log to dedicated file:
             setup_logging(
                 log_file="launch.log",
-                module_files={"slam_bridge": "slam_output.log"}
+                module_logs={"slam_bridge": "slam_output.log"}
             )
             logger = logging.getLogger("slam_bridge")
 
