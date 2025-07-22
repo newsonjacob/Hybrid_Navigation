@@ -56,15 +56,28 @@ def detect_obstacle(
     if mode == "reactive":
         if smooth_C is None or delta_C is None or center_count is None or brake_thres is None:
             raise ValueError("Reactive mode requires smooth_C, delta_C, center_count, brake_thres")
-        sudden_rise = delta_C > 1 and center_count >= 20
-        center_blocked = smooth_C > brake_thres and center_count >= 20
-        if sudden_rise or center_blocked or (
-            center_count > 100 and (smooth_C > brake_thres * 0.5 or delta_C > 0.5)
-        ):
-            return True
-        if delta_C > 0.5 and smooth_C > brake_thres * 0.5 and center_count > 50:
-            return True
-        return False
+        
+        # Calculate individual conditions
+        sudden_rise = delta_C > 1 and center_count >= 10
+        center_blocked = smooth_C > brake_thres and center_count >= 10
+        combination_flow = center_count > 100 and (smooth_C > brake_thres * 0.5 or delta_C > 0.5)
+        minimum_flow = delta_C > 0.5 and smooth_C > brake_thres * 0.5 and center_count > 50
+
+        # Overall obstacle detection logic
+        obstacle_detected = sudden_rise or center_blocked or combination_flow or minimum_flow
+
+        # Log which conditions triggered the detection
+        if obstacle_detected:
+            active_conditions = []
+            if sudden_rise: active_conditions.append("SUDDEN_RISE")
+            if center_blocked: active_conditions.append("CENTER_BLOCKED")
+            if combination_flow: active_conditions.append("COMBINATION_FLOW")
+            if minimum_flow: active_conditions.append("MINIMUM_FLOW")
+            logger.debug(f"[Obstacle Detection] Active: {' + '.join(active_conditions)}")
+        
+        # Return tuple with individual condition states
+        return obstacle_detected, sudden_rise, center_blocked, combination_flow, minimum_flow
+    
     elif mode == "slam":
         if depth is not None:
             return depth < depth_threshold
@@ -386,6 +399,12 @@ def navigation_step(
     right_safe = False
     obstacle_detected = 0
 
+    # Initialise condition flags
+    sudden_rise = False
+    center_blocked = False
+    combination_flow = False
+    minimum_flow = False
+
     valid_L = left_count >= config.MIN_FEATURES_PER_ZONE
     valid_C = center_count >= config.MIN_FEATURES_PER_ZONE
     valid_R = right_count >= config.MIN_FEATURES_PER_ZONE
@@ -411,7 +430,13 @@ def navigation_step(
             smooth_L, smooth_R, brake_thres, left_count, center_count, right_count
         )
 
-        obstacle_detected = int(detect_obstacle(smooth_C, delta_C, center_count, brake_thres))
+        # Get detailed obstacle detection results
+        detection_result = detect_obstacle(smooth_C, delta_C, center_count, brake_thres)
+        if isinstance(detection_result, tuple):
+            obstacle_detected, sudden_rise, center_blocked, combination_flow, minimum_flow = detection_result
+            obstacle_detected = int(obstacle_detected)
+        else:
+            obstacle_detected = int(detection_result)
 
         action = handle_obstacle(
             navigator,

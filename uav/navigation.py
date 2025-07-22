@@ -128,7 +128,7 @@ class Navigator:
         
         state = self.client.getMultirotorState()
         z = state.kinematics_estimated.position.z_val  # NED: z is negative up
-        self.client.moveByVelocityZAsync(2, 0, 0, duration=3,
+        self.client.moveByVelocityZAsync(2, 0, z, duration=3,
             drivetrain=airsim.DrivetrainType.ForwardOnly,
             yaw_mode=airsim.YawMode(False, 0))
         self.braked = False
@@ -150,7 +150,7 @@ class Navigator:
             "\u26A0\uFE0F No features — continuing blind forward motion")
         state = self.client.getMultirotorState()
         z = state.kinematics_estimated.position.z_val  # NED: z is negative up
-        self.client.moveByVelocityZAsync(2,0,0,duration=2,
+        self.client.moveByVelocityZAsync(2,0,z,duration=2,
             drivetrain=airsim.DrivetrainType.ForwardOnly,
             yaw_mode=airsim.YawMode(False, 0),)
         self.last_movement_time = time.time()
@@ -173,7 +173,7 @@ class Navigator:
         )
         state = self.client.getMultirotorState()
         z = state.kinematics_estimated.position.z_val  # NED: z is negative up
-        self.client.moveByVelocityZAsync(0.5, 0, 0, 1)
+        self.client.moveByVelocityZAsync(0.5, 0, z, 1)
         self.last_movement_time = time.time()
         return "nudge"
 
@@ -189,7 +189,7 @@ class Navigator:
         state = self.client.getMultirotorState()
         z = state.kinematics_estimated.position.z_val  # NED: z is negative up
         self.client.moveByVelocityZAsync(
-            2, 0, 0,
+            2, 0, z,
             duration=3,
             drivetrain=airsim.DrivetrainType.ForwardOnly,
             yaw_mode=airsim.YawMode(False, 0),
@@ -219,20 +219,7 @@ class Navigator:
         self.last_movement_time = time.time()
         return "timeout_nudge"
     
-    # def slam_to_goal(self, pose, goal, max_speed=1.5, threshold=0.5):
-    #     x, y, z = pose
-    #     gx, gy, gz = goal
-    #     dx = gx - x
-    #     dy = gy - y
-    #     dist = math.sqrt(dx**2 + dy**2)
-    #     if dist < threshold:
-    #         self.client.moveByVelocityAsync(0, 0, 0, 0.5, vehicle_name="UAV")
-    #         return "slam_stop"
-    #     vx, vy = dx / dist * max_speed, dy / dist * max_speed
-    #     vz = 0.0  # Don't change altitude, just hold current Z
-    #     self.client.moveByVelocityAsync(vx, vy, vz, duration=1, vehicle_name="UAV")
-    #     return f"slam_nav vx={vx:.2f} vy={vy:.2f} vz={vz:.2f} dist={dist:.2f}"
-    
+
     def slam_to_goal(self, pose, goal, max_speed=1.5, threshold=0.5,
                      settle_time=1.0, velocity_threshold=0.1):
         """Move toward ``goal`` using the provided SLAM ``pose``.
