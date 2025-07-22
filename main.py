@@ -44,14 +44,16 @@ logger.info(
 flags_dir = Path("flags")
 flags_dir.mkdir(exist_ok=True)
 START_FLAG_PATH = flags_dir / "start_nav.flag"
-SETTINGS_PATH = r"C:\Users\Jacob\OneDrive\Documents\AirSim\settings.json"
 
 
 def get_settings_path(args, config):
+    """Resolve the path to the AirSim settings file."""
+    if args.settings_path:
+        return args.settings_path
     try:
-        return args.settings_path or config.get("paths", "settings")
+        return config.get("paths", "settings")
     except Exception:
-        return SETTINGS_PATH
+        return None
 
 def wait_for_nav_trigger():
     logger.info("[INFO] Waiting for navigation start flag...")
