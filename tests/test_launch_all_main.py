@@ -156,3 +156,27 @@ def test_stop_flag_waits_for_main(tmp_path, monkeypatch):
     assert proc.wait_called == 1
     assert not proc.terminated
     assert not proc.killed
+
+
+class HangProc(WaitProc):
+    """Process that never exits until killed."""
+    def wait(self, timeout=None):
+        self.wait_called += 1
+        raise subprocess.TimeoutExpired(cmd="main.py", timeout=timeout)
+
+
+def test_shutdown_force_kills_after_timeout(tmp_path, monkeypatch):
+    flags = tmp_path / "flags"
+    flags.mkdir()
+
+    monkeypatch.setattr(launch_all, "flags_dir", flags)
+    monkeypatch.setattr(launch_all, "STOP_FLAG", flags / "stop.flag", raising=False)
+
+    proc = HangProc(["python", "main.py"])
+    launcher = launch_all.Launcher(logger=launch_all.logger, timestamp="ts", main_proc=proc)
+
+    launcher.shutdown()
+
+    assert proc.wait_called == 2  # initial grace wait + forced terminate wait
+    assert proc.terminated
+    assert proc.killed

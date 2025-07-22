@@ -180,7 +180,9 @@ monitors to coordinate the run. Selecting a mode and pressing *Launch
 Simulation* writes `nav_mode.flag`. Once all systems report ready, clicking
 *Start Navigation* creates `start_nav.flag` which unblocks the navigation loop.
 Pressing the stop button touches `stop.flag` so the running process can safely
-land and exit.
+land and exit. The launcher now waits up to `GRACE_TIME` seconds for
+`main.py` to terminate after creating this flag before forcefully killing any
+remaining processes.
 
 ### SLAM Utilities
 
