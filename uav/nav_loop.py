@@ -69,7 +69,8 @@ def setup_environment(args, client):
         "brake_thres,dodge_thres,probe_req,fps,"
         "state,collided,obstacle,side_safe,"
         "pos_x,pos_y,pos_z,yaw,speed,"
-        "time,features,simgetimage_s,decode_s,processing_s,loop_s,cpu_percent,memory_rss\n"
+        "time,features,simgetimage_s,decode_s,processing_s,loop_s,cpu_percent,memory_rss,"
+        "sudden_rise,center_blocked,combination_flow,minimum_flow\n"
     )
     retain_recent_logs("flow_logs")
     retain_recent_logs("logs")
@@ -251,6 +252,10 @@ def log_and_record_frame(
         brake_thres,
         dodge_thres,
         probe_req,
+        sudden_rise,
+        center_blocked,
+        combination_flow,
+        minimum_flow,
     ) = nav_decision
     return write_frame_output(
         client,
@@ -287,6 +292,10 @@ def log_and_record_frame(
         decode_s,
         processing_s,
         flow_std,
+        sudden_rise,
+        center_blocked,
+        combination_flow,
+        minimum_flow,
     )
 
 def navigation_loop(args, client, ctx):
