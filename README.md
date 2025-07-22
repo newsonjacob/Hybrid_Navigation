@@ -105,7 +105,7 @@ pip install -e .
 
 4. Build your Unreal map and generate a packaged `.exe` (e.g. `Blocks.exe`).
 
-5. Edit `config.ini` to point to your AirSim `settings.json`, UE4 executables and the SLAM networking details. The `[network]` section controls the IP and port used by the image streamer and pose receiver. The streamer also reads `SLAM_SERVER_HOST`, `SLAM_SERVER_PORT` and `CONNECT_RETRIES` from the environment (or command line) so these values can be overridden without editing the config file.
+5. Edit `config.ini` to point to your AirSim `settings.json`, UE4 executables and the SLAM networking details. The `[network]` section controls the IP and port used by the image streamer and pose receiver. The streamer also reads `SLAM_SERVER_HOST`, `SLAM_SERVER_PORT` and `CONNECT_RETRIES` from the environment (or command line) so these values can be overridden without editing the config file. The path under `[paths]` provides the default for `--settings-path`.
 
 6. Run the system:
    ```bash
@@ -144,7 +144,7 @@ The `hybrid-nav` entry point exposes several options:
 | `--manual-nudge` | Enable manual nudge at frame 5 for testing |
 | `--map {reactive, deliberative, hybrid}` | Which map to load |
 | `--ue4-path PATH` | Override the path to the Unreal Engine executable |
-| `--settings-path PATH` | Path to the AirSim `settings.json` file |
+| `--settings-path PATH` | Path to the AirSim `settings.json` file (default from `config.ini`) |
 | `--config FILE` | Path to configuration file (default: `config.ini`) |
 | `--goal-x INT` | Distance from start to goal on the X axis |
 | `--max-duration INT` | Maximum simulation duration in seconds |
