@@ -35,10 +35,10 @@ module_logs = {
     "pose_plotter": f"pose_plotter_{timestamp}.log"
 }
 setup_logging(log_file=f"main_{timestamp}.log", module_logs=module_logs, level=logging.DEBUG)
-print(f"[main.py] Logging configured. Writing to logs/main_{timestamp}.log and module logs...")
-
-# Then import the rest
 logger = logging.getLogger("main")
+logger.info(
+    f"[main.py] Logging configured. Writing to logs/main_{timestamp}.log and module logs..."
+)
 
 # --- Flag paths ---
 flags_dir = Path("flags")
@@ -95,7 +95,7 @@ def main() -> None:
     slam_server_host = args.slam_server_host or config.get("network", "slam_server_host", fallback="127.0.0.1")
     slam_server_port = int(args.slam_server_port or config.get("network", "slam_server_port", fallback="6000"))
     slam_receiver_host = "0.0.0.0"
-    print(f"[main.py] SLAM receiver host resolved to: {slam_receiver_host}")
+    logger.info(f"[main.py] SLAM receiver host resolved to: {slam_receiver_host}")
 
     slam_receiver_port = int(args.slam_receiver_port or config.get("network", "slam_receiver_port", fallback="6001"))
 

@@ -94,7 +94,7 @@ def test_shutdown_airsim(monkeypatch):
 def test_finalize_files(monkeypatch, tmp_path):
     nl = _reload_nav_loop(monkeypatch)
     calls = []
-    monkeypatch.setattr(nl.subprocess, 'run', lambda cmd: calls.append(cmd))
+    monkeypatch.setattr(nl.subprocess, 'run', lambda cmd, **kw: calls.append(cmd))
     monkeypatch.setattr(nl, 'retain_recent_views', lambda *a, **k: calls.append(('retain', a, k)))
     monkeypatch.setattr('uav.slam_utils.generate_pose_comparison_plot', lambda: calls.append('pose_plot'))
     nl.STOP_FLAG_PATH = tmp_path/'stop.flag'
@@ -105,3 +105,21 @@ def test_finalize_files(monkeypatch, tmp_path):
     assert any('analysis.analyze' in ' '.join(c) for c in calls)
     assert 'pose_plot' in calls
     assert not nl.STOP_FLAG_PATH.exists()
+
+def test_finalize_files_calledprocesserror(monkeypatch, tmp_path, caplog):
+    nl = _reload_nav_loop(monkeypatch)
+
+    def raise_error(cmd, **kwargs):
+        raise nl.subprocess.CalledProcessError(1, cmd, stderr="fail")
+
+    monkeypatch.setattr(nl.subprocess, 'run', raise_error)
+    monkeypatch.setattr(nl, 'retain_recent_views', lambda *a, **k: None)
+    monkeypatch.setattr('uav.slam_utils.generate_pose_comparison_plot', lambda: None)
+
+    nl.STOP_FLAG_PATH = tmp_path / 'stop.flag'
+    ctx = types.SimpleNamespace(timestamp='ts')
+
+    with caplog.at_level(nl.logging.ERROR):
+        nl.finalize_files(ctx)
+
+    assert any('fail' in record.message for record in caplog.records)

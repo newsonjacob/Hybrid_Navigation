@@ -29,7 +29,7 @@ STOP_FLAG = flags_dir / "stop.flag"
 
 # When a shutdown is requested we wait this long for the main process to exit
 # before forcibly terminating it.
-GRACE_TIME = 5
+GRACE_TIME = 10
 
 # keep lutils in sync with our stop flag
 lutils.STOP_FLAG = STOP_FLAG

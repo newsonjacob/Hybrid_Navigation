@@ -679,29 +679,41 @@ def finalize_files(ctx):
         try:
             log_csv = f"flow_logs/full_log_{timestamp}.csv"
             html_output = f"analysis/flight_view_{timestamp}.html"
-            subprocess.run([
-                sys.executable,
-                "-m",
-                "analysis.visualise_flight",
-                html_output,
-                "--log",
-                log_csv,
-            ])
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "analysis.visualise_flight",
+                    html_output,
+                    "--log",
+                    log_csv,
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
 
             report_path = f"analysis/flight_report_{timestamp}.html"
-            subprocess.run([
-                sys.executable,
-                "-m",
-                "analysis.analyze",
-                log_csv,
-                "-o",
-                report_path,
-            ])
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "analysis.analyze",
+                    log_csv,
+                    "-o",
+                    report_path,
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
 
             from uav import slam_utils
             slam_utils.generate_pose_comparison_plot()
 
             logger.info("Flight analysis saved to %s and %s", html_output, report_path)
+        except subprocess.CalledProcessError as exc:
+            logger.error("Error generating flight analysis: %s", exc.stderr)
         except Exception as exc:
             logger.error("Error generating flight analysis: %s", exc)
 
