@@ -101,7 +101,16 @@ def main() -> None:
     slam_receiver_host = "0.0.0.0"
     logger.info(f"[main.py] SLAM receiver host resolved to: {slam_receiver_host}")
 
+    # Resolve the SLAM receiver port from command line or config
     slam_receiver_port = int(args.slam_receiver_port or config.get("network", "slam_receiver_port", fallback="6001"))
+
+    # Resolve the pose source from command line or config
+    pose_source = args.slam_pose_source
+    if "--slam-pose-source" not in remaining_argv:
+        try:
+            pose_source = config.get("slam", "pose_source")
+        except Exception:
+            pose_source = args.slam_pose_source
 
     # Add a nav_mode argument to your CLI parser (e.g., --nav-mode [slam|reactive])
     nav_mode = getattr(args, "nav_mode", "slam")  # Default to slam if not specified
@@ -150,7 +159,7 @@ def main() -> None:
             ctx = setup_environment(args, client)
             set_state_ref(ctx.param_refs.state)
             start_perception_thread(ctx)
-            slam_navigation_loop(args, client, ctx, config)
+            slam_navigation_loop(args, client, ctx, config, pose_source=pose_source)
         finally:
             if receiver_thread:
                 logger.info("[main.py] Stopping SLAM receiver thread...")

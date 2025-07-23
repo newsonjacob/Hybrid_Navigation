@@ -12,6 +12,7 @@ from airsim import ImageRequest, ImageType
 
 from uav import config
 from uav.scoring import compute_region_stats
+from uav.perception import filter_flow_by_depth
 
 logger = logging.getLogger("perception")
 
@@ -24,7 +25,7 @@ def perception_loop(tracker, image):
         return np.array([]), np.array([]), 0.0
     return tracker.process_frame(gray, time.time())
 
-
+# This function is called by the perception thread to start processing images.
 def start_perception_thread(ctx):
     """Launch background perception thread and attach queue to ctx."""
     exit_flag = ctx.exit_flag
@@ -32,36 +33,77 @@ def start_perception_thread(ctx):
     perception_queue = Queue(maxsize=1)
     last_vis_img = np.zeros((720, 1280, 3), dtype=np.uint8)
 
-    def perception_worker():
-        nonlocal last_vis_img
+    # Define a worker function to run in the thread
+    def perception_worker(): 
+        nonlocal last_vis_img 
         local_client = airsim.MultirotorClient()
         local_client.confirmConnection()
-        request = [ImageRequest("0", ImageType.Scene, False, True)]
+        request = [
+            ImageRequest(config.FLOW_CAMERA, ImageType.Scene, False, True),
+            ImageRequest(config.STEREO_LEFT_CAMERA, ImageType.Scene, False, True),
+            ImageRequest(config.STEREO_RIGHT_CAMERA, ImageType.Scene, False, True),
+        ]
         while not exit_flag.is_set():
             t0 = time.time()
             responses = local_client.simGetImages(request, vehicle_name="UAV")
             t_fetch_end = time.time()
-            response = responses[0]
+            flow_resp, left_resp, right_resp = responses[0], responses[1], responses[2]
+            # Check if the response is valid
             if (
-                response.width == 0
-                or response.height == 0
-                or len(response.image_data_uint8) == 0
+                left_resp.width == 0
+                or flow_resp.width == 0
+                or flow_resp.height == 0
+                or len(flow_resp.image_data_uint8) == 0
+                or left_resp.width == 0
+                or left_resp.height == 0
+                or len(left_resp.image_data_uint8) == 0
+                or right_resp.width == 0
+                or right_resp.height == 0
+                or len(right_resp.image_data_uint8) == 0
             ):
+                # If no image data, use the last valid image
                 data = (last_vis_img, np.array([]), np.array([]), 0.0, t_fetch_end - t0, 0.0, 0.0)
             else:
-                img1d = np.frombuffer(response.image_data_uint8, dtype=np.uint8).copy()
-                img = cv2.imdecode(img1d, cv2.IMREAD_GRAYSCALE)
+                # Decode the image data
+                flow1d = np.frombuffer(flow_resp.image_data_uint8, dtype=np.uint8).copy()
+                left1d = np.frombuffer(left_resp.image_data_uint8, dtype=np.uint8).copy()
+                right1d = np.frombuffer(right_resp.image_data_uint8, dtype=np.uint8).copy()
+
+                img = cv2.imdecode(flow1d, cv2.IMREAD_GRAYSCALE)
+                left_img = cv2.imdecode(left1d, cv2.IMREAD_GRAYSCALE)
+                right_img = cv2.imdecode(right1d, cv2.IMREAD_GRAYSCALE)
+
                 t_decode_end = time.time()
-                if img is None:
+
+                # Resize the image to the configured size
+                if img is None or left_img is None or right_img is None:
                     continue
-                img = cv2.resize(img, config.VIDEO_SIZE)
+           
+                #Resize images to the configured video size
+                target_size = config.VIDEO_SIZE # (width, height)
+                img = cv2.resize(img, target_size)
+                left_img = cv2.resize(left_img, target_size)
+                right_img = cv2.resize(right_img, target_size)
                 vis_img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+                
+                # Update the last valid image
                 last_vis_img = vis_img
                 t_proc_start = time.time()
+
+                # Process the image for optical flow
                 good_old, flow_vectors, flow_std = perception_loop(tracker, img)
+                if good_old.size > 0:
+                    # Filter flow vectors by depth if stereo images are available
+                    good_old, flow_vectors = filter_flow_by_depth(
+                        good_old,  # points
+                        flow_vectors, # vectors
+                        left_img, # (stereo left)
+                        right_img, # (stereo right)
+                        max_depth=config.DEPTH_FILTER_DIST,
+                    )
                 processing_s = time.time() - t_proc_start
                 data = (
-                    vis_img,
+                    vis_img,    
                     good_old,
                     flow_vectors,
                     flow_std,
@@ -70,10 +112,11 @@ def start_perception_thread(ctx):
                     processing_s,
                 )
             try:
+                # Put the processed data into the queue
                 perception_queue.put(data, block=False)
             except Exception:
                 pass
-
+    # Start the worker thread
     perception_thread = Thread(target=perception_worker, daemon=True)
     perception_thread.start()
     ctx.perception_queue = perception_queue

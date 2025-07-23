@@ -148,7 +148,7 @@ def detect_obstacle(
             raise ValueError("Reactive mode requires smooth_C, delta_C, center_count, brake_thres")
 
         DELTA_C_SUDDEN = 1.5 # Sudden rise threshold
-        CENTER_COUNT_MIN = 4 # Minimum center count
+        CENTER_COUNT_MIN = 10 # Minimum center count
         COMBO_COUNT = 40 # Combination high flow count
         DELTA_C_MIN = 0.75 # Minimum delta C
         SMOOTH_C_MIN = 0.5 # Minimum smooth C
@@ -177,7 +177,7 @@ def detect_obstacle(
 
         # Confidence-based
         confidence = sum([sudden_rise, center_blocked, combination_flow, minimum_flow])
-        obstacle_detected = confidence >= 2  # require at least two triggers
+        obstacle_detected = confidence >= 1  # require at least two triggers
 
         # Log which conditions triggered the detection
         if obstacle_detected:
@@ -289,7 +289,7 @@ def handle_obstacle(
     """
     state_str = "none"
 
-    if obstacle_detected and side_safe and not navigator.dodging:
+    if obstacle_detected and not navigator.dodging:
         if left_safe and right_safe:
             if left_count < right_count:
                 logger.info("\U0001F500 Both sides safe — Dodging left")
@@ -300,25 +300,26 @@ def handle_obstacle(
         elif left_safe:
             logger.info("\U0001F500 Left safe — Dodging left")
             state_str = navigator.dodge(smooth_L, smooth_C, smooth_R, direction="left")
-        else:
+        elif right_safe:
             logger.info("\U0001F500 Right safe — Dodging right")
             state_str = navigator.dodge(smooth_L, smooth_C, smooth_R, direction="right")
-
-    elif obstacle_detected and (left_clearing or right_clearing) and not navigator.dodging:
-        logger.info("\U0001F500 Sides clearing, Dodging")
-        if left_clearing and not right_clearing:
-            state_str = navigator.dodge(smooth_L, smooth_C, smooth_R, direction="left")
-        elif right_clearing and not left_clearing:
-            state_str = navigator.dodge(smooth_L, smooth_C, smooth_R, direction="right")
-        else:
-            if left_count < right_count:
+        elif left_clearing or right_clearing:
+            if left_clearing and not right_clearing:
+                logger.info("\U0001F6D1 Left clearing — Dodging left")
                 state_str = navigator.dodge(smooth_L, smooth_C, smooth_R, direction="left")
-            else:
+            elif right_clearing and not left_clearing:
+                logger.info("\U0001F6D1 Right clearing — Dodging right")
                 state_str = navigator.dodge(smooth_L, smooth_C, smooth_R, direction="right")
-
-    elif obstacle_detected and not (navigator.braked or navigator.dodging):
-        logger.info("\U0001F6D1 Sides not safe — Braking")
-        state_str = navigator.brake()
+            else:
+                if left_count < right_count:
+                    logger.info("\U0001F6D1 Both sides clearing — Dodging left")
+                    state_str = navigator.dodge(smooth_L, smooth_C, smooth_R, direction="left")
+                else:
+                    logger.info("\U0001F6D1 Both sides clearing — Dodging right")
+                    state_str = navigator.dodge(smooth_L, smooth_C, smooth_R, direction="right")
+        else:
+            logger.info("\U0001F6D1 No sides safe — Braking")
+            state_str = navigator.brake()
 
     if navigator.dodging and obstacle_detected:
         navigator.maintain_dodge()
@@ -354,7 +355,7 @@ def decide_low_feature_action(navigator, smooth_L, smooth_C, smooth_R):
     str
         Action chosen by the navigator.
     """
-    if smooth_L > 1.5 and smooth_R > 1.5 and smooth_C < 0.2:
+    if smooth_L < 1.5 and smooth_R < 1.5 and smooth_C < 0.2:
         return navigator.brake()
     return navigator.blind_forward()
 
@@ -540,47 +541,48 @@ def navigation_step(
 
     navigator.just_resumed = False
 
-    if len(good_old) < 10:
-        state_str = decide_low_feature_action(navigator, smooth_L, smooth_C, smooth_R)
+    # if len(good_old) < 10: # Not enough features tracked
+    #     state_str = decide_low_feature_action(navigator, smooth_L, smooth_C, smooth_R)
+    # else:
+    
+    pos, yaw, speed = get_drone_state(client)
+    brake_thres, dodge_thres = compute_thresholds(speed)
+    left_clearing = delta_L < -0.3
+    right_clearing = delta_R < -0.3
+
+    probe_reliable = probe_count > config.MIN_PROBE_FEATURES and probe_mag > 0.05
+
+    left_safe, right_safe, side_safe = determine_side_safety(
+        smooth_L, smooth_R, brake_thres, left_count, center_count, right_count
+    )
+
+    # Use hysteresis-based obstacle detection instead of raw detection
+    detection_result = detect_obstacle_with_hysteresis(
+        navigator, smooth_C, delta_C, center_count, brake_thres
+    )
+
+    if isinstance(detection_result, tuple):
+        obstacle_detected, sudden_rise, center_blocked, combination_flow, minimum_flow = detection_result
+        obstacle_detected = int(obstacle_detected)
     else:
-        pos, yaw, speed = get_drone_state(client)
-        brake_thres, dodge_thres = compute_thresholds(speed)
-        left_clearing = delta_L < -0.3
-        right_clearing = delta_R < -0.3
+        obstacle_detected = int(detection_result)
 
-        probe_reliable = probe_count > config.MIN_PROBE_FEATURES and probe_mag > 0.05
-
-        left_safe, right_safe, side_safe = determine_side_safety(
-            smooth_L, smooth_R, brake_thres, left_count, center_count, right_count
-        )
-
-        # Use hysteresis-based obstacle detection instead of raw detection
-        detection_result = detect_obstacle_with_hysteresis(
-            navigator, smooth_C, delta_C, center_count, brake_thres
-        )
-
-        if isinstance(detection_result, tuple):
-            obstacle_detected, sudden_rise, center_blocked, combination_flow, minimum_flow = detection_result
-            obstacle_detected = int(obstacle_detected)
-        else:
-            obstacle_detected = int(detection_result)
-
-        action = handle_obstacle(
-            navigator,
-            obstacle_detected,
-            side_safe,
-            left_safe,
-            right_safe,
-            left_clearing,
-            right_clearing,
-            smooth_L,
-            smooth_C,
-            smooth_R,
-            left_count,
-            right_count,
-        )
-        if action != "none":
-            state_str = action
+    action = handle_obstacle(
+        navigator,
+        obstacle_detected,
+        side_safe,
+        left_safe,
+        right_safe,
+        left_clearing,
+        right_clearing,
+        smooth_L,
+        smooth_C,
+        smooth_R,
+        left_count,
+        right_count,
+    )
+    if action != "none":
+        state_str = action
 
     if state_str == "none":
         state_str = recovery_actions(

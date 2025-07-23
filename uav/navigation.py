@@ -36,8 +36,8 @@ class Navigator:
         self.obstacle_detection_count = 0
         self.obstacle_clear_count = 0
         self.obstacle_confirmed = False
-        self.DETECTION_THRESHOLD = 2  # Frames required to confirm detection/clearing
-        self.CLEAR_THRESHOLD = 10  # Frames required to confirm clearing
+        self.DETECTION_THRESHOLD = 1  # Frames required to confirm detection/clearing
+        self.CLEAR_THRESHOLD = 2  # Frames required to confirm clearing
         
         # Store individual condition states for logging
         self.last_sudden_rise = False
@@ -124,7 +124,7 @@ class Navigator:
             direction = "left"
         
         lateral = 1.0 if direction == "right" else -1.0
-        strength = 1.0
+        strength = 0.5 # Default dodge strength
         forward_speed = 0.0
 
         # Stop before dodging

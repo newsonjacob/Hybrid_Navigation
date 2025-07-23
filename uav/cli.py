@@ -25,6 +25,9 @@ def parse_args():
     parser.add_argument("--slam-server-port", type=int, default=None, help="SLAM server TCP port")
     parser.add_argument("--slam-receiver-host", default=None, help="Pose receiver IP")
     parser.add_argument("--slam-receiver-port", type=int, default=None, help="Pose receiver TCP port")
+    parser.add_argument("--slam-pose-source", choices=["slam", "airsim"], default="slam", 
+                        help="Source of pose data for SLAM navigation: 'slam' uses the pose receiver; 'airsim' calls simGetVehiclePose",
+    )
     parser.add_argument(
         "--slam-covariance-threshold",
         type=float,

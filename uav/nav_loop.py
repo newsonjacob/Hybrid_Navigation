@@ -394,7 +394,7 @@ def navigation_loop(args, client, ctx):
     except KeyboardInterrupt:
         logger.info("Interrupted.")
 
-def slam_navigation_loop(args, client, ctx, config=None):
+def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
     """SLAM-based navigation loop with basic obstacle avoidance.
 
     ``config`` or ``args`` may provide custom SLAM stability thresholds which
@@ -448,7 +448,18 @@ def slam_navigation_loop(args, client, ctx, config=None):
 
     # Simplified execution path used by tests
     if max_duration == 0 and navigator is not None:
-        pose_mat = get_latest_pose_matrix()
+        if pose_source == "airsim" and hasattr(client, "simGetVehiclePose"):
+            air_pose = client.simGetVehiclePose("UAV")
+            pos = air_pose.position
+            yaw = airsim.to_eularian_angles(air_pose.orientation)[2]
+            cy, sy = np.cos(yaw), np.sin(yaw)
+            pose_mat = np.array([
+                [cy, -sy, 0, pos.x_val],
+                [sy,  cy, 0, pos.y_val],
+                [0,   0,  1, pos.z_val],
+            ])
+        else:
+            pose_mat = get_latest_pose_matrix()
         return navigator.slam_to_goal(pose_mat, (goal_x, goal_y, goal_z))
 
     # --- Define waypoints for SLAM navigation ---
@@ -473,68 +484,84 @@ def slam_navigation_loop(args, client, ctx, config=None):
             # If SLAM is unstable, reinitialise it
             # This is a basic stability check that can be improved.
             # Need to ensure that this check is continuously performed during the waypoint navigation. 
-            pose = get_latest_pose_matrix()
-
-            # Check if the pose is None or SLAM is unstable
-            if pose is None or not is_slam_stable(cov_thres, inlier_thres):
-                logger.warning(
-                    "[SLAMNav] SLAM tracking lost. Attempting reinitialisation."
+            if pose_source == "airsim" and hasattr(client, "simGetVehiclePose"):
+                air_pose = client.simGetVehiclePose("UAV")
+                pos = air_pose.position
+                yaw = airsim.to_eularian_angles(air_pose.orientation)[2]
+                cy, sy = np.cos(yaw), np.sin(yaw)
+                transformed_pose = np.array(
+                    [
+                        [cy, -sy, 0, pos.x_val],
+                        [sy, cy, 0, pos.y_val],
+                        [0, 0, 1, pos.z_val],
+                    ]
                 )
-                while True:
+                x, y, z = pos.x_val, pos.y_val, pos.z_val
+            else:
+                pose = get_latest_pose_matrix()
 
-                    # Run SLAM bootstrap to reinitialise the SLAM system
-                    if ctx is not None and getattr(ctx, "param_refs", None):
-                        ctx.param_refs.state[0] = "bootstrap"
-                    run_slam_bootstrap(client, duration=4.0)
-                    time.sleep(1.0)
-                    pose = get_latest_pose_matrix()
+                # Check if the pose is None or SLAM is unstable
+                if pose is None or not is_slam_stable(cov_thres, inlier_thres):
+                    logger.warning(
+                        "[SLAMNav] SLAM tracking lost. Attempting reinitialisation."
+                    )
+                    while True:
 
-                    # Check if SLAM is stable after reinitialisation
-                    if pose is not None and is_slam_stable(cov_thres, inlier_thres):
-                        logger.info(
-                            "[SLAMNav] SLAM reinitialised. Resuming navigation."
-                        )
-
-                        # Reset the waypoint index to start from the first waypoint
+                        # Run SLAM bootstrap to reinitialise the SLAM system
                         if ctx is not None and getattr(ctx, "param_refs", None):
-                            ctx.param_refs.state[0] = "waypoint_nav"
-                        break
+                            ctx.param_refs.state[0] = "bootstrap"
+                        run_slam_bootstrap(client, duration=4.0)
+                        time.sleep(1.0)
+                        pose = get_latest_pose_matrix()
 
-                    # Check for exit conditions during reinitialisation
-                    if (exit_flag is not None and exit_flag.is_set()) or os.path.exists(
-                        STOP_FLAG_PATH
-                    ):
-                        logger.info(
-                            "[SLAMNav] Exit signal during reinitialisation."
-                        )
-                        return last_action
-                continue
+                        # Check if SLAM is stable after reinitialisation
+                        if pose is not None and is_slam_stable(cov_thres, inlier_thres):
+                            logger.info(
+                                "[SLAMNav] SLAM reinitialised. Resuming navigation."
+                            )
 
-            # --- Transform SLAM pose to AirSim coordinates ---
-            # Replace the inline transformation:
-            # x_slam, y_slam, z_slam = pose[0][3], pose[1][3], pose[2][3]
-            # x, y, z = z_slam, x_slam, - y_slam  # Old inline method
-            
-            # Use the transformation function instead:
-            transformed_pose, (x, y, z) = transform_slam_to_airsim(pose)
-            
-            # Original position for debugging
-            x_slam, y_slam, z_slam = pose[0][3], pose[1][3], pose[2][3]
+                            # Reset the waypoint index to start from the first waypoint
+                            if ctx is not None and getattr(ctx, "param_refs", None):
+                                ctx.param_refs.state[0] = "waypoint_nav"
+                            break
 
-            if hasattr(client, "simGetVehiclePose"):
-                airsim_pose = client.simGetVehiclePose("UAV")
-                airsim_pos = airsim_pose.position
-                
-                # Debug coordinate alignment
-                logger.debug("SLAM pose: (%.2f, %.2f, %.2f)", x_slam, y_slam, z_slam)
-                logger.debug("AirSim pose: (%.2f, %.2f, %.2f)", airsim_pos.x_val, airsim_pos.y_val, airsim_pos.z_val)
-                logger.debug("Transformed: (%.2f, %.2f, %.2f)", x, y, z)
-                
-                # Calculate differences to see alignment
-                diff_x = x - airsim_pos.x_val
-                diff_y = y - airsim_pos.y_val  
-                diff_z = z - airsim_pos.z_val
-                logger.debug("Differences: (%.2f, %.2f, %.2f)", diff_x, diff_y, diff_z)
+                        # Check for exit conditions during reinitialisation
+                        if (exit_flag is not None and exit_flag.is_set()) or os.path.exists(
+                            STOP_FLAG_PATH
+                        ):
+                            logger.info(
+                                "[SLAMNav] Exit signal during reinitialisation."
+                            )
+                            return last_action
+                    continue
+
+                # --- Transform SLAM pose to AirSim coordinates ---
+                transformed_pose, (x, y, z) = transform_slam_to_airsim(pose)
+
+                # Original position for debugging
+                x_slam, y_slam, z_slam = pose[0][3], pose[1][3], pose[2][3]
+
+                if hasattr(client, "simGetVehiclePose"):
+                    airsim_pose = client.simGetVehiclePose("UAV")
+                    airsim_pos = airsim_pose.position
+
+                    # Debug coordinate alignment
+                    logger.debug("SLAM pose: (%.2f, %.2f, %.2f)", x_slam, y_slam, z_slam)
+                    logger.debug(
+                        "AirSim pose: (%.2f, %.2f, %.2f)",
+                        airsim_pos.x_val,
+                        airsim_pos.y_val,
+                        airsim_pos.z_val,
+                    )
+                    logger.debug("Transformed: (%.2f, %.2f, %.2f)", x, y, z)
+
+                    # Calculate differences to see alignment
+                    diff_x = x - airsim_pos.x_val
+                    diff_y = y - airsim_pos.y_val
+                    diff_z = z - airsim_pos.z_val
+                    logger.debug(
+                        "Differences: (%.2f, %.2f, %.2f)", diff_x, diff_y, diff_z
+                    )
             
             # Detect exploration frontiers from accumulated SLAM poses
             history = get_pose_history()

@@ -55,16 +55,16 @@ class FlowHistory:
 class OpticalFlowTracker:
     """Track sparse optical flow features between frames."""
 
-    def __init__(self, lk_params: Dict, feature_params: Dict, min_flow_mag: float | None = None) -> None:
+    def __init__(self, lk_params: dict, feature_params: dict, min_flow_mag: Optional[float] = None) -> None:
         """Initialize tracker with Lucas-Kanade and feature parameters.
 
         Args:
             lk_params: Parameters for ``cv2.calcOpticalFlowPyrLK``.
             feature_params: Parameters for ``cv2.goodFeaturesToTrack``.
         """
-        self.lk_params: Dict = lk_params
-        self.feature_params: Dict = feature_params
-        self.min_flow_mag: float = (
+        self.lk_params = lk_params
+        self.feature_params = feature_params
+        self.min_flow_mag = (
             config.MIN_FLOW_MAG if min_flow_mag is None else float(min_flow_mag)
         )
         self.prev_gray: Optional[np.ndarray] = None
@@ -149,6 +149,96 @@ class OpticalFlowTracker:
             flow_vectors = flow_vectors[valid_mask]
             magnitudes = magnitudes[valid_mask]
 
-        flow_std = float(np.std(magnitudes)) if len(magnitudes) else 0.0
-
+        flow_std = float(np.std(magnitudes)) if len(magnitudes) > 0 else 0.0
+ 
         return good_old, flow_vectors, flow_std
+    
+def filter_flow_by_depth(
+    points: np.ndarray,
+    vectors: np.ndarray,
+    left_gray: np.ndarray,
+    right_gray: np.ndarray,
+    max_depth: float = config.DEPTH_FILTER_DIST,
+    matcher: Optional[cv2.StereoMatcher] = None,
+    focal_length: float = 300.0,
+    baseline: float = 0.075,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Remove flow vectors whose stereo depth exceeds max_depth with improved stereo processing."""
+    
+    logger.debug(f"[DEPTH_FILTER] Processing {len(points)} points with max_depth={max_depth}m")
+    
+    if len(points) == 0:
+        return points, vectors
+    
+    # Ensure images are the same size
+    if left_gray.shape != right_gray.shape:
+        logger.warning(f"[DEPTH_FILTER] Image size mismatch: {left_gray.shape} vs {right_gray.shape}")
+        return points, vectors
+    
+    try:
+        # Preprocess images for better stereo matching
+        left_processed = cv2.GaussianBlur(left_gray, (5, 5), 0)
+        right_processed = cv2.GaussianBlur(right_gray, (5, 5), 0)
+        
+        if matcher is None:
+            # Use SGBM for better quality (slower but more accurate)
+            matcher = cv2.StereoSGBM_create(
+                minDisparity=0,
+                numDisparities=96,  # Must be divisible by 16
+                blockSize=5,
+                P1=8 * 3 * 5**2,   # Penalty for disparity change of +/- 1
+                P2=32 * 3 * 5**2,  # Penalty for larger disparity changes
+                disp12MaxDiff=1,
+                uniquenessRatio=10,
+                speckleWindowSize=100,
+                speckleRange=32,
+                preFilterCap=63,
+                mode=cv2.STEREO_SGBM_MODE_SGBM_3WAY
+            )
+        
+        # Compute disparity
+        disparity = matcher.compute(left_processed, right_processed).astype(np.float32)
+        
+        # SGBM returns 16-bit fixed point, convert to float
+        disparity = disparity / 16.0
+        
+        # Validate disparity map
+        valid_disp = disparity[disparity > 0]
+        if len(valid_disp) == 0:
+            logger.warning("[DEPTH_FILTER] No valid disparities - stereo matching failed")
+            return points, vectors
+        
+        logger.debug(f"[DEPTH_FILTER] Disparity range: {np.min(valid_disp):.1f} - {np.max(valid_disp):.1f}")
+        
+        # Calculate depth map
+        with np.errstate(divide='ignore', invalid='ignore'):
+            depth_map = (focal_length * baseline) / disparity
+        
+        # Clean up depth map
+        depth_map[disparity <= 0] = np.inf
+        depth_map[np.isnan(depth_map)] = np.inf
+        depth_map[depth_map <= 0] = np.inf
+        
+        # Sample depths at feature locations
+        y_coords = np.clip(points[:, 1].astype(int), 0, depth_map.shape[0] - 1)
+        x_coords = np.clip(points[:, 0].astype(int), 0, depth_map.shape[1] - 1)
+        point_depths = depth_map[y_coords, x_coords]
+        
+        # Apply depth filter
+        valid_mask = (point_depths <= max_depth) & (point_depths > 0.1) & np.isfinite(point_depths)
+        
+        filtered_points = points[valid_mask]
+        filtered_vectors = vectors[valid_mask]
+        
+        # Statistics
+        valid_depths = point_depths[valid_mask]
+        logger.debug(f"[DEPTH_FILTER] Filtered: {len(filtered_points)}/{len(points)} points")
+        if len(valid_depths) > 0:
+            logger.debug(f"[DEPTH_FILTER] Kept depths: {np.min(valid_depths):.2f}m - {np.max(valid_depths):.2f}m (mean: {np.mean(valid_depths):.2f}m)")
+        
+        return filtered_points, filtered_vectors
+        
+    except Exception as e:
+        logger.error(f"[DEPTH_FILTER] Error: {e}")
+        # Return original data on error
+        return points, vectors
