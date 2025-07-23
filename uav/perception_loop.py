@@ -50,8 +50,7 @@ def start_perception_thread(ctx):
             flow_resp, left_resp, right_resp = responses[0], responses[1], responses[2]
             # Check if the response is valid
             if (
-                left_resp.width == 0
-                or flow_resp.width == 0
+                flow_resp.width == 0
                 or flow_resp.height == 0
                 or len(flow_resp.image_data_uint8) == 0
                 or left_resp.width == 0
