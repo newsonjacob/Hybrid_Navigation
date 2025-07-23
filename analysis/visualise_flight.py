@@ -126,7 +126,7 @@ def build_plot(
             values = log[colour_by]
             values = np.asarray(values, dtype=float)
             if len(values) == len(path):
-                line_opts = {"color": values, "colorscale": "Viridis", "showscale": True}
+                line_opts = {"color": values, "colorscale": "Viridis", "showscale": False}
         except Exception:
             pass
 

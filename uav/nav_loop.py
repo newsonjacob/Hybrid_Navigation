@@ -758,8 +758,6 @@ def finalise_files(ctx):
             )
         logger.info(f"Processing log file: {log_csv} ({file_size} bytes)")
         
-        logger.info(f"Processing log file: {log_csv} ({file_size} bytes)")
-        
         # Ensure analysis directory exists
         analysis_dir = base_dir / "analysis"
         analysis_dir.mkdir(parents=True, exist_ok=True)
@@ -810,7 +808,7 @@ def finalise_files(ctx):
         except Exception as perf_outer_error:
             logger.error(f"Performance analysis failed: {perf_outer_error}")
 
-        # Generate flight report (if analyse module exists)
+        # Generate flight report
         try:
             report_path = str(analysis_dir / f"flight_report_{timestamp}.html")
             analyse_script = os.path.abspath("analysis/analyse.py")
@@ -825,19 +823,34 @@ def finalise_files(ctx):
                         str(log_csv),
                         "-o",
                         report_path,
+                        "--log-timestamp", timestamp  # Add timestamp parameter
                     ],
                     check=True,
                     capture_output=True,
                     text=True,
                     cwd=os.getcwd(),
-                    timeout=30
+                    timeout=60
                 )
-                logger.info(f"✅ Flight report saved: {report_path}")
+                
+                # Check for both files
+                if os.path.exists(report_path):
+                    logger.info(f"✅ Flight report saved: {report_path}")
+                    
+                    # Check for 3D trajectory file
+                    trajectory_path = analysis_dir / f"trajectory_flight_report_{timestamp}.html"
+                    if os.path.exists(trajectory_path):
+                        logger.info(f"✅ 3D Trajectory saved: {trajectory_path}")
+                    else:
+                        logger.warning(f"3D trajectory file missing: {trajectory_path}")
+                        
+                else:
+                    logger.warning(f"Flight report file missing: {report_path}")
+                
             else:
-                logger.info("analyse.py not found - skipping flight report")
+                logger.warning("analyse.py not found - skipping flight report")
                 
         except subprocess.CalledProcessError as report_error:
-            logger.warning(f"Flight report generation failed: {report_error.stderr}")
+            logger.error(f"Flight report subprocess failed: {report_error}")
         except Exception as report_outer_error:
             logger.info(f"Flight report generation skipped: {report_outer_error}")
 
