@@ -742,8 +742,10 @@ def finalise_files(ctx):
         # Check log file size
         file_size = os.path.getsize(log_csv)
         if file_size < 100:  # Less than 100 bytes probably means empty/corrupt
-            logger.warning(f"Log file appears empty or corrupt: {log_csv} ({file_size} bytes)")
-            return
+            logger.warning(
+                f"Log file appears empty or corrupt: {log_csv} ({file_size} bytes)"
+            )
+        logger.info(f"Processing log file: {log_csv} ({file_size} bytes)")
         
         logger.info(f"Processing log file: {log_csv} ({file_size} bytes)")
         
@@ -868,7 +870,6 @@ def finalise_files(ctx):
 
     # Remove stop flag
     try:
-        from uav.paths import STOP_FLAG_PATH
         if os.path.exists(STOP_FLAG_PATH):
             os.remove(STOP_FLAG_PATH)
             logger.info("✅ Stop flag file removed")

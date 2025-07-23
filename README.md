@@ -187,6 +187,9 @@ Pressing the stop button touches `stop.flag` so the running process can safely
 land and exit. The launcher now waits up to `GRACE_TIME` seconds for
 `main.py` to terminate after creating this flag before forcefully killing any
 remaining processes.
+The GUI also monitors for the stop event and closes automatically when the
+simulation ends, such as after reaching the goal or hitting the maximum
+duration.
 
 ### SLAM Utilities
 

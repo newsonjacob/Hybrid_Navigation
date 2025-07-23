@@ -6,11 +6,12 @@ import argparse
 from pathlib import Path
 
 import pandas as pd
-from plotly.subplots import make_subplots
-import plotly.graph_objects as go
+from typing import Any
+
+# Plotly is imported lazily inside build_plot so tests can provide stubs
 
 
-def build_plot(df: pd.DataFrame) -> go.Figure:
+def build_plot(df: pd.DataFrame) -> Any:
     """Return a Plotly figure showing CPU and memory usage.
 
     Parameters
@@ -25,6 +26,10 @@ def build_plot(df: pd.DataFrame) -> go.Figure:
     else:
         x = df.index
         x_title = "Frame"
+
+    # Import plotly only when needed so tests can stub these modules
+    from plotly.subplots import make_subplots
+    import plotly.graph_objects as go
 
     cpu = df.get("cpu_percent", pd.Series(dtype=float))
     mem = df.get("memory_rss", pd.Series(dtype=float)) / (1024 * 1024)

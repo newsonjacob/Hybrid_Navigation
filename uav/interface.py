@@ -195,9 +195,19 @@ def launch_control_gui(param_refs, nav_mode="unknown"):
     tk.Label(root, text="System Usage:").pack(pady=(10, 0))
     tk.Label(root, textvariable=perf_val).pack()
 
+    def check_exit():
+        if exit_flag.is_set():
+            try:
+                root.destroy()
+            except Exception:
+                pass
+        else:
+            root.after(500, check_exit)
+
     update_labels()
     update_status_lights()
     update_perf()
+    check_exit()
     root.mainloop()
 
 def start_gui(param_refs=None, nav_mode="unknown"):
@@ -229,4 +239,14 @@ def gui_exit():
         command=exit_flag.set,
     )
     btn.pack(expand=True)
+    def check_exit():
+        if exit_flag.is_set():
+            try:
+                root.destroy()
+            except Exception:
+                pass
+        else:
+            root.after(500, check_exit)
+
+    check_exit()
     root.mainloop()
