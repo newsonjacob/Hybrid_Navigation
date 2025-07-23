@@ -47,3 +47,4 @@ class NavContext:
     perception_thread: Optional[Thread] = None
     grace_logged: bool = False
     startup_grace_over: bool = False
+    output_dir: str = "."
