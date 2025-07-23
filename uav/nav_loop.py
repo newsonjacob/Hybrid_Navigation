@@ -159,6 +159,10 @@ def check_exit_conditions(client, ctx, time_now, max_duration, goal_x, goal_y):
     pos_goal, _, _ = get_drone_state(client)
     if abs(pos_goal.x_val - goal_x) < config.GOAL_THRESHOLD and abs(pos_goal.y_val - goal_y) < config.GOAL_THRESHOLD:
         logger.info("Goal reached — landing.")
+        try:
+            ctx.navigator.brake()
+        except Exception as exc:  # pragma: no cover - just log
+            logger.warning("Brake before landing failed: %s", exc)
         if getattr(ctx, "param_refs", None):
             ctx.param_refs.state[0] = "landing"
         ctx.exit_flag.set()

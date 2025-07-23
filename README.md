@@ -23,7 +23,7 @@ This repository contains the implementation of a reactive obstacle avoidance sys
 - Integrated frontier-based exploration using SLAM map points
 - SLAM loop checks depth ahead and dodges obstacles before advancing
 - Performs an initial SLAM calibration manoeuvre after takeoff that returns the drone to face forward
-- Automatically lands the drone when the final goal position is reached
+- Automatically lands the drone when the final goal position is reached, issuing a brake command first
 
 SLAM poses contain both position and orientation. When a pose matrix is passed to `Navigator.slam_to_goal`, the yaw angle is extracted and corrected by `config.SLAM_YAW_OFFSET` before commanding the drone.
 
