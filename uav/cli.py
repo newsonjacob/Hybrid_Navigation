@@ -8,6 +8,7 @@ def parse_args():
     parser.add_argument("--settings-path", default=None, help="Path to AirSim settings.json")
     parser.add_argument("--config", default="config.ini", help="Path to config file with default paths")
     parser.add_argument("--goal-x", type=int, default=29, help="Distance from start to goal (X coordinate)")
+    parser.add_argument("--goal-y", type=int, default=0, help="Distance from start to goal (Y coordinate)")
     parser.add_argument("--max-duration", type=int, default=60, help="Maximum simulation duration in seconds")
     parser.add_argument(
         "--nav-mode",

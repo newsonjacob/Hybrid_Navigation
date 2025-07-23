@@ -69,6 +69,7 @@ def test_launch_all_main_flag_flow(tmp_path, monkeypatch):
         slam_receiver_host="127.0.0.1",
         slam_receiver_port=6001,
         config="none",
+        goal_y=0,
     )
     monkeypatch.setattr(launch_all, "parse_args", lambda: args)
     monkeypatch.setattr(launch_all, "load_app_config", lambda p: configparser.ConfigParser())
@@ -146,6 +147,7 @@ def test_stop_flag_waits_for_main(tmp_path, monkeypatch):
         slam_receiver_host="127.0.0.1",
         slam_receiver_port=6001,
         config="none",
+        goal_y=0,
     )
     monkeypatch.setattr(launch_all, "parse_args", lambda: args)
     monkeypatch.setattr(launch_all, "load_app_config", lambda p: configparser.ConfigParser())

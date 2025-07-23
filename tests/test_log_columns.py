@@ -22,7 +22,7 @@ def test_setup_environment_header_includes_perf(monkeypatch, tmp_path):
     monkeypatch.setattr(nl.cv2, "VideoWriter_fourcc", lambda *a: 0)
     monkeypatch.setattr(nl.cv2, "VideoWriter", lambda *a, **k: types.SimpleNamespace(release=lambda: None))
 
-    args = types.SimpleNamespace(goal_x=0.0, max_duration=1)
+    args = types.SimpleNamespace(goal_x=0.0, goal_y=0.0, max_duration=1)
     dummy_future = types.SimpleNamespace(join=lambda *a, **k: None)
     client = types.SimpleNamespace(
         listVehicles=lambda: [],

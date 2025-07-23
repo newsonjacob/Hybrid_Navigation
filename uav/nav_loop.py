@@ -352,7 +352,12 @@ def navigation_loop(args, client, ctx):
 
     max_flow_mag = config.MAX_FLOW_MAG
     max_duration = args.max_duration
-    goal_x, goal_y = args.goal_x, config.GOAL_Y
+    goal_x = getattr(args, "goal_x", None)
+    if goal_x is None:
+        goal_x = config.GOAL_X
+    goal_y = getattr(args, "goal_y", None)
+    if goal_y is None:
+        goal_y = config.GOAL_Y
     frame_count = 0
     frame_duration = 1.0 / config.TARGET_FPS
 
