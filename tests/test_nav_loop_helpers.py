@@ -4,11 +4,16 @@ import types
 import unittest.mock as mock
 
 
-def test_helper_functions_exist(monkeypatch):
+def _reload_nav_loop(monkeypatch):
     airsim_stub = types.SimpleNamespace(ImageRequest=object, ImageType=object)
-    monkeypatch.setitem(sys.modules, 'airsim', airsim_stub)
-    nl = importlib.import_module('uav.nav_loop')
+    monkeypatch.setitem(sys.modules, "airsim", airsim_stub)
+    nl = importlib.import_module("uav.nav_loop")
     importlib.reload(nl)
+    return nl
+
+
+def test_helper_functions_exist(monkeypatch):
+    nl = _reload_nav_loop(monkeypatch)
     for name in (
         'setup_environment',
         'start_perception_thread',
@@ -113,3 +118,33 @@ def test_handle_obstacle_dodge_and_resume(monkeypatch):
         0.0, 0.0, 0.0, 15, 20
     )
     assert state == 'resume'
+
+
+def test_should_stop_respects_exit_flag(monkeypatch):
+    nl = _reload_nav_loop(monkeypatch)
+    flag = types.SimpleNamespace(is_set=lambda: True)
+    monkeypatch.setattr(nl.os.path, "exists", lambda p: False)
+    monkeypatch.setattr(nl.time, "time", lambda: 0.0)
+    assert nl.should_stop(flag, 0.0, 10.0) is True
+
+
+def test_update_waypoint_advances(monkeypatch):
+    nl = _reload_nav_loop(monkeypatch)
+    ctx = types.SimpleNamespace(param_refs=None)
+    waypoints = [(0, 0, -2), (1, 1, -2)]
+    index, goal = nl.update_waypoint(0.05, 0.05, waypoints, 0, 0.1, ctx)
+    assert index == 1
+    assert goal == waypoints[1]
+
+
+def test_get_stable_pose_bootstraps(monkeypatch):
+    nl = _reload_nav_loop(monkeypatch)
+    poses = [None, [[1,0,0,0],[0,1,0,0],[0,0,1,-2]]]
+    monkeypatch.setattr(nl, "run_slam_bootstrap", lambda *a, **k: None)
+    monkeypatch.setattr(nl.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(nl.os.path, "exists", lambda p: False)
+    monkeypatch.setattr(nl, "is_slam_stable", lambda *a, **k: True)
+    import slam_bridge.slam_receiver as sr
+    monkeypatch.setattr(sr, "get_latest_pose_matrix", lambda: poses.pop(0))
+    pose = nl.get_stable_pose(None, None, None, None, types.SimpleNamespace(is_set=lambda: False))
+    assert pose is not None

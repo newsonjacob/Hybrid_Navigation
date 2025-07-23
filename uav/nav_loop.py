@@ -351,6 +351,71 @@ def navigation_loop(args, client, ctx):
     except KeyboardInterrupt:
         logger.info("Interrupted.")
 
+
+def stop_requested(exit_flag):
+    """Return ``True`` when navigation should abort immediately."""
+    return (
+        (exit_flag is not None and exit_flag.is_set())
+        or os.path.exists(STOP_FLAG_PATH)
+    )
+
+
+def should_stop(exit_flag, start_time, max_duration):
+    """Check whether the main SLAM loop should end."""
+    if stop_requested(exit_flag):
+        logger.info(
+            "[SLAMNav] Stop flag detected. Landing and exiting navigation loop."
+        )
+        return True
+    if time.time() - start_time > max_duration:
+        logger.info("[SLAMNav] Max duration reached, ending navigation.")
+        return True
+    return False
+
+
+def update_waypoint(x, y, waypoints, index, threshold, ctx=None):
+    """Return next waypoint index and current goal tuple."""
+    goal_x, goal_y, goal_z = waypoints[index]
+    if ctx is not None and getattr(ctx, "param_refs", None):
+        ctx.param_refs.state[0] = f"waypoint_{index + 1}"
+    logger.info(
+        f"[SLAMNav] Current waypoint: {index + 1} at ({goal_x}, {goal_y}, {goal_z})"
+    )
+    dist = np.sqrt((x - goal_x) ** 2 + (y - goal_y) ** 2)
+    logger.info(f"Distance to waypoint: {dist:.2f} meters")
+    if dist < threshold:
+        logger.info(
+            f"Reached waypoint {index + 1}, moving to next waypoint."
+        )
+        index = (index + 1) % len(waypoints)
+        goal_x, goal_y, goal_z = waypoints[index]
+    return index, (goal_x, goal_y, goal_z)
+
+
+def get_stable_pose(client, ctx, cov_thres, inlier_thres, exit_flag):
+    """Return the latest stable SLAM pose or ``None`` if stopping."""
+    from slam_bridge.slam_receiver import get_latest_pose_matrix
+
+    pose = get_latest_pose_matrix()
+    if pose is not None and is_slam_stable(cov_thres, inlier_thres):
+        return pose
+
+    logger.warning("[SLAMNav] SLAM tracking lost. Attempting reinitialisation.")
+    while True:
+        if ctx is not None and getattr(ctx, "param_refs", None):
+            ctx.param_refs.state[0] = "bootstrap"
+        run_slam_bootstrap(client, duration=4.0)
+        time.sleep(1.0)
+        pose = get_latest_pose_matrix()
+        if pose is not None and is_slam_stable(cov_thres, inlier_thres):
+            logger.info("[SLAMNav] SLAM reinitialised. Resuming navigation.")
+            if ctx is not None and getattr(ctx, "param_refs", None):
+                ctx.param_refs.state[0] = "waypoint_nav"
+            return pose
+        if stop_requested(exit_flag):
+            logger.info("[SLAMNav] Exit signal during reinitialisation.")
+            return None
+
 def slam_navigation_loop(args, client, ctx, config=None):
     """SLAM-based navigation loop with basic obstacle avoidance.
 
@@ -421,51 +486,14 @@ def slam_navigation_loop(args, client, ctx, config=None):
     logger.info("[DEBUG] Entered slam_navigation_loop")
     try:
         while True:
-            # --- Check for exit_flag to allow GUI stop button to interrupt navigation ---
-            if (exit_flag is not None and exit_flag.is_set()) or os.path.exists(STOP_FLAG_PATH):
-                logger.info("[SLAMNav] Stop flag detected. Landing and exiting navigation loop.")
+            if should_stop(exit_flag, start_time, max_duration):
+                if ctx is not None and getattr(ctx, "param_refs", None):
+                    ctx.param_refs.state[0] = "landing"
                 break
 
-            # --- Get the latest SLAM pose ---
-            # If SLAM is unstable, reinitialise it
-            # This is a basic stability check that can be improved.
-            # Need to ensure that this check is continuously performed during the waypoint navigation. 
-            pose = get_latest_pose_matrix()
-
-            # Check if the pose is None or SLAM is unstable
-            if pose is None or not is_slam_stable(cov_thres, inlier_thres):
-                logger.warning(
-                    "[SLAMNav] SLAM tracking lost. Attempting reinitialisation."
-                )
-                while True:
-
-                    # Run SLAM bootstrap to reinitialise the SLAM system
-                    if ctx is not None and getattr(ctx, "param_refs", None):
-                        ctx.param_refs.state[0] = "bootstrap"
-                    run_slam_bootstrap(client, duration=4.0)
-                    time.sleep(1.0)
-                    pose = get_latest_pose_matrix()
-
-                    # Check if SLAM is stable after reinitialisation
-                    if pose is not None and is_slam_stable(cov_thres, inlier_thres):
-                        logger.info(
-                            "[SLAMNav] SLAM reinitialised. Resuming navigation."
-                        )
-
-                        # Reset the waypoint index to start from the first waypoint
-                        if ctx is not None and getattr(ctx, "param_refs", None):
-                            ctx.param_refs.state[0] = "waypoint_nav"
-                        break
-
-                    # Check for exit conditions during reinitialisation
-                    if (exit_flag is not None and exit_flag.is_set()) or os.path.exists(
-                        STOP_FLAG_PATH
-                    ):
-                        logger.info(
-                            "[SLAMNav] Exit signal during reinitialisation."
-                        )
-                        return last_action
-                continue
+            pose = get_stable_pose(client, ctx, cov_thres, inlier_thres, exit_flag)
+            if pose is None:
+                return last_action
 
             # --- Transform SLAM pose to AirSim coordinates ---
             # Replace the inline transformation:
@@ -514,40 +542,19 @@ def slam_navigation_loop(args, client, ctx, config=None):
             #     client.moveByVelocityAsync(-1.0, 0, 0, 1).join()  # Back up
             #     continue
 
-            # --- Get the current waypoint (goal) ---
-            goal_x, goal_y, goal_z = waypoints[current_waypoint_index]
-            if ctx is not None and getattr(ctx, "param_refs", None):
-                ctx.param_refs.state[0] = f"waypoint_{current_waypoint_index + 1}"
-            logger.info(f"[SLAMNav] Current waypoint: {current_waypoint_index + 1} at ({goal_x}, {goal_y}, {goal_z})")
-
-            # --- Calculate the distance to the current waypoint ---
-            distance_to_goal = np.sqrt((x - goal_x)**2 + (y - goal_y)**2)
-            
-            logger.info(f"Distance to waypoint: {distance_to_goal:.2f} meters")
-
-            # --- If the drone is within the threshold of the waypoint, move to the next waypoint ---
-            if distance_to_goal < threshold:  # Threshold for reaching waypoint
-                logger.info(f"Reached waypoint {current_waypoint_index + 1}, moving to next waypoint.")
-                current_waypoint_index = (current_waypoint_index + 1) % len(waypoints)  # Move to next waypoint
+            current_waypoint_index, goal = update_waypoint(
+                x,
+                y,
+                waypoints,
+                current_waypoint_index,
+                threshold,
+                ctx,
+            )
 
             # --- Use transformed pose for navigation ---
             # Pass the transformed pose instead of the original
-            last_action = navigator.slam_to_goal(transformed_pose, (goal_x, goal_y, goal_z))
+            last_action = navigator.slam_to_goal(transformed_pose, goal)
             # logger.info("[SLAMNav] Action: %s", last_action)
-        
-            # --- Check if the stop flag is set ---
-            if os.path.exists(STOP_FLAG_PATH):
-                logger.info("Stop flag detected. Landing and shutting down.")
-                if ctx is not None and getattr(ctx, "param_refs", None):
-                    ctx.param_refs.state[0] = "landing"
-                break
-
-            # End condition
-            if time.time() - start_time > max_duration:
-                logger.info("[SLAMNav] Max duration reached, ending navigation.")
-                if ctx is not None and getattr(ctx, "param_refs", None):
-                    ctx.param_refs.state[0] = "landing"
-                break
 
             # # Depth-based obstacle check before moving toward the goal # Depth check optional
             # ahead, depth = is_obstacle_ahead(client)
