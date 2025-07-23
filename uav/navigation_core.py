@@ -347,17 +347,6 @@ def handle_grace_period(time_now, navigator, frame_queue, vis_img, param_refs):
     return False
 
 
-def decide_low_feature_action(navigator, smooth_L, smooth_C, smooth_R):
-    """Choose an action when few optical-flow features are tracked.
-
-    Returns
-    -------
-    str
-        Action chosen by the navigator.
-    """
-    if smooth_L < 1.5 and smooth_R < 1.5 and smooth_C < 0.2:
-        return navigator.brake()
-    return navigator.blind_forward()
 
 
 def update_dodge_history(client, state_history, pos_history, state_str, navigator,
@@ -541,9 +530,6 @@ def navigation_step(
 
     navigator.just_resumed = False
 
-    # if len(good_old) < 10: # Not enough features tracked
-    #     state_str = decide_low_feature_action(navigator, smooth_L, smooth_C, smooth_R)
-    # else:
     
     pos, yaw, speed = get_drone_state(client)
     brake_thres, dodge_thres = compute_thresholds(speed)
