@@ -306,7 +306,7 @@ class Navigator:
         return "timeout_nudge"
     
 
-    def slam_to_goal(self, pose, goal, max_speed=1.5, threshold=0.5,
+    def slam_to_goal(self, pose, goal, max_speed=0.75, threshold=0.5,
                      settle_time=1.0, velocity_threshold=0.1):
         """Move toward ``goal`` using the provided SLAM ``pose``.
 

@@ -435,9 +435,10 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
     goal_y = getattr(args, "goal_y", 0) if hasattr(args, "goal_y") else 0
     goal_z = getattr(args, "goal_z", -2) if hasattr(args, "goal_z") else -2
     threshold = 0.5  # meters
-
+    # --- SLAM stability thresholds ---
     cov_thres = getattr(args, "slam_covariance_threshold", None)
     inlier_thres = getattr(args, "slam_inlier_threshold", None)
+    # If not provided, try to load from config
     if cov_thres is None and config is not None:
         try:
             cov_thres = config.getfloat("slam", "covariance_threshold")
