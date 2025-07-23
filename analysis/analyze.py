@@ -7,11 +7,17 @@ import pandas as pd
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 
-from .flight_review import parse_log
+from .flight_review import parse_log, plot_state_histogram, plot_distance_over_time
 from .visualise_flight import build_plot
 
 
-def analyse_logs(log_paths: List[str], output: str) -> None:
+def analyse_logs(
+    log_paths: List[str],
+    output: str,
+    *,
+    state_plot: str | None = None,
+    distance_plot: str | None = None,
+) -> None:
     """Parse ``log_paths`` and write an interactive HTML report."""
     dfs = []
     stats = []
@@ -49,6 +55,16 @@ def analyse_logs(log_paths: List[str], output: str) -> None:
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     fig.write_html(output)
 
+    if state_plot:
+        combined = {}
+        for s in stats:
+            for k, v in s.get("states", {}).items():
+                combined[k] = combined.get(k, 0) + v
+        plot_state_histogram({"states": combined}, state_plot)
+
+    if distance_plot and log_paths:
+        plot_distance_over_time(log_paths[0], distance_plot)
+
     total_frames = sum(s["frames"] for s in stats)
     total_collisions = sum(s["collisions"] for s in stats)
     total_distance = sum(s["distance"] for s in stats)
@@ -68,12 +84,19 @@ def parse_args(argv: Union[List[str], None] = None) -> argparse.Namespace:  # Ch
     parser = argparse.ArgumentParser(description="Analyze flight logs")
     parser.add_argument("logs", nargs="+", help="CSV log files")
     parser.add_argument("-o", "--output", default="analysis/flight_view.html", help="Output HTML file")
+    parser.add_argument("--state-plot", help="Output HTML for state histogram")
+    parser.add_argument("--distance-plot", help="Output HTML for distance over time")
     return parser.parse_args(argv)
 
 
 def main(argv: Union[List[str], None] = None) -> None:  # Change | to Union None:  # Change | to Union
     args = parse_args(argv)
-    analyse_logs(args.logs, args.output)
+    analyse_logs(
+        args.logs,
+        args.output,
+        state_plot=args.state_plot,
+        distance_plot=args.distance_plot,
+    )
 
 
 if __name__ == "__main__":

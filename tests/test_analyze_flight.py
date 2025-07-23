@@ -30,3 +30,39 @@ def test_analyze_cli_produces_html(tmp_path):
     assert out_path.exists()
     content = out_path.read_text().lower()
     assert "<html" in content
+
+
+def test_analyze_cli_extra_plots(tmp_path):
+    df = pd.DataFrame({
+        "pos_x": [0, 1, 2],
+        "pos_y": [0, 0, 0],
+        "pos_z": [0, 0, 0],
+        "time": [0, 1, 2],
+        "state": ["resume", "brake", "resume"],
+    })
+    log_path = tmp_path / "log.csv"
+    df.to_csv(log_path, index=False)
+    view = tmp_path / "view.html"
+    hist = tmp_path / "hist.html"
+    dist = tmp_path / "dist.html"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "analysis.analyze",
+            str(log_path),
+            "-o",
+            str(view),
+            "--state-plot",
+            str(hist),
+            "--distance-plot",
+            str(dist),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert hist.exists()
+    assert dist.exists()
+    assert "<html" in hist.read_text().lower()
+    assert "<html" in dist.read_text().lower()

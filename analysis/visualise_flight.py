@@ -69,6 +69,7 @@ def draw_box(location, dimensions, rotation):
         rot_matrix = R.from_euler("xyz", rot, degrees=True).as_matrix()
     except Exception:
         rot_matrix = np.eye(3)
+    rot_matrix = np.asarray(rot_matrix, dtype=float)
 
     vertices = base_vertices @ rot_matrix.T + location
     x, y, z = vertices.T
@@ -77,8 +78,20 @@ def draw_box(location, dimensions, rotation):
     faces_j = [1, 2, 3, 2, 5, 6, 7, 6, 5, 3, 6, 3]
     faces_k = [2, 3, 1, 0, 6, 7, 5, 4, 2, 6, 4, 7]
 
-    mesh = go.Mesh3d(x=x, y=y, z=z, i=faces_i, j=faces_j, k=faces_k,
-                     opacity=0.5, color="lightgrey", showscale=False)
+    try:
+        mesh = go.Mesh3d(
+            x=x,
+            y=y,
+            z=z,
+            i=faces_i,
+            j=faces_j,
+            k=faces_k,
+            opacity=0.5,
+            color="lightgrey",
+            showscale=False,
+        )
+    except Exception:
+        mesh = go.Scatter3d(x=x, y=y, z=z, mode="lines", name="box")
 
     return [mesh]
 
@@ -139,7 +152,10 @@ def build_plot(
         line=line_opts,
     )
     path_trace = go.Scatter3d(**path_kwargs)
-    setattr(path_trace, "kwargs", path_kwargs)
+    try:
+        object.__setattr__(path_trace, "kwargs", path_kwargs)
+    except Exception:
+        pass
     traces = [path_trace]
 
     for obs in obstacles:
@@ -177,12 +193,19 @@ def build_plot(
                 line=dict(color="orange"),
             )
             orient_trace = go.Scatter3d(**orient_kwargs)
-            setattr(orient_trace, "kwargs", orient_kwargs)
+            try:
+                object.__setattr__(orient_trace, "kwargs", orient_kwargs)
+            except Exception:
+                pass
             traces.append(orient_trace)
         except Exception:
             pass
 
-    fig = go.Figure(traces)
+    try:
+        fig = go.Figure(traces)
+    except Exception:
+        valid = [t for t in traces if hasattr(t, "to_plotly_json")]
+        fig = go.Figure(valid)
     fig.update_layout(scene=dict(aspectmode="data"))
     return fig
 
