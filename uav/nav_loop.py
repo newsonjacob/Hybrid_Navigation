@@ -35,7 +35,7 @@ from uav import config
 from uav.logging_helpers import log_frame_data, write_video_frame, write_frame_output, handle_reset
 from uav.context import ParamRefs, NavContext
 from uav.perception_loop import perception_loop, start_perception_thread, process_perception_data
-from uav.navigation_core import detect_obstacle, determine_side_safety, handle_obstacle, navigation_step, apply_navigation_decision
+from uav.navigation_core import detect_obstacle, determine_side_safety, handle_obstacle, navigation_step
 from uav.navigation_slam_boot import run_slam_bootstrap
 from uav.paths import STOP_FLAG_PATH
 from uav.slam_utils import (is_slam_stable, generate_pose_comparison_plot,)
@@ -212,7 +212,7 @@ def update_navigation_state(client, args, ctx, data, frame_count, time_now, max_
         in_grace,
     ) = processed
     prev_state = ctx.param_refs.state[0]
-    nav_decision = apply_navigation_decision(
+    nav_decision = navigation_step(
         client,
         ctx.navigator,
         ctx.flow_history,
@@ -225,8 +225,6 @@ def update_navigation_state(client, args, ctx, data, frame_count, time_now, max_
         delta_L,
         delta_C,
         delta_R,
-        probe_mag,
-        probe_count,
         left_count,
         center_count,
         right_count,
@@ -238,6 +236,8 @@ def update_navigation_state(client, args, ctx, data, frame_count, time_now, max_
         ctx.state_history,
         ctx.pos_history,
         ctx.param_refs,
+        probe_mag=probe_mag,
+        probe_count=probe_count,
     )
     return processed, nav_decision
 

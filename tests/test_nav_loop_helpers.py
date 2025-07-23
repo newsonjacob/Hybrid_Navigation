@@ -18,7 +18,6 @@ def test_helper_functions_exist(monkeypatch):
         'update_navigation_state',
         'log_and_record_frame',
         'process_perception_data',
-        'apply_navigation_decision',
         'write_frame_output',
         'handle_reset',
         'shutdown_threads',
