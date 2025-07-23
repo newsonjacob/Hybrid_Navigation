@@ -10,6 +10,7 @@ import sys
 from datetime import datetime
 from queue import Queue
 from threading import Thread
+from pathlib import Path
 
 # === AirSim Imports ===
 import airsim
@@ -240,7 +241,9 @@ def update_navigation_state(client, args, ctx, data, frame_count, time_now, max_
     )
     return processed, nav_decision
 
-
+# === Logging and Frame Recording ===
+# This function logs the processed frame data, overlays telemetry information,
+# and writes the frame to the video output queue.
 def log_and_record_frame(
     client,
     ctx,
@@ -332,6 +335,9 @@ def log_and_record_frame(
         minimum_flow,
     )
 
+# === Main Navigation Loop ===
+# This function runs the main navigation loop for Reactive Navigation, processing perception data
+# and making navigation decisions based on the UAV's state and environment.
 def navigation_loop(args, client, ctx):
     """Run the reactive navigation cycle.
 
@@ -393,6 +399,9 @@ def navigation_loop(args, client, ctx):
             )
     except KeyboardInterrupt:
         logger.info("Interrupted.")
+    finally:
+        logger.info("Navigation loop complete.")
+
 
 def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
     """SLAM-based navigation loop with basic obstacle avoidance.
@@ -640,6 +649,8 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
         generate_pose_comparison_plot()
     return last_action # Return the last action taken
 
+# === SLAM to AirSim Coordinate Transformation ===
+# This function transforms a SLAM pose matrix to the AirSim coordinate system.
 def transform_slam_to_airsim(slam_pose_matrix):
     """Transform SLAM pose matrix to AirSim coordinate system."""
     
@@ -677,6 +688,8 @@ def transform_slam_to_airsim(slam_pose_matrix):
     
     return transformed_pose, (x_airsim, y_airsim, z_airsim)
 
+# === Thread Management ===
+# This section handles the shutdown of worker threads and ensures they exit cleanly.
 def shutdown_threads(ctx):
     """Stop worker threads and wait for them to exit."""
     if ctx is None:
@@ -701,7 +714,8 @@ def shutdown_threads(ctx):
             except Exception:
                 pass
 
-
+# === Logging ===
+# This section handles the logging of flight data, video frames, and cleanup of log files.
 def close_logging(ctx):
     """Flush buffered log/video data and close file handles."""
     if ctx is None:
@@ -738,77 +752,220 @@ def shutdown_airsim(client):
     except Exception as exc:
         logger.error("Landing error: %s", exc)
 
-
-def finalize_files(ctx):
+# === Finalization and Cleanup ===
+# This section handles the finalization of flight analysis, cleanup of generated files, 
+# and removal of stop flags.
+def finalise_files(ctx):
     """Generate flight analysis and clean up generated files."""
     if ctx is None:
+        logger.warning("No context provided for finalization.")
         return
 
     timestamp = getattr(ctx, "timestamp", None)
-    if timestamp:
+    if not timestamp:
+        logger.warning("No timestamp found - skipping file finalization")
+        return
+
+    logger.info(f"🎯 Starting post-flight analysis for timestamp: {timestamp}")
+    
+    try:
+        log_csv = f"flow_logs/full_log_{timestamp}.csv"
+        
+        # Check if log file exists and has data
+        if not os.path.exists(log_csv):
+            logger.error(f"Log file not found: {log_csv}")
+            return
+            
+        # Check log file size
+        file_size = os.path.getsize(log_csv)
+        if file_size < 100:  # Less than 100 bytes probably means empty/corrupt
+            logger.warning(f"Log file appears empty or corrupt: {log_csv} ({file_size} bytes)")
+            return
+        
+        logger.info(f"Processing log file: {log_csv} ({file_size} bytes)")
+        
+        # Ensure analysis directory exists
+        os.makedirs("analysis", exist_ok=True)
+        
+        # Generate flight visualization
         try:
-            log_csv = f"flow_logs/full_log_{timestamp}.csv"
             html_output = f"analysis/flight_view_{timestamp}.html"
-            subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "analysis.visualise_flight",
-                    html_output,
-                    "--log",
-                    log_csv,
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
+            logger.info(f"Generating flight visualization: {html_output}")
+            
+            # Method 1: Direct function call (avoids subprocess issues)
+            try:
+                # Add analysis directory to path temporarily
+                import sys
+                analysis_path = os.path.abspath('analysis')
+                if analysis_path not in sys.path:
+                    sys.path.insert(0, analysis_path)
+                
+                # Import and call visualization function
+                from visualise_flight import main as visualize_main
+                visualize_main([html_output, "--log", log_csv])
+                logger.info(f"✅ Flight visualization saved: {html_output}")
+                
+                # Remove from path
+                if analysis_path in sys.path:
+                    sys.path.remove(analysis_path)
+                    
+            except Exception as direct_error:
+                logger.warning(f"Direct call failed: {direct_error}")
+                
+                # Method 2: Subprocess fallback
+                try:
+                    visualization_script = os.path.abspath("analysis/visualise_flight.py")
+                    result = subprocess.run(
+                        [
+                            sys.executable,
+                            visualization_script,
+                            html_output,
+                            "--log", 
+                            log_csv
+                        ],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                        cwd=os.getcwd(),
+                        timeout=60  # 60 second timeout
+                    )
+                    
+                    if result.stdout.strip():
+                        logger.info(f"Visualization output: {result.stdout.strip()}")
+                    
+                    logger.info(f"✅ Flight visualization saved via subprocess: {html_output}")
+                    
+                except subprocess.CalledProcessError as proc_error:
+                    logger.error(f"Subprocess visualization failed: {proc_error.stderr}")
+                except subprocess.TimeoutExpired:
+                    logger.error("Visualization generation timed out")
+                except Exception as subprocess_error:
+                    logger.error(f"Subprocess method failed: {subprocess_error}")
 
+        except Exception as viz_error:
+            logger.error(f"Flight visualization generation failed: {viz_error}")
+
+        # Generate performance plots
+        try:
+            perf_output = f"analysis/performance_{timestamp}.html"
+            logger.info(f"Generating performance plots: {perf_output}")
+            
+            # Direct function call for performance plots
+            try:
+                analysis_path = os.path.abspath('analysis')
+                if analysis_path not in sys.path:
+                    sys.path.insert(0, analysis_path)
+                    
+                from performance_plots import main as perf_main
+                perf_main([log_csv, "--output", perf_output])
+                logger.info(f"✅ Performance plots saved: {perf_output}")
+                
+                if analysis_path in sys.path:
+                    sys.path.remove(analysis_path)
+                    
+            except Exception as perf_error:
+                logger.warning(f"Performance plots generation failed: {perf_error}")
+
+        except Exception as perf_outer_error:
+            logger.error(f"Performance analysis failed: {perf_outer_error}")
+
+        # Generate flight report (if analyse module exists)
+        try:
             report_path = f"analysis/flight_report_{timestamp}.html"
-            subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "analysis.analyze",
-                    log_csv,
-                    "-o",
-                    report_path,
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
+            analyse_script = os.path.abspath("analysis/analyse.py")
+            
+            if os.path.exists(analyse_script):
+                logger.info(f"Generating flight report: {report_path}")
+                
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        analyse_script,
+                        log_csv,
+                        "-o",
+                        report_path,
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    cwd=os.getcwd(),
+                    timeout=30
+                )
+                logger.info(f"✅ Flight report saved: {report_path}")
+            else:
+                logger.info("analyse.py not found - skipping flight report")
+                
+        except subprocess.CalledProcessError as report_error:
+            logger.warning(f"Flight report generation failed: {report_error.stderr}")
+        except Exception as report_outer_error:
+            logger.info(f"Flight report generation skipped: {report_outer_error}")
 
+        # Generate SLAM comparison plot (if available)
+        try:
             from uav import slam_utils
             slam_utils.generate_pose_comparison_plot()
+            logger.info("✅ SLAM pose comparison plot generated")
+        except Exception as slam_error:
+            logger.info(f"SLAM plot generation skipped: {slam_error}")
 
-            logger.info("Flight analysis saved to %s and %s", html_output, report_path)
-        except subprocess.CalledProcessError as exc:
-            logger.error("Error generating flight analysis: %s", exc.stderr)
-        except Exception as exc:
-            logger.error("Error generating flight analysis: %s", exc)
+        # Summary of generated files
+        generated_files = []
+        for file_pattern in [
+            f"analysis/flight_view_{timestamp}.html",
+            f"analysis/performance_{timestamp}.html", 
+            f"analysis/flight_report_{timestamp}.html"
+        ]:
+            if os.path.exists(file_pattern):
+                generated_files.append(file_pattern)
+        
+        if generated_files:
+            logger.info(f"🎯 Analysis complete! Generated files:")
+            for file_path in generated_files:
+                file_size = os.path.getsize(file_path)
+                logger.info(f"  📊 {file_path} ({file_size} bytes)")
+        else:
+            logger.warning("No analysis files were successfully generated")
 
+    except Exception as outer_error:
+        logger.error(f"Unexpected error in finalise_files: {outer_error}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+
+    # Clean up files
     try:
+        from uav.utils import retain_recent_views
         retain_recent_views("analysis", 5)
-    except Exception as exc:
-        logger.error("Error retaining recent views: %s", exc)
+        logger.info("✅ Old analysis files cleaned up")
+    except Exception as cleanup_error:
+        logger.error(f"Error retaining recent views: {cleanup_error}")
 
+    # Remove stop flag
     try:
+        from uav.paths import STOP_FLAG_PATH
         if os.path.exists(STOP_FLAG_PATH):
             os.remove(STOP_FLAG_PATH)
-            logger.info("Removed stop flag file.")
-    except Exception as exc:
-        logger.error("Error removing stop flag file: %s", exc)
+            logger.info("✅ Stop flag file removed")
+    except Exception as flag_error:
+        logger.error(f"Error removing stop flag file: {flag_error}")
 
+    logger.info("🏁 Post-flight analysis finalization complete")
 
 def cleanup(client, sim_process, ctx):
     """Clean up resources and land the drone."""
     logger.info("Landing...")
 
+    # Step 1: Shutdown threads and close logging
     shutdown_threads(ctx)
     close_logging(ctx)
-    shutdown_airsim(client)
-    finalize_files(ctx)
 
+    # Step 2: Generate analysis files after log file is closed
+    logger.info("Finalizing flight analysis and cleanup.")
+    finalise_files(ctx)
+
+    # Step 3: Shutdown AirSim client
+    shutdown_airsim(client)
+    
+    # Step 4: Close simulation
     if sim_process:
         sim_process.terminate()
         try:
@@ -816,4 +973,6 @@ def cleanup(client, sim_process, ctx):
         except Exception:
             sim_process.kill()
         logger.info("UE4 simulation closed.")
+    
+    logger.info("Cleanup complete. Exiting navigation loop.")
 

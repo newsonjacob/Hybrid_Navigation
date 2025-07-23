@@ -214,7 +214,7 @@ setup_logging("run.log")  # also prints to stdout
 - 3D trajectory plots are saved in `analysis/` as interactive `.html` files
 - Runtime messages are configured via `uav.logging_config.setup_logging` using the standard `logging` module
 - SLAM pose and feature debugging is printed to stdout and stored in `logs/`
-- Generate HTML summaries with `analyze-flight LOG.csv`
+- Generate HTML summaries with `analyse-flight LOG.csv`
 - Run `python -m slam_bridge.slam_plotter` to record SLAM poses and generate a trajectory HTML file
 - Visualise a flight path with `python -m analysis.visualise_flight OUTPUT.html --log LOG.csv --obstacles OBSTACLES.json`
 - Plot CPU and memory usage with `python -m analysis.performance_plots LOG.csv -o OUT.html`

@@ -3,7 +3,7 @@ import sys
 import pandas as pd
 
 
-def test_analyze_cli_produces_html(tmp_path):
+def test_analyse_cli_produces_html(tmp_path):
     df = pd.DataFrame({
         "pos_x": [0, 1, 2],
         "pos_y": [0, 0, 0],
@@ -22,7 +22,7 @@ def test_analyze_cli_produces_html(tmp_path):
     out_path = tmp_path / "view.html"
 
     result = subprocess.run(
-        [sys.executable, "-m", "analysis.analyze", str(log_path), "-o", str(out_path)],
+        [sys.executable, "-m", "analysis.analyse", str(log_path), "-o", str(out_path)],
         capture_output=True,
         text=True,
     )

@@ -1,20 +1,31 @@
 import argparse
 from pathlib import Path
-from typing import List, Union  # Add Union import
+from typing import List, Union
+import sys
+import os
 
 import numpy as np
 import pandas as pd
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 
-from .flight_review import parse_log
-from .visualise_flight import build_plot
-
+try:
+    from .flight_review import parse_log
+    from .visualise_flight import build_plot
+except ImportError:
+    # Handle case where relative imports fail (e.g., running as script)
+    try:
+        from flight_review import parse_log
+        from visualise_flight import build_plot
+    except ImportError as e:
+        print(f"Error importing required modules: {e}")
+        sys.exit(1)
 
 def analyse_logs(log_paths: List[str], output: str) -> None:
     """Parse ``log_paths`` and write an interactive HTML report."""
     dfs = []
     stats = []
+
     for p in log_paths:
         stats.append(parse_log(p))
         dfs.append(pd.read_csv(p))
@@ -65,7 +76,7 @@ def analyse_logs(log_paths: List[str], output: str) -> None:
 
 
 def parse_args(argv: Union[List[str], None] = None) -> argparse.Namespace:  # Change | to Union
-    parser = argparse.ArgumentParser(description="Analyze flight logs")
+    parser = argparse.ArgumentParser(description="Analyse flight logs")
     parser.add_argument("logs", nargs="+", help="CSV log files")
     parser.add_argument("-o", "--output", default="analysis/flight_view.html", help="Output HTML file")
     return parser.parse_args(argv)

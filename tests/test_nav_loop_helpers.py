@@ -24,7 +24,7 @@ def test_helper_functions_exist(monkeypatch):
         'shutdown_threads',
         'close_logging',
         'shutdown_airsim',
-        'finalize_files',
+        'finalise_files',
         'cleanup',
         'detect_obstacle',
         'determine_side_safety',
