@@ -38,7 +38,11 @@ from uav.perception_loop import perception_loop, start_perception_thread, proces
 from uav.navigation_core import detect_obstacle, determine_side_safety, handle_obstacle, navigation_step
 from uav.navigation_slam_boot import run_slam_bootstrap
 from uav.paths import STOP_FLAG_PATH
-from uav.slam_utils import (is_slam_stable, generate_pose_comparison_plot,)
+from uav.slam_utils import (
+    is_slam_stable,
+    generate_pose_comparison_plot,
+    is_obstacle_ahead,
+)
 
 logger = logging.getLogger("nav_loop")
 
@@ -484,164 +488,42 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
     logger.info("[DEBUG] Entered slam_navigation_loop")
     try:
         while True:
-            # --- Check for exit_flag to allow GUI stop button to interrupt navigation ---
-            if (exit_flag is not None and exit_flag.is_set()) or os.path.exists(STOP_FLAG_PATH):
-                logger.info("[SLAMNav] Stop flag detected. Landing and exiting navigation loop.")
+            if check_slam_stop(exit_flag, start_time, max_duration):
+                if ctx is not None and getattr(ctx, "param_refs", None):
+                    ctx.param_refs.state[0] = "landing"
                 break
 
-            # --- Get the latest SLAM pose ---
-            # If SLAM is unstable, reinitialise it
-            # This is a basic stability check that can be improved.
-            # Need to ensure that this check is continuously performed during the waypoint navigation. 
-            if pose_source == "airsim" and hasattr(client, "simGetVehiclePose"):
-                air_pose = client.simGetVehiclePose("UAV")
-                pos = air_pose.position
-                yaw = airsim.to_eularian_angles(air_pose.orientation)[2]
-                cy, sy = np.cos(yaw), np.sin(yaw)
-                transformed_pose = np.array(
-                    [
-                        [cy, -sy, 0, pos.x_val],
-                        [sy, cy, 0, pos.y_val],
-                        [0, 0, 1, pos.z_val],
-                    ]
-                )
-                x, y, z = pos.x_val, pos.y_val, pos.z_val
-            else:
-                pose = get_latest_pose_matrix()
-
-                # Check if the pose is None or SLAM is unstable
-                if pose is None or not is_slam_stable(cov_thres, inlier_thres):
-                    logger.warning(
-                        "[SLAMNav] SLAM tracking lost. Attempting reinitialisation."
-                    )
-                    while True:
-
-                        # Run SLAM bootstrap to reinitialise the SLAM system
-                        if ctx is not None and getattr(ctx, "param_refs", None):
-                            ctx.param_refs.state[0] = "bootstrap"
-                        run_slam_bootstrap(client, duration=4.0)
-                        time.sleep(1.0)
-                        pose = get_latest_pose_matrix()
-
-                        # Check if SLAM is stable after reinitialisation
-                        if pose is not None and is_slam_stable(cov_thres, inlier_thres):
-                            logger.info(
-                                "[SLAMNav] SLAM reinitialised. Resuming navigation."
-                            )
-
-                            # Reset the waypoint index to start from the first waypoint
-                            if ctx is not None and getattr(ctx, "param_refs", None):
-                                ctx.param_refs.state[0] = "waypoint_nav"
-                            break
-
-                        # Check for exit conditions during reinitialisation
-                        if (exit_flag is not None and exit_flag.is_set()) or os.path.exists(
-                            STOP_FLAG_PATH
-                        ):
-                            logger.info(
-                                "[SLAMNav] Exit signal during reinitialisation."
-                            )
-                            return last_action
-                    continue
-
-                # --- Transform SLAM pose to AirSim coordinates ---
-                transformed_pose, (x, y, z) = transform_slam_to_airsim(pose)
-
-                # Original position for debugging
-                x_slam, y_slam, z_slam = pose[0][3], pose[1][3], pose[2][3]
-
-                if hasattr(client, "simGetVehiclePose"):
-                    airsim_pose = client.simGetVehiclePose("UAV")
-                    airsim_pos = airsim_pose.position
-
-                    # Debug coordinate alignment
-                    logger.debug("SLAM pose: (%.2f, %.2f, %.2f)", x_slam, y_slam, z_slam)
-                    logger.debug(
-                        "AirSim pose: (%.2f, %.2f, %.2f)",
-                        airsim_pos.x_val,
-                        airsim_pos.y_val,
-                        airsim_pos.z_val,
-                    )
-                    logger.debug("Transformed: (%.2f, %.2f, %.2f)", x, y, z)
-
-                    # Calculate differences to see alignment
-                    diff_x = x - airsim_pos.x_val
-                    diff_y = y - airsim_pos.y_val
-                    diff_z = z - airsim_pos.z_val
-                    logger.debug(
-                        "Differences: (%.2f, %.2f, %.2f)", diff_x, diff_y, diff_z
-                    )
-            
-            # Detect exploration frontiers from accumulated SLAM poses
-            history = get_pose_history()
-            map_pts = np.array(
-                [[m[0][3], m[1][3], m[2][3]] for _, m in history], dtype=float
+            pose_data = ensure_stable_slam_pose(
+                client,
+                pose_source,
+                cov_thres,
+                inlier_thres,
+                exit_flag,
+                start_time,
+                max_duration,
+                ctx,
             )
+            if pose_data[0] is None:
+                break
+            transformed_pose, (x, y, z) = pose_data
+
+            history = get_pose_history()
+            map_pts = np.array([[m[0][3], m[1][3], m[2][3]] for _, m in history], dtype=float)
             frontiers = detect_frontiers(map_pts)
-            # if frontiers.size:
-            #     logger.debug("[SLAMNav] Frontier voxels detected: %d", len(frontiers))
-            #     logger.debug("[SLAMNav] Sample frontier: x=%.2f y=%.2f z=%.2f",
-            #         frontiers[0][0],
-            #         frontiers[0][1],
-            #         frontiers[0][2],
-            #     )
 
-            # Check for collision/obstacle
-            # collision = client.simGetCollisionInfo()
-            # if getattr(collision, "has_collided", False):
-            #     logger.warning("[SLAMNav] Obstacle detected! Executing avoidance maneuver.")
-            #     client.moveByVelocityAsync(-1.0, 0, 0, 1).join()  # Back up
-            #     continue
-
-            # --- Get the current waypoint (goal) ---
-            goal_x, goal_y, goal_z = waypoints[current_waypoint_index]
+            (goal_x, goal_y, goal_z), current_waypoint_index, dist = handle_waypoint_progress(
+                x, y, waypoints, current_waypoint_index, threshold
+            )
             if ctx is not None and getattr(ctx, "param_refs", None):
                 ctx.param_refs.state[0] = f"waypoint_{current_waypoint_index + 1}"
-            logger.info(f"[SLAMNav] Current waypoint: {current_waypoint_index + 1} at ({goal_x}, {goal_y}, {goal_z})")
+            logger.info(
+                f"[SLAMNav] Current waypoint: {current_waypoint_index + 1} at ({goal_x}, {goal_y}, {goal_z})"
+            )
+            logger.info(f"Distance to waypoint: {dist:.2f} meters")
 
-            # --- Calculate the distance to the current waypoint ---
-            distance_to_goal = np.sqrt((x - goal_x)**2 + (y - goal_y)**2)
-            
-            logger.info(f"Distance to waypoint: {distance_to_goal:.2f} meters")
-
-            # --- If the drone is within the threshold of the waypoint, move to the next waypoint ---
-            if distance_to_goal < threshold:  # Threshold for reaching waypoint
-                logger.info(f"Reached waypoint {current_waypoint_index + 1}, moving to next waypoint.")
-                current_waypoint_index = (current_waypoint_index + 1) % len(waypoints)  # Move to next waypoint
-
-            # --- Use transformed pose for navigation ---
-            # Pass the transformed pose instead of the original
             last_action = navigator.slam_to_goal(transformed_pose, (goal_x, goal_y, goal_z))
-            # logger.info("[SLAMNav] Action: %s", last_action)
-        
-            # --- Check if the stop flag is set ---
-            if os.path.exists(STOP_FLAG_PATH):
-                logger.info("Stop flag detected. Landing and shutting down.")
-                if ctx is not None and getattr(ctx, "param_refs", None):
-                    ctx.param_refs.state[0] = "landing"
-                break
 
-            # End condition
-            if time.time() - start_time > max_duration:
-                logger.info("[SLAMNav] Max duration reached, ending navigation.")
-                if ctx is not None and getattr(ctx, "param_refs", None):
-                    ctx.param_refs.state[0] = "landing"
-                break
-
-            # # Depth-based obstacle check before moving toward the goal # Depth check optional
-            # ahead, depth = is_obstacle_ahead(client)
-            # if ahead:
-            #     msg = "[SLAMNav] Depth obstacle detected"
-            #     if depth is not None:
-            #         msg += f" at {depth:.2f}m"
-            #     logger.warning(msg)
-            #     if navigator is not None:
-            #         navigator.dodge(0, 0, 0, direction="right")
-            #     else:
-            #         client.hoverAsync().join()
-            #     continue
-
-            time.sleep(0.1)  # Allow for periodic updates
+            time.sleep(0.1)
     except KeyboardInterrupt:
         logger.info("[SLAMNav] Interrupted by user.")
     finally:
@@ -687,6 +569,73 @@ def transform_slam_to_airsim(slam_pose_matrix):
     transformed_pose[2, 3] = z_airsim
     
     return transformed_pose, (x_airsim, y_airsim, z_airsim)
+
+# === SLAM Navigation Helpers ===
+
+def check_slam_stop(exit_flag, start_time, max_duration):
+    """Return ``True`` when the SLAM loop should terminate."""
+    if exit_flag is not None and exit_flag.is_set():
+        return True
+    if os.path.exists(STOP_FLAG_PATH):
+        return True
+    if time.time() - start_time > max_duration:
+        return True
+    return False
+
+
+def ensure_stable_slam_pose(
+    client,
+    pose_source,
+    cov_thres,
+    inlier_thres,
+    exit_flag,
+    start_time,
+    max_duration,
+    ctx=None,
+):
+    """Return a stable SLAM pose transformed to AirSim coordinates."""
+    from slam_bridge.slam_receiver import get_latest_pose_matrix
+
+    if pose_source == "airsim" and hasattr(client, "simGetVehiclePose"):
+        air_pose = client.simGetVehiclePose("UAV")
+        pos = air_pose.position
+        yaw = airsim.to_eularian_angles(air_pose.orientation)[2]
+        cy, sy = np.cos(yaw), np.sin(yaw)
+        transformed_pose = np.array(
+            [[cy, -sy, 0, pos.x_val], [sy, cy, 0, pos.y_val], [0, 0, 1, pos.z_val]]
+        )
+        return transformed_pose, (pos.x_val, pos.y_val, pos.z_val)
+
+    pose = get_latest_pose_matrix()
+    if pose is None or not is_slam_stable(cov_thres, inlier_thres):
+        logger.warning("[SLAMNav] SLAM tracking lost. Attempting reinitialisation.")
+    while pose is None or not is_slam_stable(cov_thres, inlier_thres):
+        if ctx is not None and getattr(ctx, "param_refs", None):
+            ctx.param_refs.state[0] = "bootstrap"
+        run_slam_bootstrap(client, duration=4.0)
+        time.sleep(1.0)
+        if check_slam_stop(exit_flag, start_time, max_duration):
+            logger.info("[SLAMNav] Exit signal during reinitialisation.")
+            return None, (None, None, None)
+        pose = get_latest_pose_matrix()
+
+    if ctx is not None and getattr(ctx, "param_refs", None):
+        ctx.param_refs.state[0] = "waypoint_nav"
+
+    return transform_slam_to_airsim(pose)
+
+
+def handle_waypoint_progress(x, y, waypoints, current_index, threshold=0.5):
+    """Return updated waypoint index and goal after checking progress."""
+    goal_x, goal_y, goal_z = waypoints[current_index]
+    distance = np.sqrt((x - goal_x) ** 2 + (y - goal_y) ** 2)
+    if distance < threshold:
+        logger.info(
+            f"Reached waypoint {current_index + 1}, moving to next waypoint."
+        )
+        current_index = (current_index + 1) % len(waypoints)
+        goal_x, goal_y, goal_z = waypoints[current_index]
+    return (goal_x, goal_y, goal_z), current_index, distance
 
 # === Thread Management ===
 # This section handles the shutdown of worker threads and ensures they exit cleanly.
