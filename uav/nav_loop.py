@@ -154,7 +154,7 @@ def check_exit_conditions(client, ctx, time_now, max_duration, goal_x, goal_y):
         logger.info("Time limit reached — landing and stopping.")
         return True
     pos_goal, _, _ = get_drone_state(client)
-    if abs(pos_goal.x_val - goal_x) < 0.5 and abs(pos_goal.y_val - goal_y) < 0.5:
+    if abs(pos_goal.x_val - goal_x) < config.GOAL_THRESHOLD and abs(pos_goal.y_val - goal_y) < config.GOAL_THRESHOLD:
         logger.info("Goal reached — landing.")
         if getattr(ctx, "param_refs", None):
             ctx.param_refs.state[0] = "landing"
@@ -349,17 +349,20 @@ def navigation_loop(args, client, ctx):
     logging the frame.
     """
     exit_flag = ctx.exit_flag
-
     max_flow_mag = config.MAX_FLOW_MAG
-    max_duration = args.max_duration
-    goal_x = getattr(args, "goal_x", None)
-    if goal_x is None:
-        goal_x = config.GOAL_X
-    goal_y = getattr(args, "goal_y", None)
-    if goal_y is None:
-        goal_y = config.GOAL_Y
+
+    # Initialize frame_count BEFORE the loop
     frame_count = 0
     frame_duration = 1.0 / config.TARGET_FPS
+    
+    # Config primary, CLI override
+    max_duration = args.max_duration if args.max_duration is not None else config.MAX_SIM_DURATION
+    goal_x = args.goal_x if args.goal_x is not None else config.GOAL_X
+    goal_y = args.goal_y if args.goal_y is not None else config.GOAL_Y
+    
+    logger.info(f"[NavLoop] Navigation parameters:")
+    logger.info(f"  Goal: ({goal_x}, {goal_y}) - Source: {'CLI override' if args.goal_x is not None else 'config.py'}")
+    logger.info(f"  Max Duration: {max_duration}s - Source: {'CLI override' if args.max_duration is not None else 'config.py'}")
 
     logger.info("[NavLoop] Starting navigation loop with args: %s", args)
     loop_start = time.time()

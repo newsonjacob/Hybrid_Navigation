@@ -27,7 +27,7 @@ def test_distance_plot_creates_html(tmp_path):
     assert "<html" in out.read_text().lower()
 
 
-def test_analyze_cli(tmp_path):
+def test_analyse_cli(tmp_path):
     df = pd.DataFrame({
         "pos_x": [0, 1],
         "pos_y": [0, 0],
