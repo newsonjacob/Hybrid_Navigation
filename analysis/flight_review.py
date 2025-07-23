@@ -1,7 +1,10 @@
 """Utilities for analyzing individual flight logs."""
 
+from pathlib import Path
+
 import pandas as pd
 import numpy as np
+import plotly.graph_objects as go
 from typing import Dict
 
 
@@ -82,3 +85,48 @@ def align_path(path: np.ndarray, obstacles, *, scale: float = 1.0, marker_name: 
     aligned[:, 1] = marker[1] - p[:, 1] * scale
     aligned[:, 2] = marker[2] + p[:, 2] * scale
     return aligned
+
+
+def plot_state_histogram(stats: Dict, save_path: str) -> None:
+    """Write a bar chart of state occurrences to ``save_path``.
+
+    Parameters
+    ----------
+    stats : dict
+        Output from :func:`parse_log` containing a ``states`` mapping.
+    save_path : str
+        HTML file path to save the plot.
+    """
+
+    states = stats.get("states", {})
+    names = list(states.keys())
+    counts = [states[k] for k in names]
+
+    fig = go.Figure([go.Bar(x=names, y=counts)])
+    fig.update_layout(xaxis_title="State", yaxis_title="Frames")
+
+    out = Path(save_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.write_html(out)
+
+
+def plot_distance_over_time(csv_path: str, save_path: str) -> None:
+    """Plot cumulative distance travelled from a log CSV."""
+
+    df = pd.read_csv(csv_path)
+    if {"pos_x", "pos_y", "pos_z"}.issubset(df.columns):
+        coords = df[["pos_x", "pos_y", "pos_z"]].to_numpy(dtype=float)
+        diffs = np.linalg.norm(np.diff(coords, axis=0), axis=1)
+        cumulative = np.concatenate([[0.0], np.cumsum(diffs)])
+    else:
+        cumulative = np.arange(len(df), dtype=float)
+
+    x = df["time"] if "time" in df.columns else df.index
+    x_title = "Time (s)" if "time" in df.columns else "Frame"
+
+    fig = go.Figure([go.Scatter(x=x, y=cumulative, mode="lines")])
+    fig.update_layout(xaxis_title=x_title, yaxis_title="Distance (m)")
+
+    out = Path(save_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.write_html(out)
