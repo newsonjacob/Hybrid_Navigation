@@ -143,6 +143,9 @@ class Launcher:
         """Terminate all started subprocesses and clean temporary files."""
         self.logger.info("[SHUTDOWN] Initiating shutdown sequence for all subprocesses.")
 
+        # Ensure any running GUI exits when the simulation finishes
+        exit_flag.set()
+
         if exit_flag.is_set() or STOP_FLAG.exists():
             self.logger.info("[SHUTDOWN] Shutdown signal detected. Proceeding with shutdown.")
         else:
