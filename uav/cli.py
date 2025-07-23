@@ -42,4 +42,9 @@ def parse_args():
         help="Minimum inliers for SLAM stability",
     )
     parser.add_argument("--log-timestamp", type=str, help="Timestamp used to sync logging across modules")
+    parser.add_argument(
+        "--output-dir",
+        default=".",
+        help="Directory to store logs and analysis outputs",
+    )
     return parser.parse_args()

@@ -3,6 +3,7 @@
 import logging
 import time
 from datetime import datetime
+from pathlib import Path
 
 import cv2
 
@@ -179,7 +180,10 @@ def handle_reset(client, ctx, frame_count):
     log_file.close()
     ctx.timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     timestamp = ctx.timestamp
-    log_path = f"flow_logs/full_log_{timestamp}.csv"
+    base_dir = Path(getattr(ctx, "output_dir", "."))
+    flow_dir = base_dir / "flow_logs"
+    flow_dir.mkdir(parents=True, exist_ok=True)
+    log_path = flow_dir / f"full_log_{timestamp}.csv"
     with open(log_path, 'w') as new_log:
         new_log.write(
             "frame,flow_left,flow_center,flow_right,"
@@ -193,10 +197,10 @@ def handle_reset(client, ctx, frame_count):
         )
     log_file = open(log_path, 'a')
     ctx.log_file = log_file
-    retain_recent_logs("flow_logs")
-    retain_recent_logs("logs")
-    retain_recent_files("analysis", "slam_traj_*.html", keep=5)
-    retain_recent_files("analysis", "slam_output_*.mp4", keep=5)
+    retain_recent_logs(str(flow_dir))
+    retain_recent_logs(str(base_dir / "logs"))
+    retain_recent_files(str(base_dir / "analysis"), "slam_traj_*.html", keep=5)
+    retain_recent_files(str(base_dir / "analysis"), "slam_output_*.mp4", keep=5)
 
     frame_queue.put(None)
     video_thread.join()

@@ -82,9 +82,11 @@ def setup_environment(args, client):
     start_time = time.time()
     GOAL_X, MAX_SIM_DURATION = args.goal_x, args.max_duration
     logger.info("Config:\n  Goal X: %sm\n  Max Duration: %ss", GOAL_X, MAX_SIM_DURATION)
+    output_base = Path(getattr(args, "output_dir", "."))
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    os.makedirs("flow_logs", exist_ok=True)
-    log_file = open(f"flow_logs/full_log_{timestamp}.csv", 'w')
+    flow_dir = output_base / "flow_logs"
+    flow_dir.mkdir(parents=True, exist_ok=True)
+    log_file = open(flow_dir / f"full_log_{timestamp}.csv", 'w')
     log_file.write(
         "frame,flow_left,flow_center,flow_right,"
         "delta_left,delta_center,delta_right,flow_std,"
@@ -95,10 +97,10 @@ def setup_environment(args, client):
         "time,features,simgetimage_s,decode_s,processing_s,loop_s,cpu_percent,memory_rss,"
         "sudden_rise,center_blocked,combination_flow,minimum_flow\n"
     )
-    retain_recent_logs("flow_logs")
-    retain_recent_logs("logs")
-    retain_recent_files("analysis", "slam_traj_*.html", keep=5)
-    retain_recent_files("analysis", "slam_output_*.mp4", keep=5)
+    retain_recent_logs(str(flow_dir))
+    retain_recent_logs(str(output_base / "logs"))
+    retain_recent_files(str(output_base / "analysis"), "slam_traj_*.html", keep=5)
+    retain_recent_files(str(output_base / "analysis"), "slam_output_*.mp4", keep=5)
     try: fourcc = cv2.VideoWriter_fourcc(*'MJPG')
     except AttributeError: fourcc = cv2.FOURCC(*'MJPG')
     out = cv2.VideoWriter(config.VIDEO_OUTPUT, fourcc, config.VIDEO_FPS, config.VIDEO_SIZE)
@@ -121,6 +123,7 @@ def setup_environment(args, client):
         start_time=start_time,
         fps_list=[],
         fourcc=fourcc,
+        output_dir=str(output_base),
     )
     return ctx
 
@@ -735,7 +738,8 @@ def finalise_files(ctx):
     logger.info(f"🎯 Starting post-flight analysis for timestamp: {timestamp}")
     
     try:
-        log_csv = f"flow_logs/full_log_{timestamp}.csv"
+        base_dir = Path(getattr(ctx, "output_dir", "."))
+        log_csv = base_dir / "flow_logs" / f"full_log_{timestamp}.csv"
         
         # Check if log file exists and has data
         if not os.path.exists(log_csv):
@@ -751,11 +755,12 @@ def finalise_files(ctx):
         logger.info(f"Processing log file: {log_csv} ({file_size} bytes)")
         
         # Ensure analysis directory exists
-        os.makedirs("analysis", exist_ok=True)
+        analysis_dir = base_dir / "analysis"
+        analysis_dir.mkdir(parents=True, exist_ok=True)
         
         # Generate flight visualization via subprocess for testability
         try:
-            html_output = f"analysis/flight_view_{timestamp}.html"
+            html_output = str(analysis_dir / f"flight_view_{timestamp}.html")
             logger.info(f"Generating flight visualization: {html_output}")
 
             visualization_script = os.path.abspath("analysis/visualise_flight.py")
@@ -765,7 +770,7 @@ def finalise_files(ctx):
                     visualization_script,
                     html_output,
                     "--log",
-                    log_csv,
+                    str(log_csv),
                 ],
                 check=True,
             )
@@ -778,7 +783,7 @@ def finalise_files(ctx):
 
         # Generate performance plots via subprocess
         try:
-            perf_output = f"analysis/performance_{timestamp}.html"
+            perf_output = str(analysis_dir / f"performance_{timestamp}.html")
             logger.info(f"Generating performance plots: {perf_output}")
 
             perf_script = os.path.abspath("analysis/performance_plots.py")
@@ -786,7 +791,7 @@ def finalise_files(ctx):
                 [
                     sys.executable,
                     perf_script,
-                    log_csv,
+                    str(log_csv),
                     "--output",
                     perf_output,
                 ],
@@ -801,7 +806,7 @@ def finalise_files(ctx):
 
         # Generate flight report (if analyse module exists)
         try:
-            report_path = f"analysis/flight_report_{timestamp}.html"
+            report_path = str(analysis_dir / f"flight_report_{timestamp}.html")
             analyse_script = os.path.abspath("analysis/analyse.py")
             
             if os.path.exists(analyse_script):
@@ -811,7 +816,7 @@ def finalise_files(ctx):
                     [
                         sys.executable,
                         analyse_script,
-                        log_csv,
+                        str(log_csv),
                         "-o",
                         report_path,
                     ],
@@ -841,9 +846,9 @@ def finalise_files(ctx):
         # Summary of generated files
         generated_files = []
         for file_pattern in [
-            f"analysis/flight_view_{timestamp}.html",
-            f"analysis/performance_{timestamp}.html", 
-            f"analysis/flight_report_{timestamp}.html"
+            analysis_dir / f"flight_view_{timestamp}.html",
+            analysis_dir / f"performance_{timestamp}.html",
+            analysis_dir / f"flight_report_{timestamp}.html"
         ]:
             if os.path.exists(file_pattern):
                 generated_files.append(file_pattern)
@@ -864,7 +869,7 @@ def finalise_files(ctx):
     # Clean up files
     try:
         from uav.utils import retain_recent_views
-        retain_recent_views("analysis", 5)
+        retain_recent_views(str(analysis_dir), 5)
         logger.info("✅ Old analysis files cleaned up")
     except Exception as cleanup_error:
         logger.error(f"Error retaining recent views: {cleanup_error}")
