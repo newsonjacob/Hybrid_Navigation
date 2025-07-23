@@ -270,3 +270,84 @@ def test_slam_bootstrap_runs_when_tracking_lost(monkeypatch):
     nl.slam_navigation_loop(args, client, ctx, pose_source=args.slam_pose_source)
 
     assert boot_mock.call_count >= 2
+
+def test_slam_loop_exits_at_goal(monkeypatch, caplog):
+    airsim_stub = types.SimpleNamespace(
+        ImageRequest=object,
+        ImageType=object,
+        DrivetrainType=types.SimpleNamespace(ForwardOnly=1),
+        YawMode=lambda *a, **k: None,
+    )
+    monkeypatch.setitem(sys.modules, 'airsim', airsim_stub)
+    nl = importlib.import_module('uav.nav_loop')
+    importlib.reload(nl)
+
+    import slam_bridge.slam_receiver as sr
+    import slam_bridge.frontier_detection as fd
+    # Pose that transforms to the final waypoint (45,0,-2)
+    final_pose = [[1, 0, 0, 0.0], [0, 1, 0, 2.0], [0, 0, 1, 45.0]]
+    monkeypatch.setattr(sr, 'get_latest_pose_matrix', lambda: final_pose)
+    monkeypatch.setattr(sr, 'get_pose_history', lambda: [])
+    monkeypatch.setattr(fd, 'detect_frontiers', lambda m: nl.np.empty((0, 3)))
+    monkeypatch.setattr(nl, 'is_obstacle_ahead', lambda *a, **k: (False, None))
+    monkeypatch.setattr(nl, 'is_slam_stable', lambda *a, **k: True)
+    monkeypatch.setattr(nl.os.path, 'exists', lambda p: False)
+    monkeypatch.setattr(nl.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(nl, 'run_slam_bootstrap', lambda *a, **k: None)
+
+    # Patch waypoint list in function constants to contain only the final goal
+    code = nl.slam_navigation_loop.__code__
+    consts = list(code.co_consts)
+    for i, c in enumerate(consts):
+        if isinstance(c, tuple) and c and isinstance(c[0], tuple) and (45, 0, -2) in c:
+            consts[i] = ((45, 0, -2),)
+            break
+    nl.slam_navigation_loop = types.FunctionType(
+        code.replace(co_consts=tuple(consts)),
+        nl.slam_navigation_loop.__globals__,
+        nl.slam_navigation_loop.__name__,
+        nl.slam_navigation_loop.__defaults__,
+        nl.slam_navigation_loop.__closure__,
+    )
+
+    dummy_future = types.SimpleNamespace(join=lambda *a, **k: None)
+    client = types.SimpleNamespace(
+        simGetCollisionInfo=lambda: types.SimpleNamespace(has_collided=False),
+        moveByVelocityAsync=lambda *a, **k: dummy_future,
+        moveToPositionAsync=lambda *a, **k: dummy_future,
+        hoverAsync=lambda *a, **k: dummy_future,
+        landAsync=lambda *a, **k: dummy_future,
+    )
+
+    navigator = nl.Navigator(client)
+    slam_mock = mock.MagicMock(return_value='slam_nav')
+    monkeypatch.setattr(navigator, 'slam_to_goal', slam_mock)
+
+    ctx = NavContext(
+        exit_flag=None,
+        param_refs=types.SimpleNamespace(state=[None]),
+        tracker=None,
+        flow_history=None,
+        navigator=navigator,
+        state_history=deque(),
+        pos_history=deque(),
+        frame_queue=None,
+        video_thread=None,
+        out=None,
+        log_file=None,
+        log_buffer=[],
+        timestamp="",
+        start_time=0.0,
+        fps_list=[],
+        fourcc=None,
+    )
+
+    args = types.SimpleNamespace(max_duration=5, goal_x=45.0, goal_y=0.0, goal_z=-2.0, slam_pose_source='slam')
+
+    with caplog.at_level(nl.logging.INFO):
+        result = nl.slam_navigation_loop(args, client, ctx, pose_source=args.slam_pose_source)
+
+    assert result == 'none'
+    assert slam_mock.call_count == 0
+    assert ctx.param_refs.state[0] == 'landing'
+    assert any('Goal reached — landing.' in r.message for r in caplog.records)
