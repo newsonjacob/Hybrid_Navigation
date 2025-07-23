@@ -149,6 +149,7 @@ The `hybrid-nav` entry point exposes several options:
 | `--settings-path PATH` | Path to the AirSim `settings.json` file (default from `config.ini`) |
 | `--config FILE` | Path to configuration file (default: `config.ini`) |
 | `--goal-x INT` | Distance from start to goal on the X axis |
+| `--goal-y INT` | Distance from start to goal on the Y axis |
 | `--max-duration INT` | Maximum simulation duration in seconds |
 | `--nav-mode {slam, reactive}` | Navigation mode to run |
 | `--slam-server-host HOST` | SLAM server IP or hostname |

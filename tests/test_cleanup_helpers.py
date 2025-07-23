@@ -3,7 +3,7 @@ import sys
 import types
 import queue
 import io
-import types
+from pathlib import Path
 
 import pytest
 
@@ -99,10 +99,13 @@ def test_finalise_files(monkeypatch, tmp_path):
     monkeypatch.setattr('uav.slam_utils.generate_pose_comparison_plot', lambda: calls.append('pose_plot'))
     nl.STOP_FLAG_PATH = tmp_path/'stop.flag'
     nl.STOP_FLAG_PATH.write_text('1')
+    log_dir = Path('flow_logs')
+    log_dir.mkdir(exist_ok=True)
+    (log_dir / 'full_log_1234.csv').write_text('dummy')
     ctx = types.SimpleNamespace(timestamp='1234')
     nl.finalise_files(ctx)
-    assert any('analysis.visualise_flight' in ' '.join(c) for c in calls)
-    assert any('analysis.analyse' in ' '.join(c) for c in calls)
+    assert any('analysis/visualise_flight.py' in ' '.join(c) for c in calls)
+    assert any('analysis/analyse.py' in ' '.join(c) for c in calls)
     assert 'pose_plot' in calls
     assert not nl.STOP_FLAG_PATH.exists()
 
@@ -117,6 +120,9 @@ def test_finalise_files_calledprocesserror(monkeypatch, tmp_path, caplog):
     monkeypatch.setattr('uav.slam_utils.generate_pose_comparison_plot', lambda: None)
 
     nl.STOP_FLAG_PATH = tmp_path / 'stop.flag'
+    log_dir = Path('flow_logs')
+    log_dir.mkdir(exist_ok=True)
+    (log_dir / 'full_log_ts.csv').write_text('dummy')
     ctx = types.SimpleNamespace(timestamp='ts')
 
     with caplog.at_level(nl.logging.ERROR):
