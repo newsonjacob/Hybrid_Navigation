@@ -139,7 +139,10 @@ def build_plot(
         line=line_opts,
     )
     path_trace = go.Scatter3d(**path_kwargs)
-    setattr(path_trace, "kwargs", path_kwargs)
+    # plotly objects forbid setting arbitrary attributes via normal setattr
+    # when validation is enabled. Use object.__setattr__ so tests can inspect
+    # the original kwargs without triggering a validation error.
+    object.__setattr__(path_trace, "kwargs", path_kwargs)
     traces = [path_trace]
 
     for obs in obstacles:
@@ -177,7 +180,7 @@ def build_plot(
                 line=dict(color="orange"),
             )
             orient_trace = go.Scatter3d(**orient_kwargs)
-            setattr(orient_trace, "kwargs", orient_kwargs)
+            object.__setattr__(orient_trace, "kwargs", orient_kwargs)
             traces.append(orient_trace)
         except Exception:
             pass
