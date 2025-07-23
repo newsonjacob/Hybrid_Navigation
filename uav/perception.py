@@ -139,6 +139,7 @@ class OpticalFlowTracker:
         
         flow_vectors = (good_new - good_old).reshape(-1, 2)
         good_old = good_old.reshape(-1, 2)
+
         magnitudes = np.linalg.norm(flow_vectors, axis=1) / dt
 
         # Filter out low-magnitude background flow
