@@ -37,12 +37,24 @@ class Navigator:
         self.obstacle_clear_count = 0
         self.obstacle_confirmed = False
         self.DETECTION_THRESHOLD = 2  # Frames required to confirm detection/clearing
+        self.CLEAR_THRESHOLD = 10  # Frames required to confirm clearing
         
         # Store individual condition states for logging
         self.last_sudden_rise = False
         self.last_center_blocked = False
         self.last_combination_flow = False
         self.last_minimum_flow = False
+
+        # Add max dodge duration tracking
+        self.MAX_DODGE_DURATION = 5.0  # Maximum seconds to dodge before forcing resume
+        self.dodge_start_time = None   # Track when dodge started
+        self.dodge_direction = None    # Current dodge direction
+        self.dodge_strength = 1.0   # Current dodge strength
+
+        # Add post-dodge grace period for combination_flow
+        self.POST_DODGE_GRACE_DURATION = 2.0  # Grace period after dodge completes
+        self.post_dodge_grace_end_time = 0.0   # When grace period ends
+        self.in_post_dodge_grace = False       # Flag for grace period state
 
     def get_state(self):
         """Return the drone position, yaw angle and speed.
@@ -84,39 +96,51 @@ class Navigator:
         self.braked = True
         return "brake"
 
-    def dodge(self, smooth_L, smooth_C, smooth_R, duration: float = 2.0, direction: str = None): # type: ignore
+    def dodge(self, smooth_L, smooth_C, smooth_R, direction=None, duration=2.0):
         """Sidestep left or right to avoid an obstacle.
 
         Parameters
         ----------
         smooth_L, smooth_C, smooth_R : float
             Smoothed optical flow magnitudes used for logging.
-        duration : float, optional
-            How long to apply the dodge command in seconds. Defaults to ``2.0``.
         direction : {"left", "right"}, optional
             Side to dodge toward. ``None`` defaults to left.
+        duration : float, optional
+            How long to apply the dodge command in seconds. Defaults to ``2.0``.
 
         Returns
         -------
         str
             Action string describing the dodge.
         """
-
+        
+        # Record dodge start time if not already dodging
+        if not self.dodging:
+            self.dodge_start_time = time.time()
+            logger.info(f"[DODGE] Starting {direction or 'left'} dodge at {self.dodge_start_time:.2f}")
+        
+        # Set direction (default to left if None)
+        if direction is None:
+            direction = "left"
+        
         lateral = 1.0 if direction == "right" else -1.0
-        # strength = 0.75 if max(smooth_L, smooth_R) > 100 else 1.0
         strength = 1.0
         forward_speed = 0.0
 
         # Stop before dodging
         self.brake()
         time.sleep(0.5)  # Allow time for braking to take effect
-        self.client.moveByVelocityBodyFrameAsync(forward_speed,lateral * strength,0,duration)
+        
+        # Execute dodge movement
+        self.client.moveByVelocityBodyFrameAsync(forward_speed, lateral * strength, 0, duration)
 
+        # Set dodge state
         self.dodging = True
         self.braked = False
         self.last_movement_time = time.time()
         self.dodge_direction = direction
         self.dodge_strength = strength
+        
         return f"dodge_{direction}"
 
     def maintain_dodge(self):
@@ -134,6 +158,16 @@ class Navigator:
             The action name ``"resume"``.
         """
 
+        # Log dodge duration if we were dodging
+        if self.dodging and self.dodge_start_time is not None:
+            dodge_duration = time.time() - self.dodge_start_time
+            logger.info(f"[DODGE] Completed after {dodge_duration:.2f}s")
+
+            # Start post-dodge grace period
+            self.post_dodge_grace_end_time = time.time() + self.POST_DODGE_GRACE_DURATION
+            self.in_post_dodge_grace = True
+            logger.info(f"[GRACE] Post-dodge grace period started for {self.POST_DODGE_GRACE_DURATION}s")
+
         # Stop before resuming forward motion
         self.client.moveByVelocityAsync(0, 0, 0, 0)
         time.sleep(0.2)  # Allow time for braking to take effect
@@ -143,12 +177,34 @@ class Navigator:
         self.client.moveByVelocityZAsync(2, 0, z, duration=3,
             drivetrain=airsim.DrivetrainType.ForwardOnly,
             yaw_mode=airsim.YawMode(False, 0))
+        
+        #Reset dodge state
         self.braked = False
         self.dodging = False
+        self.dodge_start_time = None  # Reset dodge timing
+        self.dodge_direction = None
         self.just_resumed = True
         self.resume_grace_end_time = time.time() + 0 # 0 second grace
         self.last_movement_time = time.time()
         return "resume"
+
+    def check_post_dodge_grace(self):
+        """Check and update post-dodge grace period status.
+        
+        Returns
+        -------
+        bool
+            True if currently in post-dodge grace period.
+        """
+        current_time = time.time()
+        
+        if self.in_post_dodge_grace:
+            if current_time >= self.post_dodge_grace_end_time:
+                self.in_post_dodge_grace = False
+                logger.info("[GRACE] Post-dodge grace period ended")
+                return False
+            return True
+        return False
 
     def blind_forward(self):
         """Move forward despite having no optical-flow features.

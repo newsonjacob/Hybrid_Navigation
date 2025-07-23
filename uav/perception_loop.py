@@ -13,7 +13,7 @@ from airsim import ImageRequest, ImageType
 from uav import config
 from uav.scoring import compute_region_stats
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("perception")
 
 
 def perception_loop(tracker, image):
@@ -119,10 +119,14 @@ def process_perception_data(
             flow_vectors = flow_vectors.reshape(-1, 2)
         magnitudes = np.linalg.norm(flow_vectors, axis=1)
 
+    # Clamp large flow magnitudes to max_flow_mag
     num_clamped = np.sum(magnitudes > max_flow_mag)
     if num_clamped > 100:
         logger.warning("Clamped %d large flow magnitudes to %s", num_clamped, max_flow_mag)
     magnitudes = np.clip(magnitudes, 0, max_flow_mag)
+
+    # Note: Minimum flow filtering is now handled in OpticalFlowTracker.process_frame()
+    # The flow_vectors and good_old arrays are already filtered
 
     good_old = good_old.reshape(-1, 2)
     (
@@ -157,6 +161,11 @@ def process_perception_data(
     if navigator.just_resumed and time_now < navigator.resume_grace_end_time:
         cv2.putText(vis_img, "GRACE", (1100, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 3)
     in_grace = navigator.just_resumed and time_now < navigator.resume_grace_end_time
+
+    # Log flow filtering statistics
+    logger.debug(f"[FLOW_STATS] L:{smooth_L:.2f} C:{smooth_C:.2f} R:{smooth_R:.2f} | "
+               f"Features: L:{left_count} C:{center_count} R:{right_count} | "
+               f"Total filtered features: {len(good_old)}")
 
     return (
         vis_img,

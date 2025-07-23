@@ -1,9 +1,10 @@
 # Configuration constants for UAV navigation
 
-MAX_FLOW_MAG = 50.0
-MAX_VECTOR_COMPONENT = 20.0
-MIN_FEATURES_PER_ZONE = 10
-GRACE_PERIOD_SEC = 1.0
+MAX_FLOW_MAG = 70.0 # Maximum flow magnitude for optical flow
+MIN_FLOW_MAG = 1  # Minimum flow magnitude to consider valid
+MAX_VECTOR_COMPONENT = 30.0 # Maximum vector component for flow vectors
+MIN_FEATURES_PER_ZONE = 5 # Minimum features to consider a zone valid
+GRACE_PERIOD_SEC = 1.0 # Grace period for state transitions
 MAX_SIM_DURATION = 60  # seconds
 GOAL_X = 42 # meters
 GOAL_Y = 8  # meters

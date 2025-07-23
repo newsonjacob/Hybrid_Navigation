@@ -66,7 +66,7 @@ def detect_obstacle_with_hysteresis(
         navigator.obstacle_detection_count = 0  # Reset detection counter
         
         # Clear obstacle only after required number of clear frames
-        if navigator.obstacle_clear_count >= navigator.DETECTION_THRESHOLD and navigator.obstacle_confirmed:
+        if navigator.obstacle_clear_count >= navigator.CLEAR_THRESHOLD and navigator.obstacle_confirmed:
             logger.info(f"[HYSTERESIS] Obstacle CLEARED after {navigator.obstacle_clear_count} frames")
             navigator.obstacle_confirmed = False
     
@@ -93,6 +93,7 @@ def detect_obstacle(
     pose=None,
     pose_goal=None,
     pose_threshold=0.5,
+    navigator=None,
 ):
     """Detect an obstacle using optical flow or SLAM data.
 
@@ -128,16 +129,38 @@ def detect_obstacle(
     if mode == "reactive":
         if smooth_C is None or delta_C is None or center_count is None or brake_thres is None:
             raise ValueError("Reactive mode requires smooth_C, delta_C, center_count, brake_thres")
-        
-        # Calculate individual conditions
-        sudden_rise = delta_C > 1 and center_count >= 5
-        center_blocked = smooth_C > brake_thres and center_count >= 5 and delta_C > 0
-        combination_flow = center_count > 75 and (smooth_C > brake_thres * 0.75 or delta_C > 0.75)
-        minimum_flow = delta_C > 0.6 and smooth_C > brake_thres * 0.25 and center_count > 50
-        test_flow = delta_C > 0.6 and smooth_C > brake_thres * 0.5 and center_count >= 5
 
-        # Overall obstacle detection logic
-        obstacle_detected = sudden_rise or center_blocked or combination_flow or minimum_flow or test_flow
+        DELTA_C_SUDDEN = 0.7 # Sudden rise threshold
+        CENTER_COUNT_MIN = 4 # Minimum center count
+        COMBO_COUNT = 40 # Combination high flow count
+        DELTA_C_MIN = 0.4 # Minimum delta C
+        SMOOTH_C_MIN = 0.15 # Minimum smooth C
+        MIN_COUNT = 30 # Minimum count
+
+        # Calculate individual conditions
+        sudden_rise = delta_C > DELTA_C_SUDDEN and center_count >= CENTER_COUNT_MIN
+        center_blocked = smooth_C > brake_thres and center_count >= CENTER_COUNT_MIN # and delta_C > 0
+
+        # Apply post-dodge grace period to combination_flow
+        combination_flow_raw = center_count > COMBO_COUNT and (smooth_C > brake_thres * 0.5 or delta_C > 0.5)
+        
+        # Check if we're in post-dodge grace period
+        in_grace = False
+        if navigator is not None:
+            in_grace = navigator.check_post_dodge_grace()
+        
+        # Suppress combination_flow during grace period
+        if in_grace and combination_flow_raw:
+            logger.debug("[GRACE] Suppressing combination_flow detection during post-dodge grace period")
+            combination_flow = False
+        else:
+            combination_flow = combination_flow_raw
+            
+        minimum_flow = delta_C > DELTA_C_MIN and smooth_C > brake_thres * SMOOTH_C_MIN and center_count > MIN_COUNT
+
+        # Confidence-based
+        confidence = sum([sudden_rise, center_blocked, combination_flow, minimum_flow])
+        obstacle_detected = confidence >= 2  # require at least two triggers
 
         # Log which conditions triggered the detection
         if obstacle_detected:

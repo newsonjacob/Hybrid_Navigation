@@ -32,7 +32,9 @@ module_logs = {
     "slam_receiver": f"slam_receiver_{timestamp}.log",
     "pose_receiver": f"pose_receiver_{timestamp}.log",
     "slam_plotter": f"slam_plotter_{timestamp}.log",
-    "pose_plotter": f"pose_plotter_{timestamp}.log"
+    "pose_plotter": f"pose_plotter_{timestamp}.log",
+    "perception": f"perception_{timestamp}.log",
+    "utils": f"utils_{timestamp}.log",
 }
 setup_logging(log_file=f"main_{timestamp}.log", module_logs=module_logs, level=logging.DEBUG)
 logger = logging.getLogger("main")

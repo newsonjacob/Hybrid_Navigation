@@ -11,7 +11,10 @@ import cv2
 import numpy as np
 
 from .utils import apply_clahe
+from . import config
+import logging
 
+logger = logging.getLogger("perception")
 
 class FlowHistory:
     """Maintain a rolling window of recent flow magnitudes."""
@@ -52,7 +55,7 @@ class FlowHistory:
 class OpticalFlowTracker:
     """Track sparse optical flow features between frames."""
 
-    def __init__(self, lk_params: Dict, feature_params: Dict) -> None:
+    def __init__(self, lk_params: Dict, feature_params: Dict, min_flow_mag: float = None) -> None:
         """Initialize tracker with Lucas-Kanade and feature parameters.
 
         Args:
@@ -84,7 +87,7 @@ class OpticalFlowTracker:
         self,
         gray: np.ndarray,
         _unused_start_time: float,
-    ) -> Tuple[np.ndarray, np.ndarray, float]:  # ignore external time
+    ) -> Tuple[np.ndarray, np.ndarray, float]:
         """Track features in ``gray`` and return motion information.
 
         Args:
@@ -130,9 +133,9 @@ class OpticalFlowTracker:
 
         if len(good_old) == 0:
             return np.array([]), np.array([]), 0.0
-
-        flow_vectors = good_new - good_old
-        magnitudes = np.linalg.norm(flow_vectors, axis=1) / dt  # pixels/sec
+        
+        flow_vectors = good_new - good_old        
+        magnitudes = np.linalg.norm(flow_vectors, axis=1) / dt
         flow_std = np.std(magnitudes)
-
+        
         return good_old, flow_vectors, flow_std

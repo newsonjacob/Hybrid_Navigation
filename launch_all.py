@@ -55,6 +55,7 @@ def init_logging_and_flags() -> str:
         "slam_plotter",
         "utils",
         "pose_receiver",
+        "perception",
     ]
     module_logs = {
         mod: f"{mod.replace('.', '_')}_{timestamp}.log" for mod in modules_with_dedicated_logs

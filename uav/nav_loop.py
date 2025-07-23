@@ -51,9 +51,15 @@ def setup_environment(args, client):
     logger.info("Available vehicles: %s", client.listVehicles())
     init_client(client)
     client.takeoffAsync().join(); client.moveToPositionAsync(0, 0, -2, 2).join()
-    feature_params = dict(maxCorners=150, qualityLevel=0.05, minDistance=5, blockSize=5)
+
+    feature_params = dict(maxCorners=150, qualityLevel=0.02, minDistance=5, blockSize=5)
     lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
-    tracker, flow_history, navigator = OpticalFlowTracker(lk_params, feature_params), FlowHistory(), Navigator(client)
+    
+    # Add minimum flow magnitude filter to tracker initialization
+    tracker = OpticalFlowTracker(lk_params, feature_params)
+    
+    flow_history, navigator = FlowHistory(), Navigator(client)
+
     from collections import deque
     state_history, pos_history = deque(maxlen=3), deque(maxlen=3)
     start_time = time.time()
