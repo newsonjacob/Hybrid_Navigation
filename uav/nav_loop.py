@@ -156,6 +156,9 @@ def check_exit_conditions(client, ctx, time_now, max_duration, goal_x, goal_y):
     pos_goal, _, _ = get_drone_state(client)
     if abs(pos_goal.x_val - goal_x) < 0.5 and abs(pos_goal.y_val - goal_y) < 0.5:
         logger.info("Goal reached — landing.")
+        if getattr(ctx, "param_refs", None):
+            ctx.param_refs.state[0] = "landing"
+        ctx.exit_flag.set()
         return True
     return False
 
@@ -512,6 +515,15 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
             history = get_pose_history()
             map_pts = np.array([[m[0][3], m[1][3], m[2][3]] for _, m in history], dtype=float)
             frontiers = detect_frontiers(map_pts)
+
+            # Detect if final waypoint has been reached
+            curr_goal = waypoints[current_waypoint_index]
+            dist_to_goal = np.sqrt((x - curr_goal[0]) ** 2 + (y - curr_goal[1]) ** 2)
+            if current_waypoint_index == len(waypoints) - 1 and dist_to_goal < threshold:
+                logger.info("[SLAMNav] Final goal reached — landing.")
+                if ctx is not None and getattr(ctx, "param_refs", None):
+                    ctx.param_refs.state[0] = "landing"
+                break
 
             (goal_x, goal_y, goal_z), current_waypoint_index, dist = handle_waypoint_progress(
                 x, y, waypoints, current_waypoint_index, threshold
