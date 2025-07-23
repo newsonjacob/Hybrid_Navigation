@@ -39,14 +39,18 @@ def test_analyze_cli(tmp_path):
     df.to_csv(log_path, index=False)
     outdir = tmp_path / "out"
 
-    result = subprocess.run([
-        sys.executable,
-        "-m",
-        "analysis.analyze",
-        str(log_path),
-        "-o",
-        str(outdir),
-    ], capture_output=True, text=True)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "analysis.analyse",
+            str(log_path),
+            "-o",
+            str(outdir),
+        ],
+        capture_output=True,
+        text=True,
+    )
     assert result.returncode == 0
     assert (outdir / "state_histogram.html").exists()
     assert (outdir / "distance_over_time.html").exists()

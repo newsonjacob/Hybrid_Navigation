@@ -219,7 +219,7 @@ setup_logging("run.log")  # also prints to stdout
 - Run `python -m slam_bridge.slam_plotter` to record SLAM poses and generate a trajectory HTML file
 - Visualise a flight path with `python -m analysis.visualise_flight OUTPUT.html --log LOG.csv --obstacles OBSTACLES.json`
 - Plot CPU and memory usage with `python -m analysis.performance_plots LOG.csv -o OUT.html`
-- Generate state histograms and distance plots with `python -m analysis.analyze LOG.csv -o OUT_DIR`
+- Generate state histograms and distance plots with `python -m analysis.analyse LOG.csv -o OUT_DIR`
 
 ---
 
