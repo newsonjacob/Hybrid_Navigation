@@ -55,7 +55,7 @@ class FlowHistory:
 class OpticalFlowTracker:
     """Track sparse optical flow features between frames."""
 
-    def __init__(self, lk_params: Dict, feature_params: Dict, min_flow_mag: float = None) -> None:
+    def __init__(self, lk_params: Dict, feature_params: Dict, min_flow_mag: float | None = None) -> None:
         """Initialize tracker with Lucas-Kanade and feature parameters.
 
         Args:
@@ -64,6 +64,9 @@ class OpticalFlowTracker:
         """
         self.lk_params: Dict = lk_params
         self.feature_params: Dict = feature_params
+        self.min_flow_mag: float = (
+            config.MIN_FLOW_MAG if min_flow_mag is None else float(min_flow_mag)
+        )
         self.prev_gray: Optional[np.ndarray] = None
         self.prev_pts: Optional[np.ndarray] = None
         self.prev_time: float = time.time()
@@ -134,8 +137,17 @@ class OpticalFlowTracker:
         if len(good_old) == 0:
             return np.array([]), np.array([]), 0.0
         
-        flow_vectors = good_new - good_old        
+        flow_vectors = (good_new - good_old).reshape(-1, 2)
+        good_old = good_old.reshape(-1, 2)
         magnitudes = np.linalg.norm(flow_vectors, axis=1) / dt
-        flow_std = np.std(magnitudes)
-        
+
+        # Filter out low-magnitude background flow
+        if self.min_flow_mag is not None:
+            valid_mask = magnitudes >= self.min_flow_mag
+            good_old = good_old[valid_mask]
+            flow_vectors = flow_vectors[valid_mask]
+            magnitudes = magnitudes[valid_mask]
+
+        flow_std = float(np.std(magnitudes)) if len(magnitudes) else 0.0
+
         return good_old, flow_vectors, flow_std

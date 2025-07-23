@@ -50,36 +50,53 @@ def detect_obstacle_with_hysteresis(
         sudden_rise = center_blocked = combination_flow = minimum_flow = False
     
     # Apply hysteresis logic
+    # Retrieve hysteresis counters with sensible defaults for tests
+    detection_count = getattr(navigator, "obstacle_detection_count", 0)
+    clear_count = getattr(navigator, "obstacle_clear_count", 0)
+    confirmed = getattr(navigator, "obstacle_confirmed", False)
+    DETECTION_THRESHOLD = getattr(navigator, "DETECTION_THRESHOLD", 1)
+    CLEAR_THRESHOLD = getattr(navigator, "CLEAR_THRESHOLD", 1)
+
     if raw_detection:
         # Obstacle detected - increment detection counter
-        navigator.obstacle_detection_count += 1
-        navigator.obstacle_clear_count = 0  # Reset clear counter
-        
+        detection_count += 1
+        clear_count = 0  # Reset clear counter
+
         # Confirm obstacle only after required number of detections
-        if navigator.obstacle_detection_count >= navigator.DETECTION_THRESHOLD:
-            if not navigator.obstacle_confirmed:
-                logger.info(f"[HYSTERESIS] Obstacle CONFIRMED after {navigator.obstacle_detection_count} frames")
-            navigator.obstacle_confirmed = True
+        if detection_count >= DETECTION_THRESHOLD:
+            if not confirmed:
+                logger.info(
+                    f"[HYSTERESIS] Obstacle CONFIRMED after {detection_count} frames"
+                )
+            confirmed = True
     else:
         # No obstacle detected - increment clear counter
-        navigator.obstacle_clear_count += 1
-        navigator.obstacle_detection_count = 0  # Reset detection counter
-        
+        clear_count += 1
+        detection_count = 0  # Reset detection counter
+
         # Clear obstacle only after required number of clear frames
-        if navigator.obstacle_clear_count >= navigator.CLEAR_THRESHOLD and navigator.obstacle_confirmed:
-            logger.info(f"[HYSTERESIS] Obstacle CLEARED after {navigator.obstacle_clear_count} frames")
-            navigator.obstacle_confirmed = False
+        if clear_count >= CLEAR_THRESHOLD and confirmed:
+            logger.info(
+                f"[HYSTERESIS] Obstacle CLEARED after {clear_count} frames"
+            )
+            confirmed = False
+
+    # Persist counters back to navigator for stateful Navigator objects
+    setattr(navigator, "obstacle_detection_count", detection_count)
+    setattr(navigator, "obstacle_clear_count", clear_count)
+    setattr(navigator, "obstacle_confirmed", confirmed)
     
     # Store condition states for logging
-    navigator.last_sudden_rise = sudden_rise
-    navigator.last_center_blocked = center_blocked
-    navigator.last_combination_flow = combination_flow
-    navigator.last_minimum_flow = minimum_flow
+    setattr(navigator, "last_sudden_rise", sudden_rise)
+    setattr(navigator, "last_center_blocked", center_blocked)
+    setattr(navigator, "last_combination_flow", combination_flow)
+    setattr(navigator, "last_minimum_flow", minimum_flow)
     
-    logger.debug(f"[HYSTERESIS] Raw: {raw_detection}, Detection count: {navigator.obstacle_detection_count}, "
-                f"Clear count: {navigator.obstacle_clear_count}, Confirmed: {navigator.obstacle_confirmed}")
-    
-    return navigator.obstacle_confirmed, sudden_rise, center_blocked, combination_flow, minimum_flow
+    logger.debug(
+        f"[HYSTERESIS] Raw: {raw_detection}, Detection count: {detection_count}, "
+        f"Clear count: {clear_count}, Confirmed: {confirmed}"
+    )
+    return confirmed, sudden_rise, center_blocked, combination_flow, minimum_flow
 
 
 def detect_obstacle(

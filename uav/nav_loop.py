@@ -56,7 +56,11 @@ def setup_environment(args, client):
     lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
     
     # Add minimum flow magnitude filter to tracker initialization
-    tracker = OpticalFlowTracker(lk_params, feature_params)
+    tracker = OpticalFlowTracker(
+        lk_params,
+        feature_params,
+        config.MIN_FLOW_MAG,
+    )
     
     flow_history, navigator = FlowHistory(), Navigator(client)
 
@@ -186,6 +190,12 @@ def update_navigation_state(client, args, ctx, data, frame_count, time_now, max_
         left_count,
         center_count,
         right_count,
+        top_mag,
+        mid_mag,
+        bottom_mag,
+        top_count,
+        mid_count,
+        bottom_count,
         in_grace,
     ) = processed
     prev_state = ctx.param_refs.state[0]
@@ -249,6 +259,12 @@ def log_and_record_frame(
         left_count,
         center_count,
         right_count,
+        top_mag,
+        mid_mag,
+        bottom_mag,
+        top_count,
+        mid_count,
+        bottom_count,
         in_grace,
     ) = processed
     (

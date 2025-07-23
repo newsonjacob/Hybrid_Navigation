@@ -8,6 +8,8 @@ This repository contains the implementation of a reactive obstacle avoidance sys
 
 - Real-time optical flow tracking using Lucas-Kanade method
 - Zone-based obstacle avoidance using vector summation
+- Configurable minimum flow filter (`config.MIN_FLOW_MAG`) focuses on foreground motion
+- Flow analysis now includes vertical and horizontal image segments
 - Modular helpers for obstacle detection and side safety
 - Logs flight data to CSV for post-flight analysis
 - The pose comparison CSV now records the current navigation state

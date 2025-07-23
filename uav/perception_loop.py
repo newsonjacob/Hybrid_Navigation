@@ -138,6 +138,12 @@ def process_perception_data(
         left_count,
         center_count,
         right_count,
+        top_mag,
+        mid_mag,
+        bottom_mag,
+        top_count,
+        mid_count,
+        bottom_count,
     ) = compute_region_stats(magnitudes, good_old, image_width)
 
     flow_history.update(left_mag, center_mag, right_mag)
@@ -186,5 +192,11 @@ def process_perception_data(
         left_count,
         center_count,
         right_count,
+        top_mag,
+        mid_mag,
+        bottom_mag,
+        top_count,
+        mid_count,
+        bottom_count,
         in_grace,
     )
