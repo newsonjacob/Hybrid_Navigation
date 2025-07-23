@@ -12,7 +12,6 @@ import slam_bridge.slam_receiver as slam_receiver
 # Public API
 __all__ = [
     "is_slam_stable",
-    "is_obstacle_ahead",
     "generate_pose_comparison_plot",
 ]
 # You should define these thresholds as constants.

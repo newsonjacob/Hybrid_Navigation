@@ -39,10 +39,9 @@ from uav.navigation_core import detect_obstacle, determine_side_safety, handle_o
 from uav.navigation_slam_boot import run_slam_bootstrap
 from uav.paths import STOP_FLAG_PATH
 from uav.slam_utils import (
-    is_slam_stable,
-    generate_pose_comparison_plot,
-    is_obstacle_ahead,
-)
+        is_slam_stable,
+        generate_pose_comparison_plot,
+    )
 
 logger = logging.getLogger("nav_loop")
 
