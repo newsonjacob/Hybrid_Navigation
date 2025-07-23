@@ -787,85 +787,49 @@ def finalise_files(ctx):
         # Ensure analysis directory exists
         os.makedirs("analysis", exist_ok=True)
         
-        # Generate flight visualization
+        # Generate flight visualization via subprocess for testability
         try:
             html_output = f"analysis/flight_view_{timestamp}.html"
             logger.info(f"Generating flight visualization: {html_output}")
-            
-            # Method 1: Direct function call (avoids subprocess issues)
-            try:
-                # Add analysis directory to path temporarily
-                import sys
-                analysis_path = os.path.abspath('analysis')
-                if analysis_path not in sys.path:
-                    sys.path.insert(0, analysis_path)
-                
-                # Import and call visualization function
-                from visualise_flight import main as visualize_main
-                visualize_main([html_output, "--log", log_csv])
-                logger.info(f"✅ Flight visualization saved: {html_output}")
-                
-                # Remove from path
-                if analysis_path in sys.path:
-                    sys.path.remove(analysis_path)
-                    
-            except Exception as direct_error:
-                logger.warning(f"Direct call failed: {direct_error}")
-                
-                # Method 2: Subprocess fallback
-                try:
-                    visualization_script = os.path.abspath("analysis/visualise_flight.py")
-                    result = subprocess.run(
-                        [
-                            sys.executable,
-                            visualization_script,
-                            html_output,
-                            "--log", 
-                            log_csv
-                        ],
-                        check=True,
-                        capture_output=True,
-                        text=True,
-                        cwd=os.getcwd(),
-                        timeout=60  # 60 second timeout
-                    )
-                    
-                    if result.stdout.strip():
-                        logger.info(f"Visualization output: {result.stdout.strip()}")
-                    
-                    logger.info(f"✅ Flight visualization saved via subprocess: {html_output}")
-                    
-                except subprocess.CalledProcessError as proc_error:
-                    logger.error(f"Subprocess visualization failed: {proc_error.stderr}")
-                except subprocess.TimeoutExpired:
-                    logger.error("Visualization generation timed out")
-                except Exception as subprocess_error:
-                    logger.error(f"Subprocess method failed: {subprocess_error}")
 
+            visualization_script = os.path.abspath("analysis/visualise_flight.py")
+            subprocess.run(
+                [
+                    sys.executable,
+                    visualization_script,
+                    html_output,
+                    "--log",
+                    log_csv,
+                ],
+                check=True,
+            )
+            logger.info(f"✅ Flight visualization saved via subprocess: {html_output}")
+
+        except subprocess.CalledProcessError as proc_error:
+            logger.error(f"Subprocess visualization failed: {proc_error.stderr}")
         except Exception as viz_error:
             logger.error(f"Flight visualization generation failed: {viz_error}")
 
-        # Generate performance plots
+        # Generate performance plots via subprocess
         try:
             perf_output = f"analysis/performance_{timestamp}.html"
             logger.info(f"Generating performance plots: {perf_output}")
-            
-            # Direct function call for performance plots
-            try:
-                analysis_path = os.path.abspath('analysis')
-                if analysis_path not in sys.path:
-                    sys.path.insert(0, analysis_path)
-                    
-                from performance_plots import main as perf_main
-                perf_main([log_csv, "--output", perf_output])
-                logger.info(f"✅ Performance plots saved: {perf_output}")
-                
-                if analysis_path in sys.path:
-                    sys.path.remove(analysis_path)
-                    
-            except Exception as perf_error:
-                logger.warning(f"Performance plots generation failed: {perf_error}")
 
+            perf_script = os.path.abspath("analysis/performance_plots.py")
+            subprocess.run(
+                [
+                    sys.executable,
+                    perf_script,
+                    log_csv,
+                    "--output",
+                    perf_output,
+                ],
+                check=True,
+            )
+            logger.info(f"✅ Performance plots saved: {perf_output}")
+
+        except subprocess.CalledProcessError as perf_error:
+            logger.warning(f"Performance plots generation failed: {perf_error.stderr}")
         except Exception as perf_outer_error:
             logger.error(f"Performance analysis failed: {perf_outer_error}")
 

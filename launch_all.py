@@ -192,14 +192,28 @@ class Launcher:
             try:
                 ue4_pid = int(pid_file.read_text())
                 self.logger.info("[SHUTDOWN] Terminating UE4 simulation (PID %s)", ue4_pid)
-                subprocess.call(["taskkill", "/F", "/PID", str(ue4_pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                try:
+                    subprocess.call(
+                        ["taskkill", "/F", "/PID", str(ue4_pid)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                except FileNotFoundError:
+                    self.logger.warning("taskkill not available")
             except Exception as e:  # pragma: no cover - best effort
                 self.logger.warning("[SHUTDOWN] Failed to terminate UE4 by PID: %s", e)
             finally:
                 pid_file.unlink(missing_ok=True)
         else:
-            subprocess.call(["taskkill", "/F", "/IM", "Blocks.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            subprocess.call(["taskkill", "/F", "/IM", "UE4Editor.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            for proc_name in ("Blocks.exe", "UE4Editor.exe"):
+                try:
+                    subprocess.call(
+                        ["taskkill", "/F", "/IM", proc_name],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                except FileNotFoundError:
+                    self.logger.warning("taskkill not available")
 
         if self.slam_video_path and not os.path.exists(self.slam_video_path):
             self.logger.warning("SLAM video file not created.")
