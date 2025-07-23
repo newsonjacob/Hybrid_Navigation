@@ -159,6 +159,7 @@ The `hybrid-nav` entry point exposes several options:
 | `--slam-covariance-threshold FLOAT` | Covariance threshold for SLAM stability |
 | `--slam-inlier-threshold INT` | Minimum inliers for SLAM stability |
 | `--log-timestamp STR` | Timestamp used to sync logging across modules |
+| `--output-dir DIR` | Directory where logs and analysis files are saved |
 
 ### SLAM Stability
 
@@ -173,7 +174,9 @@ system now treats SLAM tracking as unstable and triggers reinitialisation.
 Example quick start:
 
 ```bash
-hybrid-nav --ue4-path /path/to/Blocks.exe --settings-path ~/Documents/AirSim/settings.json --nav-mode slam
+hybrid-nav --ue4-path /path/to/Blocks.exe \
+  --settings-path ~/Documents/AirSim/settings.json \
+  --nav-mode slam --output-dir ./run1
 ```
 
 ### GUI and Flag Files
@@ -211,10 +214,10 @@ from uav.logging_config import setup_logging
 setup_logging("run.log")  # also prints to stdout
 ```
 
-- Flight logs are stored in `flow_logs/` as `.csv`
+- Flight logs are stored in `flow_logs/` as `.csv` (use `--output-dir` to change the base folder)
 - 3D trajectory plots are saved in `analysis/` as interactive `.html` files
 - Runtime messages are configured via `uav.logging_config.setup_logging` using the standard `logging` module
-- SLAM pose and feature debugging is printed to stdout and stored in `logs/`
+- SLAM pose and feature debugging is printed to stdout and stored in `logs/` (affected by `--output-dir`)
 - Generate HTML summaries with `analyse-flight LOG.csv`
 - Run `python -m slam_bridge.slam_plotter` to record SLAM poses and generate a trajectory HTML file
 - Visualise a flight path with `python -m analysis.visualise_flight OUTPUT.html --log LOG.csv --obstacles OBSTACLES.json`
@@ -235,8 +238,8 @@ ReactiveOptical_Flow/
 │   ├── navigation.py        # Control logic
 │   ├── utils.py             # Helper functions
 │   └── __init__.py
-├── flow_logs/               # CSV logs of motion + control
-├── analysis/                # 3D path visualisations
+├── flow_logs/               # CSV logs of motion + control (or `OUT/flow_logs` when using `--output-dir`)
+├── analysis/                # 3D path visualisations (or `OUT/analysis`)
 ```
 
 ---
