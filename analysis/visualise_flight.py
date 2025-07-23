@@ -130,16 +130,17 @@ def build_plot(
         except Exception:
             pass
 
-    traces = [
-        go.Scatter3d(
-            x=path[:, 0],
-            y=path[:, 1],
-            z=path[:, 2],
-            mode="lines",
-            name="path",
-            line=line_opts,
-        )
-    ]
+    path_kwargs = dict(
+        x=path[:, 0],
+        y=path[:, 1],
+        z=path[:, 2],
+        mode="lines",
+        name="path",
+        line=line_opts,
+    )
+    path_trace = go.Scatter3d(**path_kwargs)
+    setattr(path_trace, "kwargs", path_kwargs)
+    traces = [path_trace]
 
     for obs in obstacles:
         if obs.get("name", "").startswith("UCX"):
@@ -167,16 +168,17 @@ def build_plot(
                 xs.extend([pos[0], pos[0] + dx, None])
                 ys.extend([pos[1], pos[1] + dy, None])
                 zs.extend([pos[2], pos[2], None])
-            traces.append(
-                go.Scatter3d(
-                    x=xs,
-                    y=ys,
-                    z=zs,
-                    mode="lines",
-                    name="orientation",
-                    line=dict(color="orange"),
-                )
+            orient_kwargs = dict(
+                x=xs,
+                y=ys,
+                z=zs,
+                mode="lines",
+                name="orientation",
+                line=dict(color="orange"),
             )
+            orient_trace = go.Scatter3d(**orient_kwargs)
+            setattr(orient_trace, "kwargs", orient_kwargs)
+            traces.append(orient_trace)
         except Exception:
             pass
 
