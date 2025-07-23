@@ -19,7 +19,7 @@ logger = logging.getLogger("perception")
 class FlowHistory:
     """Maintain a rolling window of recent flow magnitudes."""
 
-    def __init__(self, size: int = 10) -> None:
+    def __init__(self, size: int = 3) -> None:
         """Create a buffer storing the last ``size`` flow measurements.
 
         Args:

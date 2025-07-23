@@ -147,11 +147,11 @@ def detect_obstacle(
         if smooth_C is None or delta_C is None or center_count is None or brake_thres is None:
             raise ValueError("Reactive mode requires smooth_C, delta_C, center_count, brake_thres")
 
-        DELTA_C_SUDDEN = 0.7 # Sudden rise threshold
+        DELTA_C_SUDDEN = 1.5 # Sudden rise threshold
         CENTER_COUNT_MIN = 4 # Minimum center count
         COMBO_COUNT = 40 # Combination high flow count
-        DELTA_C_MIN = 0.4 # Minimum delta C
-        SMOOTH_C_MIN = 0.15 # Minimum smooth C
+        DELTA_C_MIN = 0.75 # Minimum delta C
+        SMOOTH_C_MIN = 0.5 # Minimum smooth C
         MIN_COUNT = 30 # Minimum count
 
         # Calculate individual conditions
@@ -159,7 +159,7 @@ def detect_obstacle(
         center_blocked = smooth_C > brake_thres and center_count >= CENTER_COUNT_MIN # and delta_C > 0
 
         # Apply post-dodge grace period to combination_flow
-        combination_flow_raw = center_count > COMBO_COUNT and (smooth_C > brake_thres * 0.5 or delta_C > 0.5)
+        combination_flow_raw = center_count > COMBO_COUNT and (smooth_C > brake_thres * 0.5 or delta_C > 1)
         
         # Check if we're in post-dodge grace period
         in_grace = False

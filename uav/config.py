@@ -2,6 +2,7 @@
 
 MAX_FLOW_MAG = 70.0 # Maximum flow magnitude for optical flow
 MIN_FLOW_MAG = 1  # Minimum flow magnitude to consider valid
+FLOW_HISTORY_SIZE = 7  # Number of recent flow measurements to keep
 MAX_VECTOR_COMPONENT = 30.0 # Maximum vector component for flow vectors
 MIN_FEATURES_PER_ZONE = 5 # Minimum features to consider a zone valid
 GRACE_PERIOD_SEC = 1.0 # Grace period for state transitions

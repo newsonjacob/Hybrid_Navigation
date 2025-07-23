@@ -52,17 +52,29 @@ def setup_environment(args, client):
     init_client(client)
     client.takeoffAsync().join(); client.moveToPositionAsync(0, 0, -2, 2).join()
 
-    feature_params = dict(maxCorners=150, qualityLevel=0.02, minDistance=5, blockSize=5)
-    lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
-    
+    feature_params = dict(
+        maxCorners=150, 
+        qualityLevel=0.01, 
+        minDistance=8, 
+        blockSize=7, 
+        useHarrisDetector=True, 
+        k=0.04)
+    lk_params = dict(
+        winSize=(21, 21), 
+        maxLevel=2, 
+        criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01),
+        flags=cv2.OPTFLOW_LK_GET_MIN_EIGENVALS,
+        minEigThreshold=1e-3
+    )
+
     # Add minimum flow magnitude filter to tracker initialization
     tracker = OpticalFlowTracker(
         lk_params,
         feature_params,
         config.MIN_FLOW_MAG,
     )
-    
-    flow_history, navigator = FlowHistory(), Navigator(client)
+
+    flow_history, navigator = FlowHistory(size=config.FLOW_HISTORY_SIZE), Navigator(client)
 
     from collections import deque
     state_history, pos_history = deque(maxlen=3), deque(maxlen=3)
