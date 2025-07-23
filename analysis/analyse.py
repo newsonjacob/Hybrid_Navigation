@@ -10,12 +10,20 @@ from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 
 try:
-    from .flight_review import parse_log
+    from .flight_review import (
+        parse_log,
+        plot_state_histogram,
+        plot_distance_over_time,
+    )
     from .visualise_flight import build_plot
 except ImportError:
     # Handle case where relative imports fail (e.g., running as script)
     try:
-        from flight_review import parse_log
+        from flight_review import (
+            parse_log,
+            plot_state_histogram,
+            plot_distance_over_time,
+        )
         from visualise_flight import build_plot
     except ImportError as e:
         print(f"Error importing required modules: {e}")
@@ -75,16 +83,35 @@ def analyse_logs(log_paths: List[str], output: str) -> None:
         print(f"Average loop time: {np.mean(loop_vals):.3f}s")
 
 
+def generate_plots(log_path: str, outdir: str) -> None:
+    """Create state histogram and distance plots from ``log_path``."""
+    out = Path(outdir)
+    out.mkdir(parents=True, exist_ok=True)
+    stats = parse_log(log_path)
+    plot_state_histogram(stats, str(out / "state_histogram.html"))
+    plot_distance_over_time(log_path, str(out / "distance_over_time.html"))
+
+
 def parse_args(argv: Union[List[str], None] = None) -> argparse.Namespace:  # Change | to Union
     parser = argparse.ArgumentParser(description="Analyse flight logs")
     parser.add_argument("logs", nargs="+", help="CSV log files")
-    parser.add_argument("-o", "--output", default="analysis/flight_view.html", help="Output HTML file")
+    parser.add_argument(
+        "-o",
+        "--output",
+        default="analysis/flight_view.html",
+        help="Output HTML file or directory",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: Union[List[str], None] = None) -> None:  # Change | to Union None:  # Change | to Union
     args = parse_args(argv)
-    analyse_logs(args.logs, args.output)
+    if args.output.lower().endswith(".html"):
+        analyse_logs(args.logs, args.output)
+    else:
+        if len(args.logs) != 1:
+            raise ValueError("Provide exactly one log when output is a directory")
+        generate_plots(args.logs[0], args.output)
 
 
 if __name__ == "__main__":
