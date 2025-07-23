@@ -85,12 +85,12 @@ def draw_box(location, dimensions, rotation):
 
 def build_plot(
     telemetry: np.ndarray,
-    obstacles: List[Dict[str, Any]],  # Fix Dict type
+    obstacles: List[Dict[str, Any]],
     offset: np.ndarray,
     scale: float = 1.0,
     log=None,
-    colour_by: Union[str, None] = None,  # Fix | to Union
-    orientations: Union[np.ndarray, None] = None,  # Fix | to Union
+    colour_by: Union[str, None] = None,
+    orientations: Union[np.ndarray, None] = None,
 ) -> go.Figure:
     """Create a simple 3D plot of the flight path and obstacles.
 
@@ -123,7 +123,7 @@ def build_plot(
     line_opts: dict = {}
     if colour_by in ("time", "speed") and log is not None:
         try:
-            values = log[colour_by]  # type: ignore[index]
+            values = log[colour_by]
             values = np.asarray(values, dtype=float)
             if len(values) == len(path):
                 line_opts = {"color": values, "colorscale": "Viridis", "showscale": True}
@@ -139,7 +139,6 @@ def build_plot(
         line=line_opts,
     )
     path_trace = go.Scatter3d(**path_kwargs)
-    setattr(path_trace, "kwargs", path_kwargs)
     traces = [path_trace]
 
     for obs in obstacles:
@@ -148,13 +147,11 @@ def build_plot(
         loc = obs.get("location", [0, 0, 0])
         dims = obs.get("dimensions", [1, 1, 1])
         rot = obs.get("rotation", [0, 0, 0])
-        # draw_box may be patched in tests to avoid heavy computation.
         try:
             box_traces = draw_box(loc, dims, rot)
             if isinstance(box_traces, list):
                 traces.extend(box_traces)
         except Exception:
-            # Ignore errors to keep the plot valid.
             pass
 
     if orientations is not None:
@@ -177,7 +174,6 @@ def build_plot(
                 line=dict(color="orange"),
             )
             orient_trace = go.Scatter3d(**orient_kwargs)
-            setattr(orient_trace, "kwargs", orient_kwargs)
             traces.append(orient_trace)
         except Exception:
             pass

@@ -91,7 +91,7 @@ def test_shutdown_airsim(monkeypatch):
     assert client.api_disabled
 
 
-def test_finalize_files(monkeypatch, tmp_path):
+def test_finalise_files(monkeypatch, tmp_path):
     nl = _reload_nav_loop(monkeypatch)
     calls = []
     monkeypatch.setattr(nl.subprocess, 'run', lambda cmd, **kw: calls.append(cmd))
@@ -100,13 +100,13 @@ def test_finalize_files(monkeypatch, tmp_path):
     nl.STOP_FLAG_PATH = tmp_path/'stop.flag'
     nl.STOP_FLAG_PATH.write_text('1')
     ctx = types.SimpleNamespace(timestamp='1234')
-    nl.finalize_files(ctx)
+    nl.finalise_files(ctx)
     assert any('analysis.visualise_flight' in ' '.join(c) for c in calls)
-    assert any('analysis.analyze' in ' '.join(c) for c in calls)
+    assert any('analysis.analyse' in ' '.join(c) for c in calls)
     assert 'pose_plot' in calls
     assert not nl.STOP_FLAG_PATH.exists()
 
-def test_finalize_files_calledprocesserror(monkeypatch, tmp_path, caplog):
+def test_finalise_files_calledprocesserror(monkeypatch, tmp_path, caplog):
     nl = _reload_nav_loop(monkeypatch)
 
     def raise_error(cmd, **kwargs):
@@ -120,6 +120,6 @@ def test_finalize_files_calledprocesserror(monkeypatch, tmp_path, caplog):
     ctx = types.SimpleNamespace(timestamp='ts')
 
     with caplog.at_level(nl.logging.ERROR):
-        nl.finalize_files(ctx)
+        nl.finalise_files(ctx)
 
     assert any('fail' in record.message for record in caplog.records)

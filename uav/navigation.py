@@ -84,15 +84,29 @@ class Navigator:
             The action name ``"brake"`` for logging.
         """
         try:
-            # Get current velocity
+            # Get current velocity and position
             state = self.client.getMultirotorState()
             vel = state.kinematics_estimated.linear_velocity
+            current_z = state.kinematics_estimated.position.z_val  # Get current altitude
+            
             speed = vel.x_val
             # Apply reverse velocity proportional to current forward speed (clamp if needed)
             reverse_speed = -min(speed, 3.0)  # Limit max reverse speed for safety
-            self.client.moveByVelocityAsync(reverse_speed, 0, 0, 0.5)
+            
+            # FIX: Use moveByVelocityZAsync to maintain altitude
+            self.client.moveByVelocityZAsync(
+                reverse_speed,  # X velocity (reverse)
+                0,             # Y velocity (no lateral movement)
+                current_z,     # Z position (maintain current altitude)
+                0.5            # Duration
+            )
         except AttributeError:
-            self.client.moveByVelocityAsync(0, 0, 0, 0.5)
+            # Fallback if state unavailable
+            state = self.client.getMultirotorState()
+            current_z = state.kinematics_estimated.position.z_val
+            
+            self.client.moveByVelocityZAsync(0, 0, current_z, 0.5)
+            
         self.braked = True
         return "brake"
 
@@ -131,8 +145,12 @@ class Navigator:
         self.brake()
         time.sleep(0.5)  # Allow time for braking to take effect
         
+        # FIX: Get current altitude and maintain it during dodge
+        state = self.client.getMultirotorState()
+        current_z = state.kinematics_estimated.position.z_val  # NED: negative up
+
         # Execute dodge movement
-        self.client.moveByVelocityBodyFrameAsync(forward_speed, lateral * strength, 0, duration)
+        self.client.moveByVelocityBodyFrameAsync(forward_speed, lateral * strength, current_z, duration)
 
         # Set dodge state
         self.dodging = True

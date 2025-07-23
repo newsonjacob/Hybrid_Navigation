@@ -242,3 +242,4 @@ def filter_flow_by_depth(
         logger.error(f"[DEPTH_FILTER] Error: {e}")
         # Return original data on error
         return points, vectors
+    
