@@ -30,6 +30,30 @@ class PerceptionData:
     decode_s: float
     processing_s: float
 
+
+@dataclass
+class FrameStats:
+    """Per-frame metrics computed from optical flow."""
+
+    smooth_L: float
+    smooth_C: float
+    smooth_R: float
+    delta_L: float
+    delta_C: float
+    delta_R: float
+    probe_mag: float
+    probe_count: int
+    left_count: int
+    center_count: int
+    right_count: int
+    top_mag: float
+    mid_mag: float
+    bottom_mag: float
+    top_count: int
+    mid_count: int
+    bottom_count: int
+    in_grace: bool
+
 class FlowHistory:
     """Maintain a rolling window of recent flow magnitudes."""
 
