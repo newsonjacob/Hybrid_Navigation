@@ -210,6 +210,8 @@ def analyse_logs(log_paths: List[str], output: str) -> None:
             "Performance",
             "Flight Summary"
         ),
+        row_heights=[0.25, 0.25, 0.25, 0.25],  # Give table equal height with other plots
+        vertical_spacing=0.08  # Adjust spacing between subplots
     )
 
     # Add flow magnitudes to row 1 (now works because it's "xy" type)
@@ -266,6 +268,10 @@ def analyse_logs(log_paths: List[str], output: str) -> None:
     fps_vals = [s["fps_avg"] for s in stats if not np.isnan(s["fps_avg"])]
     loop_vals = [s["loop_avg"] for s in stats if not np.isnan(s["loop_avg"])]
 
+    # Calculate CPU and memory statistics
+    cpu_vals = df["cpu_percent"].dropna() if "cpu_percent" in df.columns else pd.Series(dtype=float)
+    memory_vals = df["memory_rss"].dropna() / (1024 * 1024) if "memory_rss" in df.columns else pd.Series(dtype=float)  # Convert to MB
+
     # Calculate flight duration
     flight_duration = 0
     if time_col in df.columns and len(df) > 0:
@@ -284,6 +290,16 @@ def analyse_logs(log_paths: List[str], output: str) -> None:
     if loop_vals:
         summary_data.append(["Average Loop Time", f"{np.mean(loop_vals):.3f}s"])
     
+    # Add CPU statistics
+    if len(cpu_vals) > 0:
+        summary_data.append(["Average CPU", f"{cpu_vals.mean():.1f}%"])
+        summary_data.append(["Peak CPU", f"{cpu_vals.max():.1f}%"])
+    
+    # Add memory statistics
+    if len(memory_vals) > 0:
+        summary_data.append(["Average Memory", f"{memory_vals.mean():.1f} MB"])
+        summary_data.append(["Peak Memory", f"{memory_vals.max():.1f} MB"])
+    
     fig.add_trace(go.Table(
         header=dict(
             values=["Metric", "Value"],
@@ -300,7 +316,7 @@ def analyse_logs(log_paths: List[str], output: str) -> None:
     ), row=4, col=1)
 
     fig.update_layout(
-        height=1000,  # Increased for 4 rows
+        height=1800,  # Increased from 1500 to 1800 for more table space
         width=1000,
         title="🚁 UAV Flight Analysis Report",
         showlegend=True
