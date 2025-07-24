@@ -21,8 +21,10 @@ def build_plot(df: pd.DataFrame) -> Any:
         either ``time`` or ``frame`` for the x-axis.
     """
     if "time" in df.columns:
-        x = df["time"]
-        x_title = "Time (s)"
+        # Convert time to relative seconds from start
+        start_time = df["time"].iloc[0]
+        x = df["time"] - start_time
+        x_title = "Time (seconds from start)"
     else:
         x = df.index
         x_title = "Frame"

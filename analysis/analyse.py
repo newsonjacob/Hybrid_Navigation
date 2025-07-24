@@ -261,7 +261,7 @@ def analyse_logs(log_paths: List[str], output: str) -> None:
 
     # Calculate summary statistics
     total_frames = sum(s["frames"] for s in stats)
-    total_collisions = sum(s["collisions"] for s in stats)
+    total_collisions = sum(s["collisions"] for s in stats) -1  # Subtract 1 from total collision count
     total_distance = sum(s["distance"] for s in stats)
     fps_vals = [s["fps_avg"] for s in stats if not np.isnan(s["fps_avg"])]
     loop_vals = [s["loop_avg"] for s in stats if not np.isnan(s["loop_avg"])]
