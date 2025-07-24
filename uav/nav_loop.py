@@ -519,7 +519,6 @@ def navigation_loop(args, client, ctx):
 def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
     """SLAM-based navigation loop with basic obstacle avoidance."""
     from slam_bridge.slam_receiver import get_latest_pose_matrix, get_pose_history
-    from slam_bridge.frontier_detection import detect_frontiers
     from uav.slam_utils import COVARIANCE_THRESHOLD, MIN_INLIERS_THRESHOLD  # Import the constants
     import uav.config as uav_config
     # --- Incorporate exit_flag from ctx for GUI stop button ---
@@ -621,9 +620,8 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
             transformed_pose, (x, y, z) = pose_data
 
             # Log the transformed pose
-            history = get_pose_history() # Get the SLAM pose history
-            map_pts = np.array([[m[0][3], m[1][3], m[2][3]] for _, m in history], dtype=float) # Convert to numpy array
-            frontiers = detect_frontiers(map_pts) # Detect frontiers in the SLAM map
+            history = get_pose_history()  # Get the SLAM pose history
+            map_pts = np.array([[m[0][3], m[1][3], m[2][3]] for _, m in history], dtype=float)  # Convert to numpy array
 
             # Check if any stop conditions are met
             if not check_exit_conditions(client, ctx, time_now, max_duration, goal_x, goal_y):

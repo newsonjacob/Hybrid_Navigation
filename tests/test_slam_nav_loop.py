@@ -19,11 +19,9 @@ def test_slam_navigation_calls_navigator(monkeypatch):
     importlib.reload(nl)
 
     import slam_bridge.slam_receiver as sr
-    import slam_bridge.frontier_detection as fd
     sample_matrix = [[1, 0, 0, 0.0], [0, 1, 0, 0.0], [0, 0, 1, -2.0]]
     monkeypatch.setattr(sr, 'get_latest_pose_matrix', lambda: sample_matrix)
     monkeypatch.setattr(sr, 'get_pose_history', lambda: [])
-    monkeypatch.setattr(fd, 'detect_frontiers', lambda m: nl.np.empty((0, 3)))
     monkeypatch.setattr(nl, 'is_obstacle_ahead', lambda *a, **k: (False, None))
 
     dummy_future = types.SimpleNamespace(join=lambda *a, **k: None)
@@ -83,11 +81,9 @@ def test_slam_nav_uses_airsim_pose(monkeypatch):
 
     monkeypatch.setattr(nl, "transform_slam_to_airsim", lambda m: (m, (m[0][3], m[1][3], m[2][3])))
     import slam_bridge.slam_receiver as sr
-    import slam_bridge.frontier_detection as fd
     # Should not be called when pose_source="airsim"
     monkeypatch.setattr(sr, "get_latest_pose_matrix", lambda: None)
     monkeypatch.setattr(sr, "get_pose_history", lambda: [])
-    monkeypatch.setattr(fd, "detect_frontiers", lambda m: nl.np.empty((0, 3)))
     monkeypatch.setattr(nl, "is_obstacle_ahead", lambda *a, **k: (False, None))
 
     client = types.SimpleNamespace(
@@ -151,11 +147,9 @@ def test_slam_navigation_performs_bootstrap(monkeypatch):
     importlib.reload(nl)
 
     import slam_bridge.slam_receiver as sr
-    import slam_bridge.frontier_detection as fd
     sample_matrix = [[1, 0, 0, 0.0], [0, 1, 0, 0.0], [0, 0, 1, -2.0]]
     monkeypatch.setattr(sr, "get_latest_pose_matrix", lambda: sample_matrix)
     monkeypatch.setattr(sr, "get_pose_history", lambda: [])
-    monkeypatch.setattr(fd, "detect_frontiers", lambda m: nl.np.empty((0, 3)))
     monkeypatch.setattr(nl, "is_obstacle_ahead", lambda *a, **k: (False, None))
 
     boot_mock = mock.MagicMock()
@@ -211,11 +205,9 @@ def test_slam_bootstrap_runs_when_tracking_lost(monkeypatch):
     importlib.reload(nl)
 
     import slam_bridge.slam_receiver as sr
-    import slam_bridge.frontier_detection as fd
     poses = [None, [[1,0,0,0.0],[0,1,0,0.0],[0,0,1,-2.0]]]
     monkeypatch.setattr(sr, "get_latest_pose_matrix", lambda: poses.pop(0) if poses else [[1,0,0,0.0],[0,1,0,0.0],[0,0,1,-2.0]])
     monkeypatch.setattr(sr, "get_pose_history", lambda: [])
-    monkeypatch.setattr(fd, "detect_frontiers", lambda m: nl.np.empty((0, 3)))
 
     stable = [False, True]
     monkeypatch.setattr(nl, "is_slam_stable", lambda: stable.pop(0) if stable else True)
@@ -283,12 +275,10 @@ def test_slam_loop_exits_at_goal(monkeypatch, caplog):
     importlib.reload(nl)
 
     import slam_bridge.slam_receiver as sr
-    import slam_bridge.frontier_detection as fd
     # Pose that transforms to the final waypoint (45,0,-2)
     final_pose = [[1, 0, 0, 0.0], [0, 1, 0, 2.0], [0, 0, 1, 45.0]]
     monkeypatch.setattr(sr, 'get_latest_pose_matrix', lambda: final_pose)
     monkeypatch.setattr(sr, 'get_pose_history', lambda: [])
-    monkeypatch.setattr(fd, 'detect_frontiers', lambda m: nl.np.empty((0, 3)))
     monkeypatch.setattr(nl, 'is_obstacle_ahead', lambda *a, **k: (False, None))
     monkeypatch.setattr(nl, 'is_slam_stable', lambda *a, **k: True)
     monkeypatch.setattr(nl.os.path, 'exists', lambda p: False)
