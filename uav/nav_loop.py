@@ -495,16 +495,9 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
 
     # --- Initialize SLAM navigation parameters ---
     start_time = time.time()
-    max_duration = getattr(args, "max_duration", 60)  # Default to 60 seconds
-    
-    # Ensure max_duration is not None
-    if max_duration is None:
-        max_duration = 60  # Default fallback
-        logger.warning("max_duration was None, defaulting to 60 seconds")
-    
-    goal_x = getattr(args, "goal_x", 29)
-    goal_y = getattr(args, "goal_y", 0)
-    
+    from uav.config import MAX_SIM_DURATION
+    max_duration = getattr(args, "max_duration", MAX_SIM_DURATION) # Default to config value
+
     # Use the constants from slam_utils.py, with config overrides if available
     cov_thres = getattr(config, "covariance_threshold", COVARIANCE_THRESHOLD) if config else COVARIANCE_THRESHOLD
     inlier_thres = getattr(config, "inlier_threshold", MIN_INLIERS_THRESHOLD) if config else MIN_INLIERS_THRESHOLD
@@ -512,7 +505,6 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
 
     logger.info(f"[SLAMNav] Starting SLAM navigation with:")
     logger.info(f"  - Max duration: {max_duration}s")
-    logger.info(f"  - Goal: ({goal_x}, {goal_y})")
     logger.info(f"  - Covariance threshold: {cov_thres}")
     logger.info(f"  - Inlier threshold: {inlier_thres}")
     logger.info(f"  - Pose source: {pose_source}")
@@ -553,14 +545,20 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
     ]
     current_waypoint_index = 0
     logger.info("[DEBUG] Entered slam_navigation_loop")
-    landing_future = None
+
+    landing_future = None # Used to track landing state
+
+    # --- Main SLAM navigation loop ---
     try:
         while True:
+
+            # Check for exit conditions
             if check_slam_stop(exit_flag, start_time, max_duration):
-                if ctx is not None and getattr(ctx, "param_refs", None):
+                if ctx is not None and getattr(ctx, "param_refs", None): # Update state to landing
                     ctx.param_refs.state[0] = "landing"
                 break
 
+            # Ensure SLAM is stable before proceeding
             pose_data = ensure_stable_slam_pose(
                 client,
                 pose_source,
@@ -571,14 +569,20 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
                 max_duration,
                 ctx,
             )
+
+            # If pose_data is None, SLAM is not stable yet
             if pose_data[0] is None:
                 break
+
+            # Transform SLAM pose to AirSim coordinates
             transformed_pose, (x, y, z) = pose_data
 
-            history = get_pose_history()
-            map_pts = np.array([[m[0][3], m[1][3], m[2][3]] for _, m in history], dtype=float)
-            frontiers = detect_frontiers(map_pts)
+            # Log the transformed pose
+            history = get_pose_history() # Get the SLAM pose history
+            map_pts = np.array([[m[0][3], m[1][3], m[2][3]] for _, m in history], dtype=float) # Convert to numpy array
+            frontiers = detect_frontiers(map_pts) # Detect frontiers in the SLAM map
 
+            # Check for landing conditions
             if landing_future is not None:
                 if has_landed(client):
                     logger.info("[SLAMNav] Landing complete.")
@@ -586,26 +590,36 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
                 time.sleep(0.1)
                 continue
 
-            # Detect if final waypoint has been reached
-            curr_goal = waypoints[current_waypoint_index]
-            dist_to_goal = np.sqrt((x - curr_goal[0]) ** 2 + (y - curr_goal[1]) ** 2)
+            # Get the current goal
+            curr_goal = waypoints[current_waypoint_index] # (goal_x, goal_y, goal_z)
+
+            # Calculate distance to the current goal
+            dist_to_goal = np.sqrt((x - curr_goal[0]) ** 2 + (y - curr_goal[1]) ** 2) 
+
+            # Check if the final waypoint has been reached
             if current_waypoint_index == len(waypoints) - 1 and dist_to_goal < threshold:
                 logger.info("[SLAMNav] Final goal reached — landing.")
+
+                # Update context state to landing
                 if ctx is not None and getattr(ctx, "param_refs", None):
                     ctx.param_refs.state[0] = "landing"
                 landing_future = client.landAsync()
                 continue
-
+            
+            # Check if the current waypoint has been reached
             (goal_x, goal_y, goal_z), current_waypoint_index, dist = handle_waypoint_progress(
                 x, y, waypoints, current_waypoint_index, threshold
             )
+
             if ctx is not None and getattr(ctx, "param_refs", None):
-                ctx.param_refs.state[0] = f"waypoint_{current_waypoint_index + 1}"
+                ctx.param_refs.state[0] = f"waypoint_{current_waypoint_index + 1}" # Update context state
             logger.info(
                 f"[SLAMNav] Current waypoint: {current_waypoint_index + 1} at ({goal_x}, {goal_y}, {goal_z})"
             )
             logger.info(f"Distance to waypoint: {dist:.2f} meters")
 
+            # Execute SLAM navigation to the current goal
+            logger.info(ctx.param_refs.state[0]) # Log the current state
             last_action = navigator.slam_to_goal(transformed_pose, (goal_x, goal_y, goal_z))
 
             time.sleep(0.1)
