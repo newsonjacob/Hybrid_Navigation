@@ -387,6 +387,11 @@ def log_and_record_frame(
 # === Main Navigation Loop ===
 # This function runs the main navigation loop for Reactive Navigation, processing perception data
 # and making navigation decisions based on the UAV's state and environment.
+def _resolve(cli_val, default_val):
+    """Return CLI override if provided, otherwise default."""
+    return default_val if cli_val is None else cli_val
+
+
 def navigation_loop(args, client, ctx):
     """Run the reactive navigation cycle.
 
@@ -402,9 +407,9 @@ def navigation_loop(args, client, ctx):
     frame_duration = 1.0 / config.TARGET_FPS
     
     # Config primary, CLI override
-    max_duration = args.max_duration if args.max_duration is not None else config.MAX_SIM_DURATION
-    goal_x = args.goal_x if args.goal_x is not None else config.GOAL_X
-    goal_y = args.goal_y if args.goal_y is not None else config.GOAL_Y
+    max_duration = _resolve(args.max_duration, config.MAX_SIM_DURATION)
+    goal_x = _resolve(args.goal_x, config.GOAL_X)
+    goal_y = _resolve(args.goal_y, config.GOAL_Y)
     
     logger.info(f"[NavLoop] Navigation parameters:")
     logger.info(f"  Goal: ({goal_x}, {goal_y}) - Source: {'CLI override' if args.goal_x is not None else 'config.py'}")
@@ -531,10 +536,10 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
         navigator = getattr(ctx, "navigator", None)
 
     # --- Initialize SLAM navigation parameters ---
-    # Config primary, CLI override
-    max_duration = args.max_duration if args.max_duration is not None else uav_config.MAX_SIM_DURATION
-    goal_x = args.goal_x if args.goal_x is not None else uav_config.GOAL_X
-    goal_y = args.goal_y if args.goal_y is not None else uav_config.GOAL_Y
+    max_duration = _resolve(args.max_duration, uav_config.MAX_SIM_DURATION)
+    goal_x = _resolve(args.goal_x, uav_config.GOAL_X)
+    goal_y = _resolve(args.goal_y, uav_config.GOAL_Y)
+    goal_z = _resolve(getattr(args, "goal_z", None), -2.0)
 
     logger.info(f"[NavLoop] Navigation parameters:")
 
@@ -844,6 +849,52 @@ def shutdown_airsim(client):
 # === Finalization and Cleanup ===
 # This section handles the finalization of flight analysis, cleanup of generated files, 
 # and removal of stop flags.
+def _generate_visualisation(log_csv, analysis_dir, timestamp):
+    html_output = str(analysis_dir / f"flight_view_{timestamp}.html")
+    logger.info(f"Generating flight visualization: {html_output}")
+    script = os.path.abspath("analysis/visualise_flight.py")
+    subprocess.run([sys.executable, script, html_output, "--log", str(log_csv)], check=True)
+    logger.info(f"✅ Flight visualization saved via subprocess: {html_output}")
+    return html_output
+
+
+def _generate_performance(log_csv, analysis_dir, timestamp):
+    perf_output = str(analysis_dir / f"performance_{timestamp}.html")
+    logger.info(f"Generating performance plots: {perf_output}")
+    script = os.path.abspath("analysis/performance_plots.py")
+    subprocess.run([sys.executable, script, str(log_csv), "--output", perf_output], check=True)
+    logger.info(f"✅ Performance plots saved: {perf_output}")
+    return perf_output
+
+
+def _generate_report(log_csv, analysis_dir, timestamp):
+    report_path = str(analysis_dir / f"flight_report_{timestamp}.html")
+    analyse_script = os.path.abspath("analysis/analyse.py")
+    if not os.path.exists(analyse_script):
+        logger.warning("analyse.py not found - skipping flight report")
+        return None
+    logger.info(f"Generating flight report: {report_path}")
+    subprocess.run([
+        sys.executable,
+        analyse_script,
+        str(log_csv),
+        "-o",
+        report_path,
+        "--log-timestamp",
+        timestamp,
+    ], check=True, capture_output=True, text=True, cwd=os.getcwd(), timeout=60)
+    if os.path.exists(report_path):
+        logger.info(f"✅ Flight report saved: {report_path}")
+        trajectory_path = analysis_dir / f"trajectory_flight_report_{timestamp}.html"
+        if os.path.exists(trajectory_path):
+            logger.info(f"✅ 3D Trajectory saved: {trajectory_path}")
+        else:
+            logger.warning(f"3D trajectory file missing: {trajectory_path}")
+    else:
+        logger.warning(f"Flight report file missing: {report_path}")
+    return report_path
+
+
 def finalise_files(ctx):
     """Generate flight analysis and clean up generated files."""
     if ctx is None:
@@ -878,97 +929,20 @@ def finalise_files(ctx):
         analysis_dir = base_dir / "analysis"
         analysis_dir.mkdir(parents=True, exist_ok=True)
         
-        # Generate flight visualization via subprocess for testability
         try:
-            html_output = str(analysis_dir / f"flight_view_{timestamp}.html")
-            logger.info(f"Generating flight visualization: {html_output}")
-
-            visualization_script = os.path.abspath("analysis/visualise_flight.py")
-            subprocess.run(
-                [
-                    sys.executable,
-                    visualization_script,
-                    html_output,
-                    "--log",
-                    str(log_csv),
-                ],
-                check=True,
-            )
-            logger.info(f"✅ Flight visualization saved via subprocess: {html_output}")
-
+            files = [
+                _generate_visualisation(log_csv, analysis_dir, timestamp),
+                _generate_performance(log_csv, analysis_dir, timestamp),
+                _generate_report(log_csv, analysis_dir, timestamp),
+            ]
         except subprocess.CalledProcessError as proc_error:
-            logger.error(f"Subprocess visualization failed: {proc_error.stderr}")
-        except Exception as viz_error:
-            logger.error(f"Flight visualization generation failed: {viz_error}")
+            logger.error(f"Analysis subprocess failed: {proc_error.stderr}")
+        except Exception as analysis_error:
+            logger.error(f"Analysis generation failed: {analysis_error}")
+            files = []
 
-        # Generate performance plots via subprocess
-        try:
-            perf_output = str(analysis_dir / f"performance_{timestamp}.html")
-            logger.info(f"Generating performance plots: {perf_output}")
-
-            perf_script = os.path.abspath("analysis/performance_plots.py")
-            subprocess.run(
-                [
-                    sys.executable,
-                    perf_script,
-                    str(log_csv),
-                    "--output",
-                    perf_output,
-                ],
-                check=True,
-            )
-            logger.info(f"✅ Performance plots saved: {perf_output}")
-
-        except subprocess.CalledProcessError as perf_error:
-            logger.warning(f"Performance plots generation failed: {perf_error.stderr}")
-        except Exception as perf_outer_error:
-            logger.error(f"Performance analysis failed: {perf_outer_error}")
-
-        # Generate flight report
-        try:
-            report_path = str(analysis_dir / f"flight_report_{timestamp}.html")
-            analyse_script = os.path.abspath("analysis/analyse.py")
-            
-            if os.path.exists(analyse_script):
-                logger.info(f"Generating flight report: {report_path}")
-                
-                result = subprocess.run(
-                    [
-                        sys.executable,
-                        analyse_script,
-                        str(log_csv),
-                        "-o",
-                        report_path,
-                        "--log-timestamp", timestamp  # Add timestamp parameter
-                    ],
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                    cwd=os.getcwd(),
-                    timeout=60
-                )
-                
-                # Check for both files
-                if os.path.exists(report_path):
-                    logger.info(f"✅ Flight report saved: {report_path}")
-                    
-                    # Check for 3D trajectory file
-                    trajectory_path = analysis_dir / f"trajectory_flight_report_{timestamp}.html"
-                    if os.path.exists(trajectory_path):
-                        logger.info(f"✅ 3D Trajectory saved: {trajectory_path}")
-                    else:
-                        logger.warning(f"3D trajectory file missing: {trajectory_path}")
-                        
-                else:
-                    logger.warning(f"Flight report file missing: {report_path}")
-                
-            else:
-                logger.warning("analyse.py not found - skipping flight report")
-                
-        except subprocess.CalledProcessError as report_error:
-            logger.error(f"Flight report subprocess failed: {report_error}")
-        except Exception as report_outer_error:
-            logger.info(f"Flight report generation skipped: {report_outer_error}")
+        # Remove None entries and summarise
+        generated_files = [Path(f) for f in files if f and os.path.exists(f)]
 
         # Generate SLAM comparison plot (if available)
         try:
@@ -978,18 +952,8 @@ def finalise_files(ctx):
         except Exception as slam_error:
             logger.info(f"SLAM plot generation skipped: {slam_error}")
 
-        # Summary of generated files
-        generated_files = []
-        for file_pattern in [
-            analysis_dir / f"flight_view_{timestamp}.html",
-            analysis_dir / f"performance_{timestamp}.html",
-            analysis_dir / f"flight_report_{timestamp}.html"
-        ]:
-            if os.path.exists(file_pattern):
-                generated_files.append(file_pattern)
-        
         if generated_files:
-            logger.info(f"🎯 Analysis complete! Generated files:")
+            logger.info("🎯 Analysis complete! Generated files:")
             for file_path in generated_files:
                 file_size = os.path.getsize(file_path)
                 logger.info(f"  📊 {file_path} ({file_size} bytes)")
