@@ -583,7 +583,6 @@ def analyse_logs(log_paths: List[str], output: str) -> None:
     if loop_vals:
         logger.info(f"Average loop time: {np.mean(loop_vals):.3f}s")
 
-
 def load_environment_mesh():
     """Load the environment mesh with smart scaling based on flight data."""
     if not TRIMESH_AVAILABLE:
@@ -796,7 +795,6 @@ def generate_3d_trajectory(path, df, output, time_col):
         import traceback
         logger.warning(f"3D trajectory error details: {traceback.format_exc()}")
 
-
 def generate_plots(log_path: str, outdir: str) -> None:
     """Create state histogram and distance plots from ``log_path``."""
     out = Path(outdir)
@@ -804,7 +802,6 @@ def generate_plots(log_path: str, outdir: str) -> None:
     stats = parse_log(log_path)
     plot_state_histogram(stats, str(out / "state_histogram.html"))
     plot_distance_over_time(log_path, str(out / "distance_over_time.html"))
-
 
 def parse_args(argv: Union[List[str], None] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Analyse flight logs")
@@ -822,7 +819,6 @@ def parse_args(argv: Union[List[str], None] = None) -> argparse.Namespace:
         help="Timestamp for log file naming"
     )
     return parser.parse_args(argv)
-
 
 def main(argv: Union[List[str], None] = None) -> None:
     try:
