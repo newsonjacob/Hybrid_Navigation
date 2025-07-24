@@ -27,7 +27,21 @@ def perception_loop(tracker, image):
 
 # This function is called by the perception thread to start processing images.
 def start_perception_thread(ctx):
-    """Launch background perception thread and attach queue to ctx."""
+    """Start the background perception worker.
+
+    A daemon thread is launched that repeatedly grabs images from AirSim and
+    processes them for optical flow. Each cycle fetches a grayscale flow image
+    along with the stereo pair, decodes and resizes them, then runs
+    :func:`perception_loop` to obtain flow vectors.  The resulting data tuple
+    ``(vis_img, good_old, flow_vectors, flow_std, fetch_s, decode_s,
+    processing_s)`` is placed into ``ctx.perception_queue`` with a maximum size
+    of one, so only the most recent result is kept.
+
+    The worker thread runs until ``ctx.exit_flag`` is set.  ``ctx.perception_queue``
+    provides the handoff point for the navigation loop, which retrieves the
+    latest processed frame using ``Queue.get``. ``ctx.perception_thread`` holds a
+    reference to the thread for later shutdown coordination.
+    """
     exit_flag = ctx.exit_flag
     tracker = ctx.tracker
     perception_queue = Queue(maxsize=1)
