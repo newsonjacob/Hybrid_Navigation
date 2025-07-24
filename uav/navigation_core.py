@@ -439,7 +439,6 @@ def navigation_step(
     vis_img,
     time_now,
     frame_count,
-    prev_state,
     state_history,
     pos_history,
     param_refs,
@@ -476,8 +475,6 @@ def navigation_step(
         Current timestamp.
     frame_count : int
         Current frame index.
-    prev_state : str
-        Previous navigation state.
     state_history, pos_history : deque
         Recent navigation states and positions.
     param_refs : ParamRefs
@@ -489,14 +486,13 @@ def navigation_step(
 
     Returns
     -------
-    Tuple[str, int, bool, float, float, float, bool, bool, bool, bool]
+    Tuple[str, int, bool, float, float, bool, bool, bool, bool]
         Tuple containing the selected state string, obstacle flag, side safety
         flag, dynamic thresholds and detailed obstacle condition flags.
     """
     state_str = "none"
     brake_thres = 0.0
     dodge_thres = 0.0
-    probe_req = 0.0
     side_safe = False
     left_safe = False
     right_safe = False
@@ -508,9 +504,6 @@ def navigation_step(
     combination_flow = False
     minimum_flow = False
 
-    valid_L = left_count >= config.MIN_FEATURES_PER_ZONE
-    valid_C = center_count >= config.MIN_FEATURES_PER_ZONE
-    valid_R = right_count >= config.MIN_FEATURES_PER_ZONE
 
     logger.debug("Flow Magnitudes — L: %.2f, C: %.2f, R: %.2f", smooth_L, smooth_C, smooth_R)
 
@@ -521,7 +514,6 @@ def navigation_step(
             side_safe,
             brake_thres,
             dodge_thres,
-            probe_req,
             sudden_rise,
             center_blocked,
             combination_flow,
@@ -536,7 +528,6 @@ def navigation_step(
     left_clearing = delta_L < -0.3
     right_clearing = delta_R < -0.3
 
-    probe_reliable = probe_count > config.MIN_PROBE_FEATURES and probe_mag > 0.05
 
     left_safe, right_safe, side_safe = determine_side_safety(
         smooth_L, smooth_R, brake_thres, left_count, center_count, right_count
@@ -604,7 +595,6 @@ def navigation_step(
         side_safe,
         brake_thres,
         dodge_thres,
-        probe_req,
         sudden_rise,
         center_blocked,
         combination_flow,

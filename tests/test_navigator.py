@@ -230,7 +230,6 @@ def test_navigation_skips_actions_during_grace_after_blind_forward(monkeypatch):
         object(),
         time.time(),
         1,
-        None,
         deque(maxlen=10),
         deque(maxlen=10),
         params,

@@ -65,7 +65,6 @@ def write_frame_output(
     side_safe,
     brake_thres,
     dodge_thres,
-    probe_req,
     simgetimage_s,
     decode_s,
     processing_s,
@@ -122,7 +121,6 @@ def write_frame_output(
         right_count,
         brake_thres,
         dodge_thres,
-        probe_req,
         actual_fps,
         state_str,
         collided,
@@ -189,7 +187,7 @@ def handle_reset(client, ctx, frame_count):
             "frame,flow_left,flow_center,flow_right,"
             "delta_left,delta_center,delta_right,flow_std,"
             "left_count,center_count,right_count,"
-            "brake_thres,dodge_thres,probe_req,fps,"
+            "brake_thres,dodge_thres,fps,"
             "state,collided,obstacle,side_safe,"
             "pos_x,pos_y,pos_z,yaw,speed,"
             "time,features,simgetimage_s,decode_s,processing_s,loop_s,cpu_percent,memory_rss,"

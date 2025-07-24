@@ -91,7 +91,7 @@ def setup_environment(args, client):
         "frame,flow_left,flow_center,flow_right,"
         "delta_left,delta_center,delta_right,flow_std,"
         "left_count,center_count,right_count,"
-        "brake_thres,dodge_thres,probe_req,fps,"
+        "brake_thres,dodge_thres,fps,"
         "state,collided,obstacle,side_safe,"
         "pos_x,pos_y,pos_z,yaw,speed,"
         "time,features,simgetimage_s,decode_s,processing_s,loop_s,cpu_percent,memory_rss,"
@@ -221,7 +221,6 @@ def update_navigation_state(client, args, ctx, data, frame_count, time_now, max_
         bottom_count,
         in_grace,
     ) = processed
-    prev_state = ctx.param_refs.state[0]
     nav_decision = navigation_step(
         client,
         ctx.navigator,
@@ -242,7 +241,6 @@ def update_navigation_state(client, args, ctx, data, frame_count, time_now, max_
         vis_img,
         time_now,
         frame_count,
-        prev_state,
         ctx.state_history,
         ctx.pos_history,
         ctx.param_refs,
@@ -298,7 +296,6 @@ def log_and_record_frame(
         side_safe,
         brake_thres,
         dodge_thres,
-        probe_req,
         sudden_rise,
         center_blocked,
         combination_flow,
@@ -334,7 +331,6 @@ def log_and_record_frame(
         side_safe,
         brake_thres,
         dodge_thres,
-        probe_req,
         simgetimage_s,
         decode_s,
         processing_s,
