@@ -148,26 +148,47 @@ def check_startup_grace(ctx, time_now):
     return True
 
 
-def check_exit_conditions(client, ctx, time_now, max_duration, goal_x, goal_y):
-    """Return True if navigation loop should terminate."""
-    if os.path.exists(STOP_FLAG_PATH):
-        logger.info("Stop flag detected. Landing and shutting down.")
-        ctx.exit_flag.set()
-        return True
-    if time_now - ctx.start_time >= max_duration:
-        logger.info("Time limit reached — landing and stopping.")
-        return True
-    pos_goal, _, _ = get_drone_state(client)
-    if abs(pos_goal.x_val - goal_x) < config.GOAL_THRESHOLD and abs(pos_goal.y_val - goal_y) < config.GOAL_THRESHOLD:
-        logger.info("Goal reached — landing.")
+def _initiate_landing(client, ctx):
+    """Start asynchronous landing and update state."""
+    if getattr(ctx, "landing_future", None) is None:
         try:
             ctx.navigator.brake()
         except Exception as exc:  # pragma: no cover - just log
             logger.warning("Brake before landing failed: %s", exc)
+        ctx.landing_future = client.landAsync()
         if getattr(ctx, "param_refs", None):
             ctx.param_refs.state[0] = "landing"
-        ctx.exit_flag.set()
-        return True
+
+
+def has_landed(client):
+    """Return True when the vehicle reports a landed state."""
+    try:
+        state = client.getMultirotorState()
+        landed = getattr(state, "landed_state", None)
+        if landed is not None:
+            if LandedState is not None:
+                return landed == LandedState.Landed
+            return landed in (0, 1) and landed == 1
+    except Exception:
+        pass
+    return False
+
+
+def check_exit_conditions(client, ctx, time_now, max_duration, goal_x, goal_y):
+    """Check for termination triggers and initiate landing when required."""
+    if os.path.exists(STOP_FLAG_PATH):
+        logger.info("Stop flag detected. Landing and shutting down.")
+        _initiate_landing(client, ctx)
+        return False
+    if time_now - ctx.start_time >= max_duration:
+        logger.info("Time limit reached — landing and stopping.")
+        _initiate_landing(client, ctx)
+        return False
+    pos_goal, _, _ = get_drone_state(client)
+    if abs(pos_goal.x_val - goal_x) < config.GOAL_THRESHOLD and abs(pos_goal.y_val - goal_y) < config.GOAL_THRESHOLD:
+        logger.info("Goal reached — landing.")
+        _initiate_landing(client, ctx)
+        return False
     return False
 
 
@@ -382,8 +403,48 @@ def navigation_loop(args, client, ctx):
             if data is None:
                 continue
 
-            if check_exit_conditions(client, ctx, time_now, max_duration, goal_x, goal_y):
-                break
+            check_exit_conditions(client, ctx, time_now, max_duration, goal_x, goal_y)
+
+            if getattr(ctx, "landing_future", None) is not None:
+                processed = process_perception_data(
+                    client,
+                    args,
+                    data,
+                    frame_count,
+                    ctx.frame_queue,
+                    ctx.flow_history,
+                    ctx.navigator,
+                    ctx.param_refs,
+                    time_now,
+                    max_flow_mag,
+                )
+                if processed is None:
+                    continue
+                nav_decision = (
+                    "landing",
+                    0,
+                    False,
+                    0.0,
+                    0.0,
+                    False,
+                    False,
+                    False,
+                    False,
+                )
+                loop_start = log_and_record_frame(
+                    client,
+                    ctx,
+                    loop_start,
+                    frame_duration,
+                    processed,
+                    nav_decision,
+                    frame_count,
+                    time_now,
+                )
+                if has_landed(client):
+                    logger.info("Landing complete.")
+                    break
+                continue
 
             result = update_navigation_state(
                 client,
@@ -492,6 +553,7 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
     ]
     current_waypoint_index = 0
     logger.info("[DEBUG] Entered slam_navigation_loop")
+    landing_future = None
     try:
         while True:
             if check_slam_stop(exit_flag, start_time, max_duration):
@@ -517,6 +579,13 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
             map_pts = np.array([[m[0][3], m[1][3], m[2][3]] for _, m in history], dtype=float)
             frontiers = detect_frontiers(map_pts)
 
+            if landing_future is not None:
+                if has_landed(client):
+                    logger.info("[SLAMNav] Landing complete.")
+                    break
+                time.sleep(0.1)
+                continue
+
             # Detect if final waypoint has been reached
             curr_goal = waypoints[current_waypoint_index]
             dist_to_goal = np.sqrt((x - curr_goal[0]) ** 2 + (y - curr_goal[1]) ** 2)
@@ -524,7 +593,8 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
                 logger.info("[SLAMNav] Final goal reached — landing.")
                 if ctx is not None and getattr(ctx, "param_refs", None):
                     ctx.param_refs.state[0] = "landing"
-                break
+                landing_future = client.landAsync()
+                continue
 
             (goal_x, goal_y, goal_z), current_waypoint_index, dist = handle_waypoint_progress(
                 x, y, waypoints, current_waypoint_index, threshold
