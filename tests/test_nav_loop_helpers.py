@@ -5,7 +5,12 @@ import unittest.mock as mock
 
 
 def test_helper_functions_exist(monkeypatch):
-    airsim_stub = types.SimpleNamespace(ImageRequest=object, ImageType=object)
+    airsim_stub = types.SimpleNamespace(
+        ImageRequest=object,
+        ImageType=object,
+        DrivetrainType=types.SimpleNamespace(ForwardOnly=1),
+        YawMode=lambda *a, **k: None,
+    )
     monkeypatch.setitem(sys.modules, 'airsim', airsim_stub)
     nl = importlib.import_module('uav.nav_loop')
     importlib.reload(nl)
@@ -90,11 +95,17 @@ def test_determine_side_safety(monkeypatch):
 
 
 def test_handle_obstacle_dodge_and_resume(monkeypatch):
-    airsim_stub = types.SimpleNamespace(ImageRequest=object, ImageType=object)
+    airsim_stub = types.SimpleNamespace(
+        ImageRequest=object,
+        ImageType=object,
+        DrivetrainType=types.SimpleNamespace(ForwardOnly=1),
+        YawMode=lambda *a, **k: None,
+    )
     monkeypatch.setitem(sys.modules, 'airsim', airsim_stub)
     nl = importlib.import_module('uav.nav_loop')
     importlib.reload(nl)
     from uav.navigation import Navigator
+    from uav.navigation_state import NavigationState
 
     client = DummyClient()
     nav = Navigator(client)
@@ -103,7 +114,7 @@ def test_handle_obstacle_dodge_and_resume(monkeypatch):
         nav, 1, True, True, False, False, False,
         0.0, 0.0, 0.0, 15, 20
     )
-    assert state.startswith('dodge')
+    assert state in (NavigationState.DODGE_LEFT, NavigationState.DODGE_RIGHT)
     assert nav.dodging is True
 
     # Resume when obstacle cleared
@@ -111,4 +122,4 @@ def test_handle_obstacle_dodge_and_resume(monkeypatch):
         nav, 0, False, False, False, False, False,
         0.0, 0.0, 0.0, 15, 20
     )
-    assert state == 'resume'
+    assert state is NavigationState.RESUME

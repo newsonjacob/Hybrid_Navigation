@@ -5,6 +5,7 @@ import math
 import logging
 import airsim
 from uav import config
+from uav.navigation_state import NavigationState
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +79,8 @@ class Navigator:
 
         Returns
         -------
-        str
-            The action name ``"brake"`` for logging.
+        NavigationState
+            ``NavigationState.BRAKE`` for logging.
         """
         try:
             # Get current velocity and position
@@ -106,7 +107,7 @@ class Navigator:
             self.client.moveByVelocityZAsync(0, 0, current_z, 0.5)
             
         self.braked = True
-        return "brake"
+        return NavigationState.BRAKE
 
     def dodge(self, smooth_L, smooth_C, smooth_R, direction=None, duration=2.0):
         """Sidestep left or right to avoid an obstacle.
@@ -122,8 +123,8 @@ class Navigator:
 
         Returns
         -------
-        str
-            Action string describing the dodge.
+        NavigationState
+            ``NavigationState.DODGE_LEFT`` or ``NavigationState.DODGE_RIGHT``.
         """
         
         # Record dodge start time if not already dodging
@@ -157,7 +158,7 @@ class Navigator:
         self.dodge_direction = direction
         self.dodge_strength = strength
         
-        return f"dodge_{direction}"
+        return NavigationState.DODGE_RIGHT if direction == "right" else NavigationState.DODGE_LEFT
 
     def maintain_dodge(self):
         """Continue the dodge while an obstacle is still detected."""
@@ -170,8 +171,8 @@ class Navigator:
 
         Returns
         -------
-        str
-            The action name ``"resume"``.
+        NavigationState
+            ``NavigationState.RESUME``.
         """
 
         # Log dodge duration if we were dodging
@@ -202,7 +203,7 @@ class Navigator:
         self.just_resumed = True
         self.resume_grace_end_time = time.time() + 0 # 0 second grace
         self.last_movement_time = time.time()
-        return "resume"
+        return NavigationState.RESUME
 
     def check_post_dodge_grace(self):
         """Check and update post-dodge grace period status.
@@ -227,8 +228,8 @@ class Navigator:
 
         Returns
         -------
-        str
-            The action name ``"blind_forward"``.
+        NavigationState
+            ``NavigationState.BLIND_FORWARD``.
         """
         logger.warning(
             "\u26A0\uFE0F No features — continuing blind forward motion")
@@ -242,15 +243,15 @@ class Navigator:
             self.just_resumed = True
             self.resume_grace_end_time = time.time() + 1.0
             self.grace_used = True
-        return "blind_forward"
+        return NavigationState.BLIND_FORWARD
 
     def nudge_forward(self):
         """Gently push the drone forward when stalled.
 
         Returns
         -------
-        str
-            The action name ``"nudge"``.
+        NavigationState
+            ``NavigationState.NUDGE``.
         """
         logger.warning(
             "\u26A0\uFE0F Low flow + zero velocity — nudging forward"
@@ -259,15 +260,15 @@ class Navigator:
         z = state.kinematics_estimated.position.z_val  # NED: z is negative up
         self.client.moveByVelocityZAsync(0.5, 0, z, 1)
         self.last_movement_time = time.time()
-        return "nudge"
+        return NavigationState.NUDGE
 
     def reinforce(self):
         """Reissue the forward command to reinforce motion.
 
         Returns
         -------
-        str
-            The action name ``"resume_reinforce"``.
+        NavigationState
+            ``NavigationState.RESUME_REINFORCE``.
         """
         logger.info("\U0001F501 Reinforcing forward motion")
         state = self.client.getMultirotorState()
@@ -288,20 +289,20 @@ class Navigator:
             self.grace_used = True
             logger.info("\U0001F552 Grace period started (first movement only)")
 
-        return "resume_reinforce"
+        return NavigationState.RESUME_REINFORCE
 
     def timeout_recover(self):
         """Move slowly forward after a command timeout.
 
         Returns
         -------
-        str
-            The action name ``"timeout_nudge"``.
+        NavigationState
+            ``NavigationState.TIMEOUT_NUDGE``.
         """
         logger.warning("\u23F3 Timeout — forcing recovery motion")
         self.client.moveByVelocityAsync(0.5, 0, 0, 1)
         self.last_movement_time = time.time()
-        return "timeout_nudge"
+        return NavigationState.TIMEOUT_NUDGE
     
 
     def slam_to_goal(self, pose, goal, max_speed=0.75, threshold=0.5,
