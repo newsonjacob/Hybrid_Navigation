@@ -39,6 +39,11 @@ from uav.navigation_core import detect_obstacle, determine_side_safety, handle_o
 from uav.navigation_slam_boot import run_slam_bootstrap
 from uav.paths import STOP_FLAG_PATH
 from uav.slam_utils import (is_slam_stable, generate_pose_comparison_plot)
+from uav.analysis_helpers import (
+    _generate_visualisation,
+    _generate_performance,
+    _generate_report,
+)
 
 logger = logging.getLogger("nav_loop")
 
@@ -843,54 +848,8 @@ def shutdown_airsim(client):
         logger.error("Landing error: %s", exc)
 
 # === Finalization and Cleanup ===
-# This section handles the finalization of flight analysis, cleanup of generated files, 
+# This section handles the finalization of flight analysis, cleanup of generated files,
 # and removal of stop flags.
-def _generate_visualisation(log_csv, analysis_dir, timestamp):
-    html_output = str(analysis_dir / f"flight_view_{timestamp}.html")
-    logger.info(f"Generating flight visualization: {html_output}")
-    script = os.path.abspath("analysis/visualise_flight.py")
-    subprocess.run([sys.executable, script, html_output, "--log", str(log_csv)], check=True)
-    logger.info(f"✅ Flight visualization saved via subprocess: {html_output}")
-    return html_output
-
-
-def _generate_performance(log_csv, analysis_dir, timestamp):
-    perf_output = str(analysis_dir / f"performance_{timestamp}.html")
-    logger.info(f"Generating performance plots: {perf_output}")
-    script = os.path.abspath("analysis/performance_plots.py")
-    subprocess.run([sys.executable, script, str(log_csv), "--output", perf_output], check=True)
-    logger.info(f"✅ Performance plots saved: {perf_output}")
-    return perf_output
-
-
-def _generate_report(log_csv, analysis_dir, timestamp):
-    report_path = str(analysis_dir / f"flight_report_{timestamp}.html")
-    analyse_script = os.path.abspath("analysis/analyse.py")
-    if not os.path.exists(analyse_script):
-        logger.warning("analyse.py not found - skipping flight report")
-        return None
-    logger.info(f"Generating flight report: {report_path}")
-    subprocess.run([
-        sys.executable,
-        analyse_script,
-        str(log_csv),
-        "-o",
-        report_path,
-        "--log-timestamp",
-        timestamp,
-    ], check=True, capture_output=True, text=True, cwd=os.getcwd(), timeout=60)
-    if os.path.exists(report_path):
-        logger.info(f"✅ Flight report saved: {report_path}")
-        trajectory_path = analysis_dir / f"trajectory_flight_report_{timestamp}.html"
-        if os.path.exists(trajectory_path):
-            logger.info(f"✅ 3D Trajectory saved: {trajectory_path}")
-        else:
-            logger.warning(f"3D trajectory file missing: {trajectory_path}")
-    else:
-        logger.warning(f"Flight report file missing: {report_path}")
-    return report_path
-
-
 def finalise_files(ctx):
     """Generate flight analysis and clean up generated files."""
     if ctx is None:
