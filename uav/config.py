@@ -12,7 +12,7 @@ DEPTH_FILTER_DIST = 2  # Distance threshold for depth filtering
 GRACE_PERIOD_SEC = 1.0 # Grace period for state transitions
 
 SLAM_YAW_OFFSET = 0.0
-MAX_SIM_DURATION = 60  # seconds
+MAX_SIM_DURATION = 120  # seconds
 GOAL_X = 46 # meters
 GOAL_Y = 0  # meters
 GOAL_THRESHOLD = 1  # Distance threshold for goal completion (meters)
