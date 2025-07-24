@@ -48,23 +48,24 @@ def _make_nav():
         grace_period_end_time=0.0,
         last_movement_time=0.0,
     )
-    nav.brake = mock.MagicMock(return_value="brake")
-    nav.blind_forward = mock.MagicMock(return_value="blind_forward")
-    nav.dodge = mock.MagicMock(return_value="dodge_left")
+    nav.brake = mock.MagicMock(return_value=NavigationState.BRAKE)
+    nav.blind_forward = mock.MagicMock(return_value=NavigationState.BLIND_FORWARD)
+    nav.dodge = mock.MagicMock(return_value=NavigationState.DODGE_LEFT)
     nav.maintain_dodge = mock.MagicMock()
-    nav.resume_forward = mock.MagicMock(return_value="resume")
-    nav.nudge_forward = mock.MagicMock(return_value="nudge")
-    nav.reinforce = mock.MagicMock(return_value="reinforce")
-    nav.timeout_recover = mock.MagicMock(return_value="timeout")
+    nav.resume_forward = mock.MagicMock(return_value=NavigationState.RESUME)
+    nav.nudge_forward = mock.MagicMock(return_value=NavigationState.NUDGE)
+    nav.reinforce = mock.MagicMock(return_value=NavigationState.RESUME_REINFORCE)
+    nav.timeout_recover = mock.MagicMock(return_value=NavigationState.TIMEOUT_NUDGE)
     return nav
 
 
 from uav.context import ParamRefs
+from uav.navigation_state import NavigationState
 
 
 def _default_params():
     return ParamRefs(
-        state=[None],
+        state=[NavigationState.NONE],
         prev_L=[0.0],
         prev_C=[0.0],
         prev_R=[0.0],
@@ -106,7 +107,7 @@ def test_brake_when_side_flow_high(monkeypatch):
         params,
     )
 
-    assert result[0] == "brake"
+    assert result[0] is NavigationState.BRAKE
     nav.brake.assert_called_once()
     nav.blind_forward.assert_not_called()
 
@@ -143,7 +144,7 @@ def test_blind_forward_with_low_flow(monkeypatch):
         params,
     )
 
-    assert result[0] == "blind_forward"
+    assert result[0] is NavigationState.BLIND_FORWARD
     nav.blind_forward.assert_called_once()
     nav.brake.assert_not_called()
 
@@ -190,6 +191,6 @@ def test_dodge_when_obstacle_and_sides_clear(monkeypatch):
         params,
     )
 
-    assert result[0].startswith("dodge")
+    assert result[0] in (NavigationState.DODGE_LEFT, NavigationState.DODGE_RIGHT)
     nav.dodge.assert_called_once()
     assert nav.dodge.call_args.kwargs.get("direction") == "left"

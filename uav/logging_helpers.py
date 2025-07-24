@@ -107,6 +107,7 @@ def write_frame_output(
     cpu_percent = get_cpu_percent()
     mem_rss = get_memory_info().rss
     fps_list.append(actual_fps)
+    state_str_name = state_str.name if hasattr(state_str, "name") else str(state_str)
     log_line = format_log_line(
         frame_count,
         smooth_L,
@@ -122,7 +123,7 @@ def write_frame_output(
         brake_thres,
         dodge_thres,
         actual_fps,
-        state_str,
+        state_str_name,
         collided,
         obstacle_detected,
         side_safe,

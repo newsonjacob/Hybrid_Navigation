@@ -19,7 +19,7 @@ class ParamRefs:
     delta_L: List[float] = field(default_factory=lambda: [0.0])
     delta_C: List[float] = field(default_factory=lambda: [0.0])
     delta_R: List[float] = field(default_factory=lambda: [0.0])
-    state: List[str] = field(default_factory=lambda: [''])
+    state: List[Any] = field(default_factory=lambda: [''])
     reset_flag: List[bool] = field(default_factory=lambda: [False])
 
 
@@ -32,7 +32,7 @@ class NavContext:
     tracker: Any
     flow_history: Any
     navigator: Any
-    state_history: Deque[str]
+    state_history: Deque[Any]
     pos_history: Deque[Any]
     frame_queue: Queue
     video_thread: Thread

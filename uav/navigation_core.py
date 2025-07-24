@@ -6,6 +6,7 @@ from uav.navigation_rules import compute_thresholds
 from uav.state_checks import in_grace_period
 from uav.utils import get_drone_state
 from uav import config
+from uav.navigation_state import NavigationState
 
 logger = logging.getLogger(__name__)
 
@@ -284,10 +285,10 @@ def handle_obstacle(
 
     Returns
     -------
-    str
-        Action string executed by the navigator.
+    NavigationState
+        Action executed by the navigator.
     """
-    state_str = "none"
+    state_str = NavigationState.NONE
 
     if obstacle_detected and not navigator.dodging:
         if left_safe and right_safe:
@@ -361,8 +362,8 @@ def update_dodge_history(client, state_history, pos_history, state_str, navigato
         Recent navigation actions.
     pos_history : deque
         Recent position history.
-    state_str : str
-        Current action string.
+    state_str : NavigationState
+        Current action state.
     navigator : Navigator
         Navigator controlling the drone.
     smooth_L, smooth_C, smooth_R : float
@@ -372,14 +373,14 @@ def update_dodge_history(client, state_history, pos_history, state_str, navigato
 
     Returns
     -------
-    str
-        Possibly updated action string.
+    NavigationState
+        Possibly updated action state.
     """
     pos_hist, _, _ = get_drone_state(client)
     state_history.append(state_str)
     pos_history.append((pos_hist.x_val, pos_hist.y_val))
     if len(state_history) == state_history.maxlen:
-        if all(s == state_history[-1] for s in state_history) and state_history[-1].startswith("dodge"):
+        if all(s == state_history[-1] for s in state_history) and state_history[-1] in (NavigationState.DODGE_LEFT, NavigationState.DODGE_RIGHT):
             dx = pos_history[-1][0] - pos_history[0][0]
             dy = pos_history[-1][1] - pos_history[0][1]
             if abs(dx) < 0.5 and abs(dy) < 1.0:
@@ -396,8 +397,8 @@ def recovery_actions(navigator, speed, smooth_C, smooth_L, smooth_R, brake_thres
 
     Returns
     -------
-    str
-        Action string chosen to recover progress.
+    NavigationState
+        Action chosen to recover progress.
     """
     if (
         navigator.braked
@@ -416,7 +417,7 @@ def recovery_actions(navigator, speed, smooth_C, smooth_L, smooth_R, brake_thres
         return navigator.nudge_forward()
     if time_now - navigator.last_movement_time > 4:
         return navigator.timeout_recover()
-    return "none"
+    return NavigationState.NONE
 
 
 def navigation_step(
@@ -486,11 +487,11 @@ def navigation_step(
 
     Returns
     -------
-    Tuple[str, int, bool, float, float, bool, bool, bool, bool]
-        Tuple containing the selected state string, obstacle flag, side safety
-        flag, dynamic thresholds and detailed obstacle condition flags.
+    Tuple[NavigationState, int, bool, float, float, bool, bool, bool, bool]
+        Tuple containing the selected navigation state, obstacle flag, side
+        safety flag, dynamic thresholds and detailed obstacle condition flags.
     """
-    state_str = "none"
+    state_str = NavigationState.NONE
     brake_thres = 0.0
     dodge_thres = 0.0
     side_safe = False
@@ -558,10 +559,10 @@ def navigation_step(
         left_count,
         right_count,
     )
-    if action != "none":
+    if action != NavigationState.NONE:
         state_str = action
 
-    if state_str == "none":
+    if state_str == NavigationState.NONE:
         state_str = recovery_actions(
             navigator,
             speed,
