@@ -25,6 +25,7 @@ __all__ = [
     "start_streamer",
     "launch_slam_backend",
     "record_slam_video",
+    "resize_window",
     "STOP_FLAG",
 ]
 
@@ -167,3 +168,20 @@ def record_slam_video(window_substring: str = "ORB-SLAM2", duration: int = 60) -
     except Exception as e:  # pragma: no cover - depends on system
         logger.warning("Screen recording failed to start: %s", e)
         return None, None
+
+
+def resize_window(title_substring: str, width: int, height: int) -> bool:
+    """Resize the first window containing ``title_substring``."""
+    logger = logging.getLogger(__name__)
+    if not gw:
+        logger.debug("pygetwindow not available; cannot resize window")
+        return False
+    try:
+        for win in gw.getAllWindows():
+            if title_substring.lower() in win.title.lower():
+                win.resizeTo(width, height)
+                logger.info("Resized window '%s' to %dx%d", win.title, width, height)
+                return True
+    except Exception as e:  # pragma: no cover - depends on OS
+        logger.warning("Failed to resize window '%s': %s", title_substring, e)
+    return False

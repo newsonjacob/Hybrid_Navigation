@@ -3,9 +3,10 @@ from datetime import datetime
 import subprocess
 import sys
 import types
+from pathlib import Path
 
 if 'pygetwindow' not in sys.modules:
-    sys.modules['pygetwindow'] = types.SimpleNamespace(getAllTitles=lambda: [])
+    sys.modules['pygetwindow'] = types.SimpleNamespace(getAllTitles=lambda: [], getAllWindows=lambda: [])
 
 from uav import launch_utils as lutils
 
@@ -65,3 +66,19 @@ def test_wait_helpers_cancel(tmp_path, monkeypatch):
 
     monkeypatch.setattr(lutils.socket, "create_connection", lambda *a, **k: (_ for _ in ()).throw(OSError()))
     assert lutils.wait_for_port("127.0.0.1", 1234, timeout=0.1) is False
+    stop.unlink()
+
+
+def test_resize_window(monkeypatch):
+    called = {}
+
+    class DummyWin:
+        title = "Blocks"
+
+        def resizeTo(self, w, h):
+            called["size"] = (w, h)
+
+    monkeypatch.setattr(lutils, "gw", types.SimpleNamespace(getAllWindows=lambda: [DummyWin()]))
+    monkeypatch.setattr(lutils, "STOP_FLAG", Path("does_not_exist.flag"), raising=False)
+    assert lutils.resize_window("Blocks", 800, 600) is True
+    assert called["size"] == (800, 600)

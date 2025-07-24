@@ -274,6 +274,10 @@ def main(timestamp: str, selected_nav_mode: Optional[str] = None) -> bool:
             launcher.shutdown()
             return False
 
+        airsim_width = config.getint("window", "airsim_width", fallback=1280)
+        airsim_height = config.getint("window", "airsim_height", fallback=720)
+        lutils.resize_window("Blocks", airsim_width, airsim_height)
+
         if args.nav_mode == "slam":
             logger.info("[MAIN] Launching SLAM streamer and backend for SLAM mode.")
             launcher.stream_proc = start_streamer(slam_server_host, slam_server_port, args.stream_mode)
@@ -307,6 +311,10 @@ def main(timestamp: str, selected_nav_mode: Optional[str] = None) -> bool:
                 launcher.shutdown()
                 return False
             logger.info("[MAIN] Pangolin window found.")
+
+            slam_width = config.getint("window", "slam_width", fallback=1024)
+            slam_height = config.getint("window", "slam_height", fallback=768)
+            lutils.resize_window("ORB-SLAM2", slam_width, slam_height)
 
             launcher.ffmpeg_proc, launcher.slam_video_path = record_slam_video("ORB-SLAM2")
             if launcher.ffmpeg_proc:
