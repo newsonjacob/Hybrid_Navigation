@@ -12,7 +12,7 @@ from airsim import ImageRequest, ImageType
 
 from uav import config
 from uav.scoring import compute_region_stats
-from uav.perception import filter_flow_by_depth
+from uav.perception import filter_flow_by_depth, PerceptionData
 
 logger = logging.getLogger("perception")
 
@@ -32,10 +32,10 @@ def start_perception_thread(ctx):
     A daemon thread is launched that repeatedly grabs images from AirSim and
     processes them for optical flow. Each cycle fetches a grayscale flow image
     along with the stereo pair, decodes and resizes them, then runs
-    :func:`perception_loop` to obtain flow vectors.  The resulting data tuple
-    ``(vis_img, good_old, flow_vectors, flow_std, fetch_s, decode_s,
-    processing_s)`` is placed into ``ctx.perception_queue`` with a maximum size
-    of one, so only the most recent result is kept.
+    :func:`perception_loop` to obtain flow vectors.  The resulting
+    :class:`uav.perception.PerceptionData` object is placed into
+    ``ctx.perception_queue`` with a maximum size of one so only the most recent
+    result is kept.
 
     The worker thread runs until ``ctx.exit_flag`` is set.  ``ctx.perception_queue``
     provides the handoff point for the navigation loop, which retrieves the
@@ -75,7 +75,15 @@ def start_perception_thread(ctx):
                 or len(right_resp.image_data_uint8) == 0
             ):
                 # If no image data, use the last valid image
-                data = (last_vis_img, np.array([]), np.array([]), 0.0, t_fetch_end - t0, 0.0, 0.0)
+                data = PerceptionData(
+                    vis_img=last_vis_img,
+                    good_old=np.array([]),
+                    flow_vectors=np.array([]),
+                    flow_std=0.0,
+                    simgetimage_s=t_fetch_end - t0,
+                    decode_s=0.0,
+                    processing_s=0.0,
+                )
             else:
                 # Decode the image data
                 flow1d = np.frombuffer(flow_resp.image_data_uint8, dtype=np.uint8).copy()
@@ -115,14 +123,14 @@ def start_perception_thread(ctx):
                         max_depth=config.DEPTH_FILTER_DIST,
                     )
                 processing_s = time.time() - t_proc_start
-                data = (
-                    vis_img,    
-                    good_old,
-                    flow_vectors,
-                    flow_std,
-                    t_fetch_end - t0,
-                    t_decode_end - t_fetch_end,
-                    processing_s,
+                data = PerceptionData(
+                    vis_img=vis_img,
+                    good_old=good_old,
+                    flow_vectors=flow_vectors,
+                    flow_std=flow_std,
+                    simgetimage_s=t_fetch_end - t0,
+                    decode_s=t_decode_end - t_fetch_end,
+                    processing_s=processing_s,
                 )
             try:
                 # Put the processed data into the queue
@@ -156,9 +164,8 @@ def process_perception_data(
         Client used for issuing control commands when testing manual nudges.
     args : argparse.Namespace
         Parsed command-line arguments controlling runtime options.
-    data : tuple
-        Tuple of perception results ``(vis_img, good_old, flow_vectors,
-        flow_std, simgetimage_s, decode_s, processing_s)``.
+    data : PerceptionData
+        Perception results for the current frame.
     frame_count : int
         Index of the current processed frame starting at 1.
     frame_queue : Queue
@@ -183,15 +190,13 @@ def process_perception_data(
         right_count, top_mag, mid_mag, bottom_mag, top_count, mid_count,
         bottom_count, in_grace)``.
     """
-    (
-        vis_img,
-        good_old,
-        flow_vectors,
-        flow_std,
-        simgetimage_s,
-        decode_s,
-        processing_s,
-    ) = data
+    vis_img = data.vis_img
+    good_old = data.good_old
+    flow_vectors = data.flow_vectors
+    flow_std = data.flow_std
+    simgetimage_s = data.simgetimage_s
+    decode_s = data.decode_s
+    processing_s = data.processing_s
 
     image_width = vis_img.shape[1]
     if frame_count == 1 and len(good_old) == 0:
