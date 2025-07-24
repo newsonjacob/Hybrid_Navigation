@@ -154,7 +154,7 @@ def test_dodge_settle_duration_short():
     nav = Navigator(client)
     before = time.time()
     nav.dodge(0, 0, 20)
-    assert nav.settling is False
+    assert not hasattr(nav, "settling")
 
 
 def test_resume_forward_not_called_during_grace():

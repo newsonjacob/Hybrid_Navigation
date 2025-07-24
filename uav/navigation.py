@@ -24,11 +24,9 @@ class Navigator:
         self.client = client
         self.braked = False
         self.dodging = False
-        self.settling = False  # Maintain attribute for compatibility
         self.last_movement_time = time.time()
         self.grace_used = False  # add in __init__
         self.grace_period_end_time: float = 0.0
-        # self.settle_end_time = 0  # Removed settling logic
         self.just_resumed = False
         self.resume_grace_end_time = 0
 
