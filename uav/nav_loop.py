@@ -51,7 +51,8 @@ def setup_environment(args, client):
     param_refs = ParamRefs()
     logger.info("Available vehicles: %s", client.listVehicles())
     init_client(client)
-    client.takeoffAsync().join(); client.moveToPositionAsync(0, 0, -2, 2).join()
+    client.takeoffAsync().join()
+    client.moveToPositionAsync(0, 0, -2, 2).join()
 
     feature_params = dict(
         maxCorners=150, 
