@@ -134,7 +134,41 @@ def process_perception_data(
     time_now,
     max_flow_mag,
 ):
-    """Process perception output and update histories."""
+    """Process perception output and update histories.
+
+    Parameters
+    ----------
+    client : airsim.MultirotorClient
+        Client used for issuing control commands when testing manual nudges.
+    args : argparse.Namespace
+        Parsed command-line arguments controlling runtime options.
+    data : tuple
+        Tuple of perception results ``(vis_img, good_old, flow_vectors,
+        flow_std, simgetimage_s, decode_s, processing_s)``.
+    frame_count : int
+        Index of the current processed frame starting at 1.
+    frame_queue : Queue
+        Queue used for storing visualisation frames.
+    flow_history : FlowHistory
+        History buffer for computing smoothed left/centre/right magnitudes.
+    navigator : Navigation
+        Navigator instance used to check grace-period state.
+    param_refs : Namespace
+        Namespace containing arrays for previous and delta flow values.
+    time_now : float
+        Timestamp for the current frame in seconds.
+    max_flow_mag : float
+        Maximum allowed optical flow magnitude when clamping.
+
+    Returns
+    -------
+    tuple
+        ``(vis_img, good_old, flow_vectors, flow_std, simgetimage_s,
+        decode_s, processing_s, smooth_L, smooth_C, smooth_R, delta_L,
+        delta_C, delta_R, probe_mag, probe_count, left_count, center_count,
+        right_count, top_mag, mid_mag, bottom_mag, top_count, mid_count,
+        bottom_count, in_grace)``.
+    """
     (
         vis_img,
         good_old,
@@ -161,7 +195,7 @@ def process_perception_data(
             flow_vectors = flow_vectors.reshape(-1, 2)
         magnitudes = np.linalg.norm(flow_vectors, axis=1)
 
-    # Clamp large flow magnitudes to max_flow_mag
+    # Clamp abnormally large flow magnitudes to avoid spikes
     num_clamped = np.sum(magnitudes > max_flow_mag)
     if num_clamped > 100:
         logger.warning("Clamped %d large flow magnitudes to %s", num_clamped, max_flow_mag)
@@ -171,6 +205,7 @@ def process_perception_data(
     # The flow_vectors and good_old arrays are already filtered
 
     good_old = good_old.reshape(-1, 2)
+    # Compute average magnitude and feature counts for spatial regions
     (
         left_mag,
         center_mag,
@@ -188,12 +223,15 @@ def process_perception_data(
         bottom_count,
     ) = compute_region_stats(magnitudes, good_old, image_width)
 
+    # Update history with region magnitudes and get smoothed values
     flow_history.update(left_mag, center_mag, right_mag)
     smooth_L, smooth_C, smooth_R = flow_history.average()
 
+    # Track change since previous frame
     delta_L = smooth_L - param_refs.prev_L[0]
     delta_C = smooth_C - param_refs.prev_C[0]
     delta_R = smooth_R - param_refs.prev_R[0]
+    # Store smoothed values and deltas for external modules
     param_refs.prev_L[0], param_refs.prev_C[0], param_refs.prev_R[0] = (
         smooth_L,
         smooth_C,
