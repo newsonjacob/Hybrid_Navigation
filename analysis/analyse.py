@@ -54,14 +54,29 @@ except ImportError:
     TRIMESH_AVAILABLE = False
     logger.warning("⚠️ trimesh not available. Install with: pip install trimesh")
 
-# Import flight analysis modules directly
-from analysis.flight_review import (
-    parse_log,
-    plot_state_histogram,
-    plot_distance_over_time,
-)
-from analysis.visualise_flight import build_plot
-logger.info("✅ Imported flight analysis modules")
+# Import flight analysis modules
+try:
+    from .flight_review import (
+        parse_log,
+        plot_state_histogram,
+        plot_distance_over_time,
+    )
+    from .visualise_flight import build_plot
+    logger.info("✅ Imported modules using relative imports")
+except ImportError as e:
+    logger.warning(f"Relative imports failed: {e}")
+    try:
+        from flight_review import (
+            parse_log,
+            plot_state_histogram,
+            plot_distance_over_time,
+        )
+        from visualise_flight import build_plot
+        logger.info("✅ Imported modules using direct imports")
+    except ImportError as e:
+        logger.error(f"❌ Failed to import required modules: {e}")
+        logger.error("Make sure flight_review.py and visualise_flight.py are in the analysis directory")
+        sys.exit(1)
 
 # ========== Analysis Functions ========== #
 # These functions handle the main analysis logic.
