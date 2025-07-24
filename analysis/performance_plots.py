@@ -4,30 +4,42 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import logging
 
 import pandas as pd
 from typing import Any
 
 # Plotly is imported lazily inside build_plot so tests can provide stubs
 
+logger = logging.getLogger("performance_plots")
+
 
 def build_plot(df: pd.DataFrame) -> Any:
-    """Return a Plotly figure showing CPU and memory usage.
-
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        DataFrame containing ``cpu_percent`` and ``memory_rss`` columns and
-        either ``time`` or ``frame`` for the x-axis.
-    """
-    if "time" in df.columns:
-        # Convert time to relative seconds from start
-        start_time = df["time"].iloc[0]
-        x = df["time"] - start_time
-        x_title = "Time (seconds from start)"
-    else:
-        x = df.index
-        x_title = "Frame"
+    """Return a Plotly figure showing CPU and memory usage."""
+    
+    # Check if DataFrame is empty
+    if len(df) == 0:
+        logger.warning("DataFrame is empty - cannot generate performance plot")
+        # Return empty figure
+        from plotly.subplots import make_subplots
+        import plotly.graph_objects as go
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+        fig.update_layout(title="No Data Available for Performance Plot")
+        return fig
+    
+    # Check if required columns exist
+    if "time" not in df.columns or len(df) == 0:
+        logger.warning("No time data available for performance plot")
+        from plotly.subplots import make_subplots
+        import plotly.graph_objects as go
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+        fig.update_layout(title="No Time Data Available")
+        return fig
+    
+    # Convert time to relative seconds from start
+    start_time = df["time"].iloc[0]
+    x = df["time"] - start_time
+    x_title = "Time (seconds from start)"
 
     # Import plotly only when needed so tests can stub these modules
     from plotly.subplots import make_subplots
@@ -37,7 +49,7 @@ def build_plot(df: pd.DataFrame) -> Any:
     mem = df.get("memory_rss", pd.Series(dtype=float)) / (1024 * 1024)
 
     fig = make_subplots(specs=[[{"secondary_y": True}]])
-    fig.add_trace(go.Scatter(x=x, y=cpu, name="CPU %"), secondary_y=False)
+    fig.add_trace(go.Scatter(x=x, y=cpu, name="CPU %"), secondary_y=False) 
     fig.add_trace(go.Scatter(x=x, y=mem, name="Memory MB"), secondary_y=True)
 
     fig.update_layout(xaxis_title=x_title)

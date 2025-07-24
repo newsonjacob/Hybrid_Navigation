@@ -419,18 +419,10 @@ def navigation_loop(args, client, ctx):
 
 
 def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
-    """SLAM-based navigation loop with basic obstacle avoidance.
-
-    ``config`` or ``args`` may provide custom SLAM stability thresholds which
-    are forwarded to :func:`is_slam_stable`.
-    """
-    # After drone takeoff and camera ready, perform an initial calibration
-    # sequence so SLAM has diverse motion before waypoint navigation.
-
-    # logger.info("[SLAMNav] Starting SLAM navigation loop.")
-
+    """SLAM-based navigation loop with basic obstacle avoidance."""
     from slam_bridge.slam_receiver import get_latest_pose_matrix, get_pose_history
-    from slam_bridge.frontier_detection import detect_frontiers  
+    from slam_bridge.frontier_detection import detect_frontiers
+    from uav.slam_utils import COVARIANCE_THRESHOLD, MIN_INLIERS_THRESHOLD  # Import the constants
 
     # --- Incorporate exit_flag from ctx for GUI stop button ---
     exit_flag = None
@@ -442,25 +434,27 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
 
     # --- Initialize SLAM navigation parameters ---
     start_time = time.time()
-    max_duration = getattr(args, "max_duration", 60)
+    max_duration = getattr(args, "max_duration", 60)  # Default to 60 seconds
+    
+    # Ensure max_duration is not None
+    if max_duration is None:
+        max_duration = 60  # Default fallback
+        logger.warning("max_duration was None, defaulting to 60 seconds")
+    
     goal_x = getattr(args, "goal_x", 29)
-    goal_y = getattr(args, "goal_y", 0) if hasattr(args, "goal_y") else 0
-    goal_z = getattr(args, "goal_z", -2) if hasattr(args, "goal_z") else -2
-    threshold = 0.5  # meters
-    # --- SLAM stability thresholds ---
-    cov_thres = getattr(args, "slam_covariance_threshold", None)
-    inlier_thres = getattr(args, "slam_inlier_threshold", None)
-    # If not provided, try to load from config
-    if cov_thres is None and config is not None:
-        try:
-            cov_thres = config.getfloat("slam", "covariance_threshold")
-        except Exception:
-            cov_thres = None
-    if inlier_thres is None and config is not None:
-        try:
-            inlier_thres = config.getint("slam", "inlier_threshold")
-        except Exception:
-            inlier_thres = None
+    goal_y = getattr(args, "goal_y", 0)
+    
+    # Use the constants from slam_utils.py, with config overrides if available
+    cov_thres = getattr(config, "covariance_threshold", COVARIANCE_THRESHOLD) if config else COVARIANCE_THRESHOLD
+    inlier_thres = getattr(config, "inlier_threshold", MIN_INLIERS_THRESHOLD) if config else MIN_INLIERS_THRESHOLD
+    threshold = 0.5  # Waypoint reach threshold in meters
+
+    logger.info(f"[SLAMNav] Starting SLAM navigation with:")
+    logger.info(f"  - Max duration: {max_duration}s")
+    logger.info(f"  - Goal: ({goal_x}, {goal_y})")
+    logger.info(f"  - Covariance threshold: {cov_thres}")
+    logger.info(f"  - Inlier threshold: {inlier_thres}")
+    logger.info(f"  - Pose source: {pose_source}")
 
     # Perform an initial SLAM calibration manoeuvre before navigating.
     if max_duration != 0:
@@ -594,13 +588,20 @@ def transform_slam_to_airsim(slam_pose_matrix):
 # === SLAM Navigation Helpers ===
 
 def check_slam_stop(exit_flag, start_time, max_duration):
-    """Return ``True`` when the SLAM loop should terminate."""
-    if exit_flag is not None and exit_flag.is_set():
+    """Check if SLAM navigation should stop."""
+    if exit_flag.is_set():
         return True
-    if os.path.exists(STOP_FLAG_PATH):
-        return True
+    
+    # Ensure max_duration is valid
+    if max_duration is None:
+        logger.warning("max_duration is None in check_slam_stop")
+        return False
+    
+    # Check time limit
     if time.time() - start_time > max_duration:
+        logger.info(f"SLAM navigation time limit reached ({max_duration}s)")
         return True
+    
     return False
 
 
