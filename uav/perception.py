@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from collections import deque
 from typing import Deque, Dict, Optional, Tuple
 
@@ -15,6 +16,19 @@ from . import config
 import logging
 
 logger = logging.getLogger("perception")
+
+
+@dataclass
+class PerceptionData:
+    """Container for a single frame's perception results."""
+
+    vis_img: np.ndarray
+    good_old: np.ndarray
+    flow_vectors: np.ndarray
+    flow_std: float
+    simgetimage_s: float
+    decode_s: float
+    processing_s: float
 
 class FlowHistory:
     """Maintain a rolling window of recent flow magnitudes."""
