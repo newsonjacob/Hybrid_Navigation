@@ -2,6 +2,7 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui.hpp>
+#include <opencv2/videoio.hpp>
 #include <iostream>
 #include <vector>
 #include <fstream>
@@ -81,19 +82,35 @@ int main(int argc, char **argv) {
     std::string log_dir = getenv("SLAM_LOG_DIR") ? getenv("SLAM_LOG_DIR") : "logs";
     std::string flag_dir = getenv("SLAM_FLAG_DIR") ? getenv("SLAM_FLAG_DIR") : "flags";
     std::string image_dir = getenv("SLAM_IMAGE_DIR") ? getenv("SLAM_IMAGE_DIR") : join_path(log_dir, "images");
+    std::string video_file = getenv("SLAM_VIDEO_FILE") ? getenv("SLAM_VIDEO_FILE") : "";
 
-    if (argc < 3) {
-        cerr << "Usage: ./tcp_slam_server vocab settings [log_dir] [flag_dir]" << endl;
+    std::vector<std::string> args;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        const std::string prefix = "--video-file=";
+        if (arg.rfind(prefix, 0) == 0) {
+            video_file = arg.substr(prefix.size());
+        } else {
+            args.push_back(arg);
+        }
+    }
+
+    if (args.size() < 2) {
+        cerr << "Usage: ./tcp_slam_server vocab settings [log_dir] [flag_dir] [image_dir] [--video-file=FILE]" << endl;
         return 1;
     }
 
-    if (argc >= 4) log_dir = argv[3];
-    if (argc >= 5) flag_dir = argv[4];
-    if (argc >= 6) image_dir = argv[5];
+    if (args.size() >= 3) log_dir = args[2];
+    if (args.size() >= 4) flag_dir = args[3];
+    if (args.size() >= 5) image_dir = args[4];
+
+    if (video_file.empty())
+        video_file = join_path(log_dir, "slam_feed.avi");
 
     create_directories(log_dir);
     create_directories(flag_dir);
     create_directories(image_dir);
+    create_directories(std::filesystem::path(video_file).parent_path().string());
 
     std::string console_log = join_path(log_dir, "slam_console.txt");
     std::string console_err = join_path(log_dir, "slam_console_err.txt");
@@ -105,10 +122,12 @@ int main(int argc, char **argv) {
 
     // Add this static variable at the top of your main function
     static cv::Mat prev_Tcw;  // Previous pose (initialize once)
+    cv::VideoWriter slam_video_writer;
+    bool video_writer_initialized = false;
 
     // Get vocabulary and settings file paths from command line arguments
-    std::string vocab = argv[1];
-    std::string settings = argv[2];
+    std::string vocab = args[0];
+    std::string settings = args[1];
 
     // Set log file path with timestamp if not provided
     const char* log_file_env = getenv("SLAM_LOG_FILE");
@@ -403,6 +422,26 @@ int main(int argc, char **argv) {
                 try {
                     Tcw = SLAM.TrackStereo(left_input, right_input, timestamp);
                     log_event("[DEBUG] SLAM.TrackStereo completed.");
+
+                    if (!video_writer_initialized) {
+                        bool is_color = !imLeft.empty();
+                        cv::Size sz = is_color ? imLeft.size() : imLeftGray.size();
+                        int fourcc = cv::VideoWriter::fourcc('M','J','P','G');
+                        slam_video_writer.open(video_file, fourcc, 30.0, sz, is_color);
+                        if (!slam_video_writer.isOpened()) {
+                            log_event("[ERROR] Failed to open video writer: " + video_file);
+                        } else {
+                            log_event("[INFO] Video writer opened: " + video_file);
+                            video_writer_initialized = true;
+                        }
+                    }
+                    if (video_writer_initialized && slam_video_writer.isOpened()) {
+                        if (!imLeft.empty()) {
+                            slam_video_writer.write(imLeft);
+                        } else {
+                            slam_video_writer.write(imLeftGray);
+                        }
+                    }
                 } catch (const std::exception& e) {
                     log_event(std::string("[FATAL] SLAM.TrackStereo threw std::exception: ") + e.what());
                     continue;
@@ -706,6 +745,7 @@ int main(int argc, char **argv) {
     slam_server::cleanup_resources(sock, server_fd, pose_sock);
     if (pose_log_stream.is_open()) pose_log_stream.close();
     log_event("[DEBUG] Sockets closed. SLAM server shutting down.");
+    if (slam_video_writer.isOpened()) slam_video_writer.release();
     SLAM.Shutdown();
 
     SLAM.SaveTrajectoryTUM(join_path(log_dir, "CameraTrajectory.txt"));
