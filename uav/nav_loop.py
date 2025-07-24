@@ -150,14 +150,24 @@ def check_startup_grace(ctx, time_now):
 
 def _initiate_landing(client, ctx):
     """Start asynchronous landing and update state."""
-    if getattr(ctx, "landing_future", None) is None:
-        try:
-            ctx.navigator.brake()
-        except Exception as exc:  # pragma: no cover - just log
-            logger.warning("Brake before landing failed: %s", exc)
-        ctx.landing_future = client.landAsync()
-        if getattr(ctx, "param_refs", None):
-            ctx.param_refs.state[0] = "landing"
+
+    # Check if landing is already in progress
+    if getattr(ctx, "landing_future", None) is not None:
+        logger.debug("Landing already in progress, skipping new landing command.")
+        return
+    
+    logger.info("Initiating landing sequence.")
+    
+    # Attempt to brake before landing
+    try:
+        ctx.navigator.brake()
+    except Exception as exc:  # pragma: no cover - just log
+        logger.warning("Brake before landing failed: %s", exc)
+    
+    # Start the landing process
+    ctx.landing_future = client.landAsync()
+    if getattr(ctx, "param_refs", None):
+        ctx.param_refs.state[0] = "landing"
 
 
 def has_landed(client):
@@ -176,21 +186,32 @@ def has_landed(client):
 
 def check_exit_conditions(client, ctx, time_now, max_duration, goal_x, goal_y):
     """Check for termination triggers and initiate landing when required."""
+    
+    # Check for stop flag file
     if os.path.exists(STOP_FLAG_PATH):
         logger.info("Stop flag detected. Landing and shutting down.")
+        try:
+            os.remove(STOP_FLAG_PATH)
+            logger.debug("Stop flag file removed")
+        except Exception as remove_error:
+            logger.error(f"Error removing stop flag file: {remove_error}")
         _initiate_landing(client, ctx)
-        return False
+        return False # Stop navigation loop
+    
+    # Check time limit
     if time_now - ctx.start_time >= max_duration:
         logger.info("Time limit reached — landing and stopping.")
         _initiate_landing(client, ctx)
-        return False
+        return False # Stop navigation loop
+
+    # Check goal condition
     pos_goal, _, _ = get_drone_state(client)
     if abs(pos_goal.x_val - goal_x) < config.GOAL_THRESHOLD and abs(pos_goal.y_val - goal_y) < config.GOAL_THRESHOLD:
         logger.info("Goal reached — landing.")
         _initiate_landing(client, ctx)
-        return False
-    return False
-
+        return False # Stop navigation loop
+    
+    return True # Continue the navigation loop - no exit condition met
 
 def get_perception_data(ctx):
     """Retrieve the latest perception result or None."""
@@ -391,22 +412,30 @@ def navigation_loop(args, client, ctx):
 
     logger.info("[NavLoop] Starting navigation loop with args: %s", args)
     loop_start = time.time()
-    try:
-        while not exit_flag.is_set():
-            frame_count += 1
-            time_now = time.time()
 
+    # ===== Start Navigation Loop =====
+    try:
+        while True:
+            frame_count += 1 # Increment frame count at the start of each loop iteration
+            time_now = time.time() # Get current time for this loop iteration
+
+            # Skip this loop until startup grace period is over
             if not check_startup_grace(ctx, time_now):
                 continue
 
+            # Get the latest perception data
             data = get_perception_data(ctx)
+            # Skip this loop if perception data is not ready
             if data is None:
                 continue
 
-            check_exit_conditions(client, ctx, time_now, max_duration, goal_x, goal_y)
+            # Check if any stop conditions are met
+            if not check_exit_conditions(client, ctx, time_now, max_duration, goal_x, goal_y):
+                break # Exit the loop if stop conditions are met
 
+            # Landing has been initiated - handle landing state
             if getattr(ctx, "landing_future", None) is not None:
-                processed = process_perception_data(
+                processed = process_perception_data( # Process perception data for landing
                     client,
                     args,
                     data,
@@ -420,6 +449,8 @@ def navigation_loop(args, client, ctx):
                 )
                 if processed is None:
                     continue
+
+                # Prepare the navigation decision for landing
                 nav_decision = (
                     "landing",
                     0,
@@ -431,6 +462,8 @@ def navigation_loop(args, client, ctx):
                     False,
                     False,
                 )
+
+                # Log and record the frame for landing
                 loop_start = log_and_record_frame(
                     client,
                     ctx,
@@ -441,11 +474,15 @@ def navigation_loop(args, client, ctx):
                     frame_count,
                     time_now,
                 )
+
+                # Check if the UAV has landed
                 if has_landed(client):
                     logger.info("Landing complete.")
                     break
-                continue
+                continue # Keeps checking landing state
 
+            # ==== Core Navigation Logic ====
+            # Process the perception data and update navigation state
             result = update_navigation_state(
                 client,
                 args,
@@ -456,13 +493,13 @@ def navigation_loop(args, client, ctx):
                 max_flow_mag,
             )
             if result is None:
-                continue
+                continue # Skip this loop if no valid result
+
+            # Unpack the processed data and navigation decision
             processed, nav_decision = result
-
-            if ctx.param_refs.reset_flag[0]:
-                frame_count = handle_reset(client, ctx, frame_count)
-                continue
-
+            
+            # Use nav_decision for control logic (handled elsewhere)
+            # Use processed for logging and video
             loop_start = log_and_record_frame(
                 client,
                 ctx,
@@ -484,26 +521,31 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
     from slam_bridge.slam_receiver import get_latest_pose_matrix, get_pose_history
     from slam_bridge.frontier_detection import detect_frontiers
     from uav.slam_utils import COVARIANCE_THRESHOLD, MIN_INLIERS_THRESHOLD  # Import the constants
-
+    import uav.config as uav_config
     # --- Incorporate exit_flag from ctx for GUI stop button ---
     exit_flag = None
     navigator = None
-    last_action = "none"
+    last_action = "none" 
     if ctx is not None:
         exit_flag = getattr(ctx, "exit_flag", None)
         navigator = getattr(ctx, "navigator", None)
 
     # --- Initialize SLAM navigation parameters ---
+    # Config primary, CLI override
+    max_duration = args.max_duration if args.max_duration is not None else uav_config.MAX_SIM_DURATION
+    goal_x = args.goal_x if args.goal_x is not None else uav_config.GOAL_X
+    goal_y = args.goal_y if args.goal_y is not None else uav_config.GOAL_Y
+
+    logger.info(f"[NavLoop] Navigation parameters:")
+
+    logger.info("[NavLoop] Starting navigation loop with args: %s", args)
     start_time = time.time()
-    from uav.config import MAX_SIM_DURATION
-    max_duration = getattr(args, "max_duration", MAX_SIM_DURATION) # Default to config value
 
     # Use the constants from slam_utils.py, with config overrides if available
     cov_thres = getattr(config, "covariance_threshold", COVARIANCE_THRESHOLD) if config else COVARIANCE_THRESHOLD
     inlier_thres = getattr(config, "inlier_threshold", MIN_INLIERS_THRESHOLD) if config else MIN_INLIERS_THRESHOLD
     threshold = 0.5  # Waypoint reach threshold in meters
 
-    logger.info(f"[SLAMNav] Starting SLAM navigation with:")
     logger.info(f"  - Max duration: {max_duration}s")
     logger.info(f"  - Covariance threshold: {cov_thres}")
     logger.info(f"  - Inlier threshold: {inlier_thres}")
@@ -551,7 +593,7 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
     # --- Main SLAM navigation loop ---
     try:
         while True:
-
+            time_now = time.time()
             # Check for exit conditions
             if check_slam_stop(exit_flag, start_time, max_duration):
                 if ctx is not None and getattr(ctx, "param_refs", None): # Update state to landing
@@ -572,7 +614,8 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
 
             # If pose_data is None, SLAM is not stable yet
             if pose_data[0] is None:
-                break
+                logger.info("[SLAMNav] SLAM pose not stable yet, retrying...")
+                continue
 
             # Transform SLAM pose to AirSim coordinates
             transformed_pose, (x, y, z) = pose_data
@@ -582,16 +625,12 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
             map_pts = np.array([[m[0][3], m[1][3], m[2][3]] for _, m in history], dtype=float) # Convert to numpy array
             frontiers = detect_frontiers(map_pts) # Detect frontiers in the SLAM map
 
-            # Check for landing conditions
-            if landing_future is not None:
-                if has_landed(client):
-                    logger.info("[SLAMNav] Landing complete.")
-                    break
-                time.sleep(0.1)
-                continue
+            # Check if any stop conditions are met
+            if not check_exit_conditions(client, ctx, time_now, max_duration, goal_x, goal_y):
+                break # Exit the loop if stop conditions are met
 
             # Get the current goal
-            curr_goal = waypoints[current_waypoint_index] # (goal_x, goal_y, goal_z)
+            curr_goal = waypoints[current_waypoint_index] # (waypoint_x, waypoint_y, waypoint_z)
 
             # Calculate distance to the current goal
             dist_to_goal = np.sqrt((x - curr_goal[0]) ** 2 + (y - curr_goal[1]) ** 2) 
@@ -599,28 +638,23 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
             # Check if the final waypoint has been reached
             if current_waypoint_index == len(waypoints) - 1 and dist_to_goal < threshold:
                 logger.info("[SLAMNav] Final goal reached — landing.")
-
-                # Update context state to landing
-                if ctx is not None and getattr(ctx, "param_refs", None):
-                    ctx.param_refs.state[0] = "landing"
-                landing_future = client.landAsync()
-                continue
+                break # Exit the loop to initiate landing
             
             # Check if the current waypoint has been reached
-            (goal_x, goal_y, goal_z), current_waypoint_index, dist = handle_waypoint_progress(
+            (waypoint_x, waypoint_y, waypoint_z), current_waypoint_index, dist = handle_waypoint_progress(
                 x, y, waypoints, current_waypoint_index, threshold
             )
 
             if ctx is not None and getattr(ctx, "param_refs", None):
                 ctx.param_refs.state[0] = f"waypoint_{current_waypoint_index + 1}" # Update context state
             logger.info(
-                f"[SLAMNav] Current waypoint: {current_waypoint_index + 1} at ({goal_x}, {goal_y}, {goal_z})"
+                f"[SLAMNav] Current waypoint: {current_waypoint_index + 1} at ({waypoint_x}, {waypoint_y}, {waypoint_z})"
             )
             logger.info(f"Distance to waypoint: {dist:.2f} meters")
 
             # Execute SLAM navigation to the current goal
             logger.info(ctx.param_refs.state[0]) # Log the current state
-            last_action = navigator.slam_to_goal(transformed_pose, (goal_x, goal_y, goal_z))
+            last_action = navigator.slam_to_goal(transformed_pose, (waypoint_x, waypoint_y, waypoint_z))
 
             time.sleep(0.1)
     except KeyboardInterrupt:
@@ -733,15 +767,15 @@ def ensure_stable_slam_pose(
 
 def handle_waypoint_progress(x, y, waypoints, current_index, threshold=0.5):
     """Return updated waypoint index and goal after checking progress."""
-    goal_x, goal_y, goal_z = waypoints[current_index]
-    distance = np.sqrt((x - goal_x) ** 2 + (y - goal_y) ** 2)
+    waypoint_x, waypoint_y, waypoint_z = waypoints[current_index]
+    distance = np.sqrt((x - waypoint_x) ** 2 + (y - waypoint_y) ** 2)
     if distance < threshold:
         logger.info(
             f"Reached waypoint {current_index + 1}, moving to next waypoint."
         )
         current_index = (current_index + 1) % len(waypoints)
-        goal_x, goal_y, goal_z = waypoints[current_index]
-    return (goal_x, goal_y, goal_z), current_index, distance
+        waypoint_x, waypoint_y, waypoint_z = waypoints[current_index]
+    return (waypoint_x, waypoint_y, waypoint_z), current_index, distance
 
 # === Thread Management ===
 # This section handles the shutdown of worker threads and ensures they exit cleanly.
