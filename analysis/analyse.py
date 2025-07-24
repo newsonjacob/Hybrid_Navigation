@@ -78,6 +78,8 @@ except ImportError as e:
         logger.error("Make sure flight_review.py and visualise_flight.py are in the analysis directory")
         sys.exit(1)
 
+# ========== Analysis Functions ========== #
+# These functions handle the main analysis logic.
 def add_environment_mesh_to_plot(fig3d, mesh, opacity=0.15):
     """Add environment mesh to the 3D plot."""
     if mesh is None:
@@ -85,345 +87,88 @@ def add_environment_mesh_to_plot(fig3d, mesh, opacity=0.15):
         return
         
     try:
-        logger.info(f"Processing mesh of type: {type(mesh)}")
+        # Extract vertices and faces from mesh (handles Scene or Trimesh objects)
+        vertices, faces = extract_mesh_data(mesh)
         
-        vertices = None
-        faces = None
-        
-        # Handle Scene objects (which is what we have)
-        if hasattr(mesh, 'geometry'):
-            # It's a Scene object
-            logger.info("Processing Scene object")
-            if mesh.geometry:
-                logger.info(f"Scene has {len(mesh.geometry)} geometries")
-                
-                # Get all geometries from the scene
-                geometries = list(mesh.geometry.values())
-                if geometries:
-                    # Try to get the first valid geometry
-                    for i, geom in enumerate(geometries):
-                        if hasattr(geom, 'vertices') and hasattr(geom, 'faces'):
-                            logger.info(f"Geometry {i}: {type(geom)} with {len(geom.vertices)} vertices")
-                            
-                            if len(geom.vertices) > 0:
-                                if vertices is None:
-                                    vertices = geom.vertices.copy()  # Make a copy
-                                    faces = geom.faces.copy()
-                                else:
-                                    # Combine with existing geometry
-                                    try:
-                                        vertex_offset = len(vertices)
-                                        vertices = np.vstack([vertices, geom.vertices])
-                                        faces = np.vstack([faces, geom.faces + vertex_offset])
-                                        logger.info(f"Combined geometry {i}")
-                                    except Exception as e:
-                                        logger.warning(f"Could not combine geometry {i}: {e}")
-                        else:
-                            logger.info(f"Geometry {i}: {type(geom)} - no vertices/faces")
-                    
-                    logger.info(f"Combined geometries: {len(vertices) if vertices is not None else 0} total vertices")
-            else:
-                logger.warning("Scene object has no geometry")
-                return
-                
-        elif hasattr(mesh, 'vertices') and hasattr(mesh, 'faces'):
-            # It's already a Trimesh
-            logger.info("Processing direct Trimesh object")
-            vertices = mesh.vertices.copy()
-            faces = mesh.faces.copy()
-        else:
-            logger.warning(f"Mesh object type not supported: {type(mesh)}")
-            # Try the Scene conversion approach
-            try:
-                logger.info("Attempting to convert Scene to mesh...")
-                combined_mesh = mesh.dump().sum()
-                vertices = combined_mesh.vertices.copy()
-                faces = combined_mesh.faces.copy()
-                logger.info(f"Converted scene to mesh: {len(vertices)} vertices, {len(faces)} faces")
-            except Exception as e:
-                logger.error(f"Failed to convert scene: {e}")
-                return
-        
-        if vertices is None or faces is None:
-            logger.warning("Could not extract vertices or faces from mesh")
-            return
-            
-        if len(vertices) == 0 or len(faces) == 0:
-            logger.warning("Mesh has no vertices or faces")
+        if vertices is None or len(vertices) == 0:
+            logger.warning("No valid mesh data found")
             return
         
-        # Apply mesh corrections: scaling already done in load_environment_mesh()
-        logger.info(f"Applying mesh orientation and position corrections...")
+        # Apply mesh corrections for AirSim coordinate system
+        vertices = apply_mesh_corrections(vertices)
         
-        # Get original bounds
-        original_bounds = [
-            [vertices[:, 0].min(), vertices[:, 1].min(), vertices[:, 2].min()],
-            [vertices[:, 0].max(), vertices[:, 1].max(), vertices[:, 2].max()]
-        ]
-        logger.info(f"Original mesh bounds: {original_bounds}")
-        
-        # 1. SWAP Y and Z axes to fix orientation (mesh is on its side)
-        # Current: X, Y, Z
-        # Need:    X, Z, Y (swap Y and Z)
-        vertices_corrected = vertices.copy()
-        vertices_corrected[:, [1, 2]] = vertices[:, [2, 1]]  # Swap Y and Z columns
-        logger.info("✅ Swapped Y and Z axes to correct mesh orientation")
-        
-        # 2. REPOSITION mesh to start at x = -0.5
-        current_x_min = vertices_corrected[:, 0].min()
-        target_x_min = -0.5
-        x_offset = target_x_min - current_x_min
-        
-        vertices_corrected[:, 0] += x_offset  # Shift X coordinates
-        logger.info(f"✅ Repositioned mesh: X offset = {x_offset:.2f} (from {current_x_min:.2f} to {target_x_min})")
-        
-        # 3. CENTER mesh along Y-axis at y=0
-        current_y_min = vertices_corrected[:, 1].min()
-        current_y_max = vertices_corrected[:, 1].max()
-        current_y_center = (current_y_min + current_y_max) / 2
-        target_y_center = 0.0
-        y_offset = target_y_center - current_y_center
-        
-        vertices_corrected[:, 1] += y_offset  # Shift Y coordinates
-        logger.info(f"✅ Centered mesh along Y-axis: Y offset = {y_offset:.2f} (center from {current_y_center:.2f} to {target_y_center})")
-        
-        # Get final bounds after corrections
-        final_bounds = [
-            [vertices_corrected[:, 0].min(), vertices_corrected[:, 1].min(), vertices_corrected[:, 2].min()],
-            [vertices_corrected[:, 0].max(), vertices_corrected[:, 1].max(), vertices_corrected[:, 2].max()]
-        ]
-        logger.info(f"Final corrected mesh bounds: {final_bounds}")
-        
-        mesh_extents = [
-            final_bounds[1][0] - final_bounds[0][0],
-            final_bounds[1][1] - final_bounds[0][1], 
-            final_bounds[1][2] - final_bounds[0][2]
-        ]
-        logger.info(f"Mesh extents (L×W×H): {mesh_extents[0]:.1f} × {mesh_extents[1]:.1f} × {mesh_extents[2]:.1f} meters")
-        
-        # Use corrected vertices
-        vertices = vertices_corrected
-        
-        logger.info(f"Final mesh stats: {len(vertices)} vertices, {len(faces)} faces")
-            
-        # Limit mesh complexity for performance
-        max_faces = 8000  # Reasonable for web visualization
-        if len(faces) > max_faces:
-            logger.info(f"Mesh has {len(faces)} faces, simplifying to {max_faces} for performance")
-            step = max(1, len(faces) // max_faces)
+        # Simplify mesh for performance if needed
+        if len(faces) > 8000:
+            step = max(1, len(faces) // 8000)
             faces = faces[::step]
-            logger.info(f"Simplified to {len(faces)} faces")
+            logger.info(f"Simplified mesh to {len(faces)} faces for performance")
         
-        # Add mesh to plot with enhanced visibility
+        # Add mesh to plot
         fig3d.add_trace(go.Mesh3d(
-            x=vertices[:, 0],
-            y=vertices[:, 1], 
-            z=vertices[:, 2],
-            i=faces[:, 0],
-            j=faces[:, 1],
-            k=faces[:, 2],
-            color='lightgray',
-            opacity=opacity,
-            name="🗺️ Environment Mesh",
-            showlegend=True,
-            hoverinfo='skip',
+            x=vertices[:, 0], y=vertices[:, 1], z=vertices[:, 2],
+            i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
+            color='lightgray', opacity=opacity, name="🗺️ Environment Mesh",
+            showlegend=True, hoverinfo='skip',
             lighting=dict(ambient=0.7, diffuse=0.8, specular=0.1),
             lightposition=dict(x=100, y=200, z=0)
         ))
         
-        logger.info(f"✅ Added corrected environment mesh to 3D plot ({len(vertices)} vertices, {len(faces)} faces)")
+        logger.info(f"✅ Added environment mesh ({len(vertices)} vertices, {len(faces)} faces)")
         
     except Exception as e:
-        logger.error(f"Failed to add environment mesh to plot: {e}")
-        import traceback
-        logger.error(f"Full traceback: {traceback.format_exc()}")
+        logger.error(f"Failed to add environment mesh: {e}")
 
-def extract_obstacles_from_mesh(mesh):
-    """Extract obstacle/building data from the mesh geometry."""
-    obstacles = []
+# Extract vertices and faces from a mesh object, handling both Scene and Trimesh formats.
+def extract_mesh_data(mesh):
+    """Extract vertices and faces from mesh object."""
+    vertices = None
+    faces = None
     
-    if mesh is None:
-        logger.warning("No mesh provided to extract obstacles from")
-        return obstacles
+    if hasattr(mesh, 'geometry') and mesh.geometry:
+        # Scene object - combine all geometries
+        for geom in mesh.geometry.values():
+            if hasattr(geom, 'vertices') and len(geom.vertices) > 0:
+                if vertices is None:
+                    vertices = geom.vertices.copy()
+                    faces = geom.faces.copy()
+                else:
+                    vertex_offset = len(vertices)
+                    vertices = np.vstack([vertices, geom.vertices])
+                    faces = np.vstack([faces, geom.faces + vertex_offset])
+    elif hasattr(mesh, 'vertices') and hasattr(mesh, 'faces'):
+        # Direct Trimesh object
+        vertices = mesh.vertices.copy()
+        faces = mesh.faces.copy()
+    else:
+        # Try Scene conversion
+        try:
+            combined_mesh = mesh.dump().sum()
+            vertices = combined_mesh.vertices.copy()
+            faces = combined_mesh.faces.copy()
+        except:
+            pass
     
-    try:
-        logger.info("Extracting obstacles from mesh geometry...")
-        
-        # Handle different mesh types
-        geometries = []
-        if hasattr(mesh, 'geometry'):
-            # Scene object with multiple geometries
-            geometries = list(mesh.geometry.values())
-            logger.info(f"Found {len(geometries)} geometries in scene")
-        elif hasattr(mesh, 'vertices') and hasattr(mesh, 'faces'):
-            # Single Trimesh object
-            geometries = [mesh]
-            logger.info("Processing single mesh object")
-        else:
-            # Try to convert Scene to mesh
-            try:
-                logger.info("Attempting to convert Scene to individual meshes...")
-                combined_mesh = mesh.dump().sum()
-                geometries = [combined_mesh]
-                logger.info(f"Converted scene to single mesh with {len(combined_mesh.vertices)} vertices")
-            except Exception as e:
-                logger.warning(f"Could not convert scene: {e}")
-                return obstacles
-        
-        for i, geom in enumerate(geometries):
-            if not (hasattr(geom, 'vertices') and hasattr(geom, 'faces')):
-                logger.debug(f"Geometry {i} has no vertices/faces")
-                continue
-                
-            if len(geom.vertices) == 0:
-                logger.debug(f"Geometry {i} has no vertices")
-                continue
-            
-            # Calculate bounding box for this geometry
-            vertices = geom.vertices
-            min_bounds = vertices.min(axis=0)
-            max_bounds = vertices.max(axis=0)
-            
-            # Calculate dimensions
-            dimensions = max_bounds - min_bounds
-            center = (min_bounds + max_bounds) / 2
-            
-            logger.info(f"Geometry {i}: center=({center[0]:.1f}, {center[1]:.1f}, {center[2]:.1f}), "
-                       f"dims=({dimensions[0]:.1f}×{dimensions[1]:.1f}×{dimensions[2]:.1f})")
-            
-            # More permissive filtering for obstacle detection
-            # Skip tiny details (< 0.5m in any dimension) - reduced threshold
-            if np.any(dimensions < 0.5):
-                logger.debug(f"Skipping small geometry {i}: {dimensions}")
-                continue
-                
-            # Skip ground plane or very large terrain (> 100m in X or Y) - reduced threshold
-            if dimensions[0] > 100 or dimensions[1] > 100:
-                logger.debug(f"Skipping large terrain geometry {i}: {dimensions}")
-                continue
-            
-            # Skip very flat objects (likely ground, < 0.5m height) - reduced threshold  
-            if dimensions[2] < 0.5:
-                logger.debug(f"Skipping flat geometry {i}: {dimensions}")
-                continue
-            
-            # Create obstacle entry
-            obstacle = {
-                "name": f"Building_{i:03d}",
-                "center": center.tolist(),
-                "min_bounds": min_bounds.tolist(),
-                "max_bounds": max_bounds.tolist(),
-                "dimensions": dimensions.tolist(),
-                "vertex_count": len(vertices),
-                "volume": np.prod(dimensions)  # Approximate volume
-            }
-            
-            obstacles.append(obstacle)
-            logger.info(f"✅ Extracted obstacle {obstacle['name']}: "
-                       f"center=({center[0]:.1f}, {center[1]:.1f}, {center[2]:.1f}), "
-                       f"size=({dimensions[0]:.1f}×{dimensions[1]:.1f}×{dimensions[2]:.1f})")
-        
-        # Sort obstacles by volume (largest first) for better visualization
-        obstacles.sort(key=lambda x: x['volume'], reverse=True)
-        
-        logger.info(f"✅ Extracted {len(obstacles)} obstacles from mesh geometry")
-        
-        # Log top 5 largest obstacles
-        for i, obs in enumerate(obstacles[:5]):
-            dims = obs['dimensions']
-            logger.info(f"  {obs['name']}: {dims[0]:.1f}×{dims[1]:.1f}×{dims[2]:.1f}m "
-                       f"at ({obs['center'][0]:.1f}, {obs['center'][1]:.1f}, {obs['center'][2]:.1f})")
-        
-        if len(obstacles) > 5:
-            logger.info(f"  ... and {len(obstacles)-5} more obstacles")
-            
-    except Exception as e:
-        logger.error(f"Failed to extract obstacles from mesh: {e}")
-        import traceback
-        logger.error(f"Obstacle extraction error: {traceback.format_exc()}")
-    
-    return obstacles
+    return vertices, faces
 
-def load_airsim_obstacles():
-    """Load obstacle data from mesh geometry (preferred) or AirSim settings (fallback)."""
-    obstacles = []
+# Apply coordinate system corrections to mesh vertices.
+# This adjusts the mesh to match AirSim's coordinate system.
+def apply_mesh_corrections(vertices):
+    """Apply coordinate system corrections to mesh vertices."""
+    corrected = vertices.copy()
     
-    # First try to load from mesh
-    try:
-        logger.info("Attempting to extract obstacles from environment mesh...")
-        
-        # Load the mesh
-        env_mesh = load_environment_mesh()
-        if env_mesh is not None:
-            obstacles = extract_obstacles_from_mesh(env_mesh)
-            
-            if len(obstacles) > 0:
-                logger.info(f"✅ Successfully extracted {len(obstacles)} obstacles from mesh")
-                return obstacles
-            else:
-                logger.warning("No obstacles extracted from mesh, trying settings.json fallback")
-        else:
-            logger.warning("No mesh available, trying settings.json fallback")
-            
-    except Exception as e:
-        logger.warning(f"Failed to extract obstacles from mesh: {e}")
+    # 1. Swap Y and Z axes (mesh is rotated)
+    corrected[:, [1, 2]] = vertices[:, [2, 1]]
     
-    # Fallback: try to load from settings.json
-    try:
-        import json
-        
-        settings_paths = [
-            "settings.json",
-            "../settings.json", 
-            os.path.expanduser("~/Documents/AirSim/settings.json"),
-            r"C:\Users\Jacob\Documents\AirSim\settings.json"
-        ]
-        
-        settings = None
-        for settings_path in settings_paths:
-            if os.path.exists(settings_path):
-                logger.info(f"Found AirSim settings at: {settings_path}")
-                with open(settings_path, 'r') as f:
-                    settings = json.load(f)
-                break
-        
-        if settings and "obstacles" in settings:
-            logger.info(f"Loading {len(settings['obstacles'])} obstacles from AirSim settings")
-            
-            for i, obstacle in enumerate(settings["obstacles"]):
-                if "bounds" in obstacle and len(obstacle["bounds"]) >= 2:
-                    # Extract min and max bounds
-                    min_bounds = obstacle["bounds"][0]  # [x_min, y_min, z_min]
-                    max_bounds = obstacle["bounds"][1]  # [x_max, y_max, z_max]
-                    
-                    # Calculate center point and dimensions
-                    center_x = (min_bounds[0] + max_bounds[0]) / 2
-                    center_y = (min_bounds[1] + max_bounds[1]) / 2
-                    center_z = (min_bounds[2] + max_bounds[2]) / 2
-                    
-                    width = max_bounds[0] - min_bounds[0]
-                    depth = max_bounds[1] - min_bounds[1] 
-                    height = max_bounds[2] - min_bounds[2]
-                    
-                    obstacles.append({
-                        "name": obstacle.get("name", f"Manual_Obstacle_{i}"),
-                        "center": [center_x, center_y, center_z],
-                        "min_bounds": min_bounds,
-                        "max_bounds": max_bounds,
-                        "dimensions": [width, depth, height],
-                        "source": "settings.json"
-                    })
-                    
-                    logger.debug(f"Loaded obstacle: {obstacle.get('name')} at ({center_x:.1f}, {center_y:.1f}, {center_z:.1f})")
-        
-        logger.info(f"Successfully loaded {len(obstacles)} obstacles from settings.json")
-        
-    except Exception as e:
-        logger.warning(f"Could not load obstacles from settings.json: {e}")
-        import traceback
-        logger.debug(f"Settings obstacle loading error: {traceback.format_exc()}")
+    # 2. Position mesh to start at X = -0.5
+    x_offset = -0.5 - corrected[:, 0].min()
+    corrected[:, 0] += x_offset
     
-    return obstacles
+    # 3. Center mesh at Y = 0
+    y_center = (corrected[:, 1].min() + corrected[:, 1].max()) / 2
+    corrected[:, 1] -= y_center
+    
+    logger.info(f"Applied mesh corrections: X offset={x_offset:.2f}, Y center={y_center:.2f}")
+    return corrected
 
 def analyse_logs(log_paths: List[str], output: str) -> None:
     """Parse ``log_paths`` and write an interactive HTML report."""
@@ -583,6 +328,8 @@ def analyse_logs(log_paths: List[str], output: str) -> None:
     if loop_vals:
         logger.info(f"Average loop time: {np.mean(loop_vals):.3f}s")
 
+# ========== Environment Mesh Loading ========== #
+# This function loads the environment mesh and applies scaling based on flight data.
 def load_environment_mesh():
     """Load the environment mesh with smart scaling based on flight data."""
     if not TRIMESH_AVAILABLE:
@@ -712,89 +459,66 @@ def load_environment_mesh():
         logger.error(f"Error in load_environment_mesh: {e}")
         return None
 
+# ========== 3D Trajectory Generation ========== #
+# This function generates a 3D trajectory plot with the environment mesh.
 def generate_3d_trajectory(path, df, output, time_col):
-    """Generate 3D trajectory with properly oriented and positioned environment."""
+    """Generate 3D trajectory with environment mesh."""
     try:
         from visualise_flight import build_plot
         
-        # Fix AirSim Z-axis inversion (AirSim: negative Z = up, Visualization: positive Z = up)
+        # Fix AirSim Z-axis (negative Z = up → positive Z = up)
         corrected_path = path.copy()
-        corrected_path[:, 2] = -corrected_path[:, 2]  # Invert Z-axis
-        logger.info("✅ Corrected AirSim Z-axis inversion (negative Z up → positive Z up)")
+        corrected_path[:, 2] = -corrected_path[:, 2]
         
-        # Generate base 3D plot with corrected path
+        # Create 3D plot
         fig3d = build_plot(corrected_path, [], np.array([0, 0, 0]), log=df, colour_by=None)
         
-        # Load and add environment mesh (with corrections)
-        logger.info("Loading environment mesh...")
+        # Add environment mesh
         env_mesh = load_environment_mesh()
         if env_mesh is not None:
             add_environment_mesh_to_plot(fig3d, env_mesh, opacity=0.3)
-        else:
-            logger.info("No environment mesh loaded")
         
-        # Remove obstacle loading since you only want the mesh
-        # (keeping this commented for future reference)
-        # logger.info("Loading obstacles from settings...")
-        # obstacles = load_airsim_obstacles()
-        
-        # Set proper axis scaling for both flight path and corrected environment
+        # Set visualization ranges
         if corrected_path.size > 0:
-            # Get corrected flight path bounds
-            flight_x_range = [corrected_path[:, 0].min(), corrected_path[:, 0].max()]
-            flight_y_range = [corrected_path[:, 1].min(), corrected_path[:, 1].max()]
-            flight_z_range = [corrected_path[:, 2].min(), corrected_path[:, 2].max()]
+            # Calculate ranges
+            flight_ranges = [
+                [corrected_path[:, i].min(), corrected_path[:, i].max()] 
+                for i in range(3)
+            ]
+            env_ranges = [[-0.5, 49.5], [-15, 15], [0, 10]]
             
-            # Environment now starts at x = -0.5 and extends to about x = 49.5 (50m total)
-            # After Y/Z swap and positioning corrections
-            env_x_range = [-0.5, 49.5]  # X: -0.5 to 49.5
-            env_y_range = [-15, 15]     # Y: roughly ±25m after swapping
-            env_z_range = [0, 10]       # Z: 0 to 25m height after swapping
-            
-            # Use the larger of flight or environment ranges, with padding
-            x_range = [min(flight_x_range[0], env_x_range[0]) - 2, max(flight_x_range[1], env_x_range[1]) + 2]
-            y_range = [min(flight_y_range[0], env_y_range[0]), max(flight_y_range[1], env_y_range[1])]
-            z_range = [min(flight_z_range[0], env_z_range[0]) - 2, max(flight_z_range[1], env_z_range[1]) + 2]
-            
-            # Ensure Z range shows positive values (drone flying above ground)
-            z_range[0] = max(z_range[0], 0)  # Don't go below ground level
-            
-            logger.info(f"Setting visualization ranges:")
-            logger.info(f"  X: {x_range[0]:.1f} to {x_range[1]:.1f}")
-            logger.info(f"  Y: {y_range[0]:.1f} to {y_range[1]:.1f}")
-            logger.info(f"  Z: {z_range[0]:.1f} to {z_range[1]:.1f}")
+            # Combine with padding
+            ranges = [
+                [min(flight_ranges[i][0], env_ranges[i][0]) - (2 if i != 1 else 0),
+                 max(flight_ranges[i][1], env_ranges[i][1]) + (2 if i != 1 else 0)]
+                for i in range(3)
+            ]
+            ranges[2][0] = max(ranges[2][0], 0)  # Don't go below ground
             
             fig3d.update_scenes(
-                xaxis=dict(range=x_range, title="X Position (m)"),
-                yaxis=dict(range=y_range, title="Y Position (m)"),
-                zaxis=dict(range=z_range, title="Z Position (m)"),
+                xaxis=dict(range=ranges[0], title="X Position (m)"),
+                yaxis=dict(range=ranges[1], title="Y Position (m)"),
+                zaxis=dict(range=ranges[2], title="Z Position (m)"),
                 aspectmode='manual',
                 aspectratio=dict(x=1, y=0.6, z=0.3)
             )
 
-        # Update layout for better visibility
+        # Update layout and save
         fig3d.update_layout(
-            title="🚁 3D Flight Trajectory with Corrected Map_Reactive Environment",
-            width=1500,
-            height=1100,
-            scene=dict(
-                camera=dict(eye=dict(x=1.5, y=1.5, z=1.0)),
-                bgcolor='white'
-            )
+            title="🚁 3D Flight Trajectory with Environment",
+            width=1500, height=1100,
+            scene=dict(camera=dict(eye=dict(x=1.5, y=1.5, z=1.0)), bgcolor='white')
         )
         
-        # Generate trajectory file
-        output_path = Path(output)
-        trajectory_path = output_path.parent / f"trajectory_{output_path.stem}.html"
-        fig3d.write_html(str(trajectory_path))
-        
-        logger.info(f"✅ 3D Trajectory with corrected Map_Reactive environment saved: {trajectory_path}")
+        output_path = Path(output).parent / f"trajectory_{Path(output).stem}.html"
+        fig3d.write_html(str(output_path))
+        logger.info(f"✅ 3D Trajectory saved: {output_path}")
 
     except Exception as e:
-        logger.warning(f"⚠️ Warning: Could not generate 3D trajectory: {e}")
-        import traceback
-        logger.warning(f"3D trajectory error details: {traceback.format_exc()}")
+        logger.warning(f"Could not generate 3D trajectory: {e}")
 
+# ========== Plot Generation ========== #
+# This function generates plots from the log file.
 def generate_plots(log_path: str, outdir: str) -> None:
     """Create state histogram and distance plots from ``log_path``."""
     out = Path(outdir)
@@ -803,6 +527,8 @@ def generate_plots(log_path: str, outdir: str) -> None:
     plot_state_histogram(stats, str(out / "state_histogram.html"))
     plot_distance_over_time(log_path, str(out / "distance_over_time.html"))
 
+# ========== Argument Parsing ========== #
+# This function parses command line arguments for the analysis script.
 def parse_args(argv: Union[List[str], None] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Analyse flight logs")
     parser.add_argument("logs", nargs="+", help="CSV log files")
@@ -820,6 +546,8 @@ def parse_args(argv: Union[List[str], None] = None) -> argparse.Namespace:
     )
     return parser.parse_args(argv)
 
+# ========== Main Function ========== #
+# This is the main entry point for the analysis script.
 def main(argv: Union[List[str], None] = None) -> None:
     try:
         logger.info("🚀 Starting main analysis function")
@@ -858,5 +586,7 @@ def main(argv: Union[List[str], None] = None) -> None:
     logger.info("Analysis completed successfully, exiting with code 0")
     sys.exit(0)
 
+# ========== Run Main Function ========== #
+# This allows the script to be run directly or imported as a module.
 if __name__ == "__main__":
     main()
