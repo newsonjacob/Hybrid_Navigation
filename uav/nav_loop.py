@@ -25,7 +25,7 @@ from uav.overlay import draw_overlay
 from uav.navigation_rules import compute_thresholds
 from uav.video_utils import start_video_writer_thread
 from uav.logging_utils import format_log_line
-from uav.perception import OpticalFlowTracker, FlowHistory
+from uav.perception import OpticalFlowTracker, FlowHistory, FrameStats, PerceptionData
 from uav.navigation import Navigator
 from uav.state_checks import in_grace_period
 from uav.scoring import compute_region_stats
@@ -237,33 +237,32 @@ def update_navigation_state(client, args, ctx, data, frame_count, time_now, max_
     )
     if processed is None:
         return None
-    (
-        vis_img,
-        good_old,
-        flow_vectors,
-        flow_std,
-        simgetimage_s,
-        decode_s,
-        processing_s,
-        smooth_L,
-        smooth_C,
-        smooth_R,
-        delta_L,
-        delta_C,
-        delta_R,
-        probe_mag,
-        probe_count,
-        left_count,
-        center_count,
-        right_count,
-        top_mag,
-        mid_mag,
-        bottom_mag,
-        top_count,
-        mid_count,
-        bottom_count,
-        in_grace,
-    ) = processed
+    perception_data, stats = processed
+    vis_img = perception_data.vis_img
+    good_old = perception_data.good_old
+    flow_vectors = perception_data.flow_vectors
+    flow_std = perception_data.flow_std
+    simgetimage_s = perception_data.simgetimage_s
+    decode_s = perception_data.decode_s
+    processing_s = perception_data.processing_s
+    smooth_L = stats.smooth_L
+    smooth_C = stats.smooth_C
+    smooth_R = stats.smooth_R
+    delta_L = stats.delta_L
+    delta_C = stats.delta_C
+    delta_R = stats.delta_R
+    probe_mag = stats.probe_mag
+    probe_count = stats.probe_count
+    left_count = stats.left_count
+    center_count = stats.center_count
+    right_count = stats.right_count
+    top_mag = stats.top_mag
+    mid_mag = stats.mid_mag
+    bottom_mag = stats.bottom_mag
+    top_count = stats.top_count
+    mid_count = stats.mid_count
+    bottom_count = stats.bottom_count
+    in_grace = stats.in_grace
     nav_decision = navigation_step(
         client,
         ctx.navigator,
@@ -306,33 +305,32 @@ def log_and_record_frame(
     time_now,
 ):
     """Overlay telemetry, log, and queue video frames."""
-    (
-        vis_img,
-        good_old,
-        flow_vectors,
-        flow_std,
-        simgetimage_s,
-        decode_s,
-        processing_s,
-        smooth_L,
-        smooth_C,
-        smooth_R,
-        delta_L,
-        delta_C,
-        delta_R,
-        probe_mag,
-        probe_count,
-        left_count,
-        center_count,
-        right_count,
-        top_mag,
-        mid_mag,
-        bottom_mag,
-        top_count,
-        mid_count,
-        bottom_count,
-        in_grace,
-    ) = processed
+    perception_data, stats = processed
+    vis_img = perception_data.vis_img
+    good_old = perception_data.good_old
+    flow_vectors = perception_data.flow_vectors
+    flow_std = perception_data.flow_std
+    simgetimage_s = perception_data.simgetimage_s
+    decode_s = perception_data.decode_s
+    processing_s = perception_data.processing_s
+    smooth_L = stats.smooth_L
+    smooth_C = stats.smooth_C
+    smooth_R = stats.smooth_R
+    delta_L = stats.delta_L
+    delta_C = stats.delta_C
+    delta_R = stats.delta_R
+    probe_mag = stats.probe_mag
+    probe_count = stats.probe_count
+    left_count = stats.left_count
+    center_count = stats.center_count
+    right_count = stats.right_count
+    top_mag = stats.top_mag
+    mid_mag = stats.mid_mag
+    bottom_mag = stats.bottom_mag
+    top_count = stats.top_count
+    mid_count = stats.mid_count
+    bottom_count = stats.bottom_count
+    in_grace = stats.in_grace
     (
         state_str,
         obstacle_detected,
