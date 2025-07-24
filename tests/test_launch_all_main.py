@@ -4,7 +4,7 @@ import configparser
 import sys
 
 if 'pygetwindow' not in sys.modules:
-    sys.modules['pygetwindow'] = types.SimpleNamespace(getAllTitles=lambda: [])
+    sys.modules['pygetwindow'] = types.SimpleNamespace(getAllTitles=lambda: [], getAllWindows=lambda: [])
 
 import launch_all
 
@@ -39,6 +39,7 @@ def test_launch_all_main_flag_flow(tmp_path, monkeypatch):
     monkeypatch.setattr(launch_all, "SLAM_READY_FLAG", flags / "slam_ready.flag", raising=False)
     monkeypatch.setattr(launch_all, "SLAM_FAILED_FLAG", flags / "slam_failed.flag", raising=False)
     monkeypatch.setattr(launch_all, "START_NAV_FLAG", flags / "start_nav.flag", raising=False)
+    monkeypatch.setattr(launch_all, "STOP_FLAG", flags / "stop.flag", raising=False)
 
     created = []
 
