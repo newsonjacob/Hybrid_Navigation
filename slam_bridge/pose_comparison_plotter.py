@@ -26,7 +26,7 @@ def main():
     # Correct SLAM coordinate mapping: Z→X, X→Y, Y→Z
     df['slam_x_corrected'] = df['slam_z']    # SLAM Z → Display X
     df['slam_y_corrected'] = -df['slam_x']    # SLAM X → Display Y
-    df['slam_z_corrected'] = df['slam_y']    # SLAM Y → Display Z
+    df['slam_z_corrected'] = -df['slam_y']    # SLAM Y → Display Z
     
     # Apply coordinate transformation to ground truth data  
     # Transform AirSim coordinates to match display coordinate system
@@ -109,11 +109,11 @@ def plot_slam_only(df, save_dir="analysis"):
     fig.add_trace(go.Scatter3d(
         x=df['slam_x_corrected'], y=df['slam_y_corrected'], z=df['slam_z_corrected'],
         mode='lines',
-        name='SLAM Trajectory (Corrected)',
+        name='SLAM Trajectory',
         line=dict(color='blue', width=4)
     ))
     fig.update_layout(
-        title="SLAM Trajectory Only (Coordinate Corrected: Z→X, X→Y, Y→Z)",
+        title="SLAM Trajectory Only",
         scene=dict(
             xaxis_title="X (m)",
             yaxis_title="Y (m)",
@@ -142,7 +142,7 @@ def plot_translation_error(df, save_dir="analysis"):
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=xvals, y=err, mode='lines', name='error'))
     fig.update_layout(
-        title="Translation Error Over Time (Both Coordinates Corrected)",
+        title="Translation Error Over Time",
         xaxis_title="Time (s)" if 'timestamp' in df.columns else 'Index',
         yaxis_title="Error (m)",
     )

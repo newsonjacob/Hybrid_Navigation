@@ -312,10 +312,6 @@ def main(timestamp: str, selected_nav_mode: Optional[str] = None) -> bool:
                 return False
             logger.info("[MAIN] Pangolin window found.")
 
-            slam_width = config.getint("window", "slam_width", fallback=1024)
-            slam_height = config.getint("window", "slam_height", fallback=768)
-            lutils.resize_window("ORB-SLAM2", slam_width, slam_height)
-
             launcher.ffmpeg_proc, launcher.slam_video_path = record_slam_video("ORB-SLAM2")
             if launcher.ffmpeg_proc:
                 logger.info("[MAIN] Screen recording started (PID %s)", getattr(launcher.ffmpeg_proc, "pid", "n/a"))
