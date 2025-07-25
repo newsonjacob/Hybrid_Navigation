@@ -112,8 +112,10 @@ public:
     // See format details at: http://www.cvlibs.net/datasets/kitti/eval_odometry.php
     void SaveTrajectoryKITTI(const string &filename);
 
-    // TODO: Save/Load functions
-    // SaveMap(const string &filename);
+    // Save/Load functions
+    // Save the current map points to a text file with one XYZ point per line.
+    // This is useful for debugging or offline analysis of the generated map.
+    void SaveMapPoints(const string &filename);
     // LoadMap(const string &filename);
 
     // Information from most recent processed frame
