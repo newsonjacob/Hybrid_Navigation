@@ -14,6 +14,7 @@
 #include "server/logging.hpp"
 #include "server/network.hpp"
 #include "server/slam_runner.hpp"
+#include "Converter.h"
 #include <filesystem>
 #include <sys/stat.h>
 #include <cerrno>
@@ -141,7 +142,7 @@ int main(int argc, char **argv) {
     double server_start_time = (double)cv::getTickCount() / cv::getTickFrequency();
     if (metrics_stream.is_open()) {
         metrics_stream
-            << "frame,timestamp,tracking_state,inliers,covariance,x,y,z\n";
+            << "frame,timestamp,tracking_state,inliers,covariance,x,y,z,qx,qy,qz,qw\n";
     }
     
     std::string console_log = join_path(log_dir, "slam_console.txt");
@@ -853,6 +854,11 @@ int main(int argc, char **argv) {
 
                     cv::Mat Twc_send;
                     Twc.convertTo(Twc_send, CV_32F); // ensure float32
+                    std::vector<float> quat{0.f, 0.f, 0.f, 1.f};
+                    if (!Twc_send.empty() && Twc_send.rows >= 3 && Twc_send.cols >= 3) {
+                        cv::Mat Rwc = Twc_send.rowRange(0,3).colRange(0,3);
+                        quat = ORB_SLAM2::Converter::toQuaternion(Rwc);
+                    }
 
                     if (send_pose(pose_sock, Twc_send)) {
                         // --- Send covariance as a single float ---
@@ -891,7 +897,8 @@ int main(int argc, char **argv) {
                             metrics_stream << std::fixed << std::setprecision(6)
                                            << frame_counter << ',' << relative_time << ','
                                            << tracking_state << ',' << inliers << ','
-                                           << covariance_value << ',' << x << ',' << y << ',' << z << '\n';
+                                           << covariance_value << ',' << x << ',' << y << ',' << z << ','
+                                           << quat[0] << ',' << quat[1] << ',' << quat[2] << ',' << quat[3] << '\n';
                         }
                     } else {
                         log_event("[WARN] send_pose() returned false.");
