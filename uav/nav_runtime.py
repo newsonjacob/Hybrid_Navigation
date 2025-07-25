@@ -122,6 +122,7 @@ def setup_environment(args, client, nav_mode="reactive"):
         log_file = open(flow_dir / f"slam_log_{timestamp}.csv", "w")
         log_file.write(
             "frame,time,state,pos_x,pos_y,pos_z,slam_x,slam_y,slam_z,"
+            "slam_x_raw,slam_y_raw,slam_z_raw,"
             "yaw,speed,cpu_percent,memory_mb,covariance,inliers,slam_confidence\n"
         )
 

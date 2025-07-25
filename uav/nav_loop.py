@@ -352,6 +352,17 @@ def log_slam_frame(ctx, frame_count, time_now, x, y, z, waypoint_index, dist_to_
         if covariance is not None:
             confidence = 1.0 / (1.0 + float(covariance))
 
+        # --- Add raw SLAM coordinates ---
+        raw_x = raw_y = raw_z = float('nan')
+        try:
+            pose_matrix = slam_receiver.get_latest_pose_matrix()
+            if pose_matrix is not None:
+                raw_x = float(pose_matrix[0, 3])
+                raw_y = float(pose_matrix[1, 3])
+                raw_z = float(pose_matrix[2, 3])
+        except Exception:
+            pass
+
         cpu_percent = get_cpu_percent()
         mem_mb = get_memory_info().rss / (1024 * 1024)
 
@@ -363,6 +374,7 @@ def log_slam_frame(ctx, frame_count, time_now, x, y, z, waypoint_index, dist_to_
             f"{slam_state}_WP{waypoint_index + 1},"
             f"{pos_x:.2f},{pos_y:.2f},{pos_z:.2f},"
             f"{x:.2f},{y:.2f},{z:.2f},"
+            f"{raw_x:.4f},{raw_y:.4f},{raw_z:.4f},"
             f"{yaw:.2f},"
             f"{speed:.2f},"
             f"{cpu_percent:.1f},"
