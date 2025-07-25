@@ -3,6 +3,7 @@ import time
 import os
 from pathlib import Path
 from uav.paths import STOP_FLAG_PATH
+from uav import launch_utils as lutils
 import queue
 from datetime import datetime
 import cv2
@@ -94,12 +95,6 @@ def get_arg_or_config(args, config, name, section, option, default=None):
     except Exception:
         return default
 
-def wait_for_nav_trigger():
-    logger.info("[INFO] Waiting for navigation start flag...")
-    while not START_FLAG_PATH.exists():
-        time.sleep(1)
-    logger.info("[INFO] Navigation start flag found. Beginning nav logic...")
-
 def main() -> None:
     # Safety: fallback logging if nothing is configured
     ctx = None
@@ -185,7 +180,7 @@ def main() -> None:
             logger.info("[main.py] Stop flag detected before navigation started. Exiting.")
             cleanup(client, sim_process, ctx)
             return
-        wait_for_nav_trigger()
+        lutils.wait_for_flag(START_FLAG_PATH)
         init_client(client)
 
         ctx = None
@@ -220,7 +215,7 @@ def main() -> None:
             cleanup(client, sim_process, ctx)
             return
 
-        wait_for_nav_trigger()
+        lutils.wait_for_flag(START_FLAG_PATH)
         init_client(client)
 
         ctx = setup_environment(args, client)
