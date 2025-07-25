@@ -109,6 +109,16 @@ pip install -e .
 4. Build your Unreal map and generate a packaged `.exe` (e.g. `Blocks.exe`).
 
 5. Edit `config.ini` to point to your AirSim `settings.json`, UE4 executables and the SLAM networking details. The `[network]` section controls the IP and port used by the image streamer and pose receiver. The streamer also reads `SLAM_SERVER_HOST`, `SLAM_SERVER_PORT` and `CONNECT_RETRIES` from the environment (or command line) so these values can be overridden without editing the config file. The path under `[paths]` provides the default for `--settings-path`.  The optional `[window]` section lets you set the width and height of the AirSim and SLAM windows.
+You can also define a list of waypoints:
+```
+[waypoints]
+wp1 = 20,0,-2
+wp2 = 20,-2.5,-2
+wp3 = 22.5,-2.5,-2
+wp4 = 23.5,-0.5,-2
+wp5 = 45,0,-2
+```
+Each entry is a comma-separated `x,y,z` coordinate. If omitted, the default sequence is used.
 
 6. Run the system:
    ```bash

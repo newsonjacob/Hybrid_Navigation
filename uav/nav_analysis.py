@@ -5,12 +5,13 @@ import os
 import subprocess
 from pathlib import Path
 
-from uav.paths import STOP_FLAG_PATH
+import uav.paths as paths
 from uav.analysis_helpers import (
     _generate_visualisation,
     _generate_performance,
     _generate_report,
 )
+from uav.utils import retain_recent_views
 
 logger = logging.getLogger("nav_loop")
 
@@ -97,17 +98,16 @@ def finalise_files(ctx):
         logger.error(f"Traceback: {traceback.format_exc()}")
 
     try:
-        from uav.utils import retain_recent_views
-
         retain_recent_views(str(analysis_dir), 5)
         logger.info("Old analysis files cleaned up")
     except Exception as cleanup_error:
         logger.error(f"Error retaining recent views: {cleanup_error}")
 
     try:
-        if os.path.exists(STOP_FLAG_PATH):
-            os.remove(STOP_FLAG_PATH)
+        if os.path.exists(paths.STOP_FLAG_PATH):
+            os.remove(paths.STOP_FLAG_PATH)
             logger.info("Stop flag file removed")
+
     except Exception as flag_error:
         logger.error(f"Error removing stop flag file: {flag_error}")
 
