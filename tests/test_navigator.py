@@ -5,6 +5,8 @@ from collections import deque
 from queue import Queue
 from tests.conftest import airsim_stub
 
+from uav.navigation_core import NavigationInput
+
 from uav.navigation import Navigator
 from uav.navigation_state import NavigationState
 
@@ -67,7 +69,7 @@ def test_brake_updates_flags_and_calls():
     assert nav.dodging is False
     assert nav.last_movement_time == prev
     name, args, kwargs, fut = client.calls[-1]
-    assert name == 'moveByVelocityAsync'
+    assert name == 'moveByVelocityZAsync'
     assert args == (0, 0, 0, 0.5)
     assert fut.join_called is False
 
@@ -211,29 +213,32 @@ def test_navigation_skips_actions_during_grace_after_blind_forward(monkeypatch):
     nav.blind_forward()
     frame_q = Queue()
     params = {'state': [NavigationState.NONE]}
+    nav_input = NavigationInput(
+        good_old=[],
+        flow_vectors=None,
+        flow_std=0.0,
+        smooth_L=2.0,
+        smooth_C=0.1,
+        smooth_R=2.0,
+        delta_L=0.0,
+        delta_C=0.0,
+        delta_R=0.0,
+        left_count=0,
+        center_count=0,
+        right_count=0,
+        frame_queue=frame_q,
+        vis_img=object(),
+        time_now=time.time(),
+        frame_count=1,
+        state_history=deque(maxlen=10),
+        pos_history=deque(maxlen=10),
+        param_refs=params,
+    )
     result = navigation_step(
         client,
         nav,
         None,
-        [],
-        None,
-        0.0,
-        2.0,
-        0.1,
-        2.0,
-        0.0,
-        0.0,
-        0,
-        0,
-        0,
-        0,
-        frame_q,
-        object(),
-        time.time(),
-        1,
-        deque(maxlen=10),
-        deque(maxlen=10),
-        params,
+        nav_input,
     )
 
     assert result[0] is NavigationState.NONE

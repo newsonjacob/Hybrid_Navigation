@@ -1,6 +1,8 @@
 """Core navigation helpers and step logic."""
 
 import logging
+from dataclasses import dataclass
+from typing import Any, Deque
 
 from uav.navigation_rules import compute_thresholds
 from uav.state_checks import in_grace_period
@@ -9,6 +11,33 @@ from uav import config
 from uav.navigation_state import NavigationState
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class NavigationInput:
+    """Container for parameters required by :func:`navigation_step`."""
+
+    good_old: list
+    flow_vectors: Any
+    flow_std: float
+    smooth_L: float
+    smooth_C: float
+    smooth_R: float
+    delta_L: float
+    delta_C: float
+    delta_R: float
+    left_count: int
+    center_count: int
+    right_count: int
+    frame_queue: Any
+    vis_img: Any
+    time_now: float
+    frame_count: int
+    state_history: Deque
+    pos_history: Deque
+    param_refs: Any
+    probe_mag: float = 0.0
+    probe_count: int = 0
 
 
 def detect_obstacle_with_hysteresis(
@@ -422,27 +451,7 @@ def navigation_step(
     client,
     navigator,
     flow_history,
-    good_old,
-    flow_vectors,
-    flow_std,
-    smooth_L,
-    smooth_C,
-    smooth_R,
-    delta_L,
-    delta_C,
-    delta_R,
-    left_count,
-    center_count,
-    right_count,
-    frame_queue,
-    vis_img,
-    time_now,
-    frame_count,
-    state_history,
-    pos_history,
-    param_refs,
-    probe_mag=0.0,
-    probe_count=0,
+    nav_input: NavigationInput,
 ):
     """Evaluate flow data and choose the next UAV action.
 
@@ -454,34 +463,8 @@ def navigation_step(
         Navigator controlling the drone.
     flow_history : FlowHistory
         Rolling buffer of recent flow magnitudes.
-    good_old : list
-        Previous frame feature points.
-    flow_vectors : np.ndarray
-        Optical flow vectors for the current frame.
-    flow_std : float
-        Standard deviation of flow magnitudes.
-    smooth_L, smooth_C, smooth_R : float
-        Smoothed flow magnitudes.
-    delta_L, delta_C, delta_R : float
-        Change in flow magnitudes between frames.
-    left_count, center_count, right_count : int
-        Feature counts per region.
-    frame_queue : Queue
-        Queue for video frames to be written.
-    vis_img : np.ndarray
-        Visualisation image for this frame.
-    time_now : float
-        Current timestamp.
-    frame_count : int
-        Current frame index.
-    state_history, pos_history : deque
-        Recent navigation states and positions.
-    param_refs : ParamRefs
-        Shared parameter references.
-    probe_mag : float, optional
-        Magnitude of probe flow, defaults to ``0.0``.
-    probe_count : int, optional
-        Number of probe features, defaults to ``0``.
+    nav_input : NavigationInput
+        Aggregated inputs for the navigation decision.
 
     Returns
     -------
@@ -489,6 +472,27 @@ def navigation_step(
         Tuple containing the selected navigation state, obstacle flag, side
         safety flag, dynamic thresholds and detailed obstacle condition flags.
     """
+    good_old = nav_input.good_old
+    flow_vectors = nav_input.flow_vectors
+    flow_std = nav_input.flow_std
+    smooth_L = nav_input.smooth_L
+    smooth_C = nav_input.smooth_C
+    smooth_R = nav_input.smooth_R
+    delta_L = nav_input.delta_L
+    delta_C = nav_input.delta_C
+    delta_R = nav_input.delta_R
+    left_count = nav_input.left_count
+    center_count = nav_input.center_count
+    right_count = nav_input.right_count
+    frame_queue = nav_input.frame_queue
+    vis_img = nav_input.vis_img
+    time_now = nav_input.time_now
+    frame_count = nav_input.frame_count
+    state_history = nav_input.state_history
+    pos_history = nav_input.pos_history
+    param_refs = nav_input.param_refs
+    probe_mag = nav_input.probe_mag
+    probe_count = nav_input.probe_count
     state_str = NavigationState.NONE
     brake_thres = 0.0
     dodge_thres = 0.0

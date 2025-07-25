@@ -35,7 +35,13 @@ from uav import config
 from uav.logging_helpers import log_frame_data, write_video_frame, write_frame_output, handle_reset
 from uav.context import ParamRefs, NavContext
 from uav.perception_loop import perception_loop, start_perception_thread, process_perception_data
-from uav.navigation_core import detect_obstacle, determine_side_safety, handle_obstacle, navigation_step
+from uav.navigation_core import (
+    detect_obstacle,
+    determine_side_safety,
+    handle_obstacle,
+    navigation_step,
+    NavigationInput,
+)
 from uav.navigation_slam_boot import run_slam_bootstrap
 from uav.paths import STOP_FLAG_PATH
 from uav.slam_utils import (is_slam_stable, generate_pose_comparison_plot)
@@ -268,31 +274,34 @@ def update_navigation_state(client, args, ctx, data, frame_count, time_now, max_
     mid_count = stats.mid_count
     bottom_count = stats.bottom_count
     in_grace = stats.in_grace
+    nav_input = NavigationInput(
+        good_old=good_old,
+        flow_vectors=flow_vectors,
+        flow_std=flow_std,
+        smooth_L=smooth_L,
+        smooth_C=smooth_C,
+        smooth_R=smooth_R,
+        delta_L=delta_L,
+        delta_C=delta_C,
+        delta_R=delta_R,
+        left_count=left_count,
+        center_count=center_count,
+        right_count=right_count,
+        frame_queue=ctx.frame_queue,
+        vis_img=vis_img,
+        time_now=time_now,
+        frame_count=frame_count,
+        state_history=ctx.state_history,
+        pos_history=ctx.pos_history,
+        param_refs=ctx.param_refs,
+        probe_mag=probe_mag,
+        probe_count=probe_count,
+    )
     nav_decision = navigation_step(
         client,
         ctx.navigator,
         ctx.flow_history,
-        good_old,
-        flow_vectors,
-        flow_std,
-        smooth_L,
-        smooth_C,
-        smooth_R,
-        delta_L,
-        delta_C,
-        delta_R,
-        left_count,
-        center_count,
-        right_count,
-        ctx.frame_queue,
-        vis_img,
-        time_now,
-        frame_count,
-        ctx.state_history,
-        ctx.pos_history,
-        ctx.param_refs,
-        probe_mag=probe_mag,
-        probe_count=probe_count,
+        nav_input,
     )
     return processed, nav_decision
 
