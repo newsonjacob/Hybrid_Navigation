@@ -31,11 +31,14 @@ def _generate_visualisation(log_csv_path, analysis_dir, timestamp):
             is_slam_data = slam_states.any()
         
         if is_slam_data:
-            logger.info("Detected SLAM navigation data - generating SLAM-specific visualizations")
+            logger.info(
+                "Detected SLAM navigation data - generating SLAM-specific visualizations"
+            )
             return _generate_slam_visualization(df, analysis_dir, timestamp)
-        else:
-            logger.info("Detected reactive navigation data - generating standard visualizations")
-            return _generate_reactive_visualization(df, analysis_dir, timestamp)
+        logger.info(
+            "Detected reactive navigation data - generating standard visualizations"
+        )
+        return _generate_reactive_visualization(log_csv_path, analysis_dir, timestamp)
             
     except Exception as e:
         logger.error(f"Visualization generation failed: {e}")
@@ -94,10 +97,20 @@ def _generate_slam_visualization(df, analysis_dir, timestamp):
         logger.error(f"Failed to generate SLAM visualization: {e}")
         return None
 
-def _generate_reactive_visualization(df, analysis_dir, timestamp):
-    """Generate reactive navigation visualizations (existing code)."""
-    # Your existing reactive navigation visualization code here
-    pass
+def _generate_reactive_visualization(log_csv_path, analysis_dir, timestamp):
+    """Generate reactive navigation visualizations via ``visualise_flight.py``."""
+    output_path = Path(analysis_dir) / f"flight_visual_{timestamp}.html"
+    script = os.path.abspath("analysis/visualise_flight.py")
+    try:
+        subprocess.run(
+            [sys.executable, script, str(output_path), "--log", str(log_csv_path)],
+            check=True,
+        )
+        logger.info(f"✅ Flight visualisation saved: {output_path}")
+        return str(output_path)
+    except Exception as e:
+        logger.error(f"Visualization generation failed: {e}")
+        return None
 
 
 def _generate_performance(log_csv: Path, analysis_dir: Path, timestamp: str) -> str:
