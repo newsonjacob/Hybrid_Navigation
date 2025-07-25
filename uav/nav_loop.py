@@ -209,6 +209,16 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
             map_pts = np.array([[m[0][3], m[1][3], m[2][3]] for _, m in history], dtype=float)
             if not check_exit_conditions(client, ctx, time_now, max_duration, goal_x, goal_y):
                 break
+            # Get the current goal
+            curr_goal = waypoints[current_waypoint_index] # (waypoint_x, waypoint_y, waypoint_z)
+
+            # Calculate distance to the current goal
+            dist_to_goal = np.sqrt((x - curr_goal[0]) ** 2 + (y - curr_goal[1]) ** 2) 
+
+            # Check if the final waypoint has been reached
+            if current_waypoint_index == len(waypoints) - 1 and dist_to_goal < threshold:
+                logger.info("[SLAMNav] Final goal reached — landing.")
+                break
             (waypoint_x, waypoint_y, waypoint_z), current_waypoint_index, dist = handle_waypoint_progress(
                 x, y, waypoints, current_waypoint_index, threshold
             )
