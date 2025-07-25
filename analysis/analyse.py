@@ -6,6 +6,8 @@ import os
 from datetime import datetime
 import logging
 
+from uav.logging_config import setup_logging
+
 import numpy as np
 import pandas as pd
 from plotly.subplots import make_subplots
@@ -26,22 +28,11 @@ def get_timestamp_from_args():
 
 # Setup logging once at module level
 timestamp = get_timestamp_from_args() or datetime.now().strftime('%Y%m%d_%H%M%S')
-log_dir = Path("logs")
-log_dir.mkdir(exist_ok=True)
-log_file_path = log_dir / f"analyse_{timestamp}.log"
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.FileHandler(str(log_file_path)),
-        logging.StreamHandler(sys.stdout)
-    ],
-    force=True
-)
+log_file = f"analyse_{timestamp}.log"
+setup_logging(log_file=log_file, level=logging.INFO)
 
 logger = logging.getLogger("analyse")
-logger.info(f"Analysis logging configured - writing to {log_file_path}")
+logger.info(f"Analysis logging configured - writing to logs/{log_file}")
 
 # ========== Now Safe to Import with Logger ========== #
 
