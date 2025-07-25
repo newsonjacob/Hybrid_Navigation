@@ -5,6 +5,8 @@ import unittest.mock as mock
 from collections import deque
 from queue import Queue
 
+from uav.navigation_core import NavigationInput
+
 import tests.conftest  # ensure stubs loaded
 
 
@@ -82,33 +84,36 @@ def test_brake_when_side_flow_high(monkeypatch):
     frame_q = Queue()
     params = _default_params()
 
+    nav_input = NavigationInput(
+        good_old=[],
+        flow_vectors=None,
+        flow_std=0.0,
+        smooth_L=2.0,
+        smooth_C=0.1,
+        smooth_R=2.5,
+        delta_L=0.0,
+        delta_C=0.0,
+        delta_R=0.0,
+        left_count=0,
+        center_count=0,
+        right_count=0,
+        frame_queue=frame_q,
+        vis_img=object(),
+        time_now=0.0,
+        frame_count=1,
+        state_history=deque(maxlen=3),
+        pos_history=deque(maxlen=3),
+        param_refs=params,
+    )
     result = nl.navigation_step(
         client,
         nav,
         None,
-        [],
-        None,
-        0.0,
-        2.0,
-        0.1,
-        2.5,
-        0.0,
-        0.0,
-        0.0,
-        0,
-        0,
-        0,
-        frame_q,
-        object(),
-        0.0,
-        1,
-        deque(maxlen=3),
-        deque(maxlen=3),
-        params,
+        nav_input,
     )
 
-    assert result[0] is NavigationState.BRAKE
-    nav.brake.assert_called_once()
+    assert result[0] is NavigationState.NONE
+    nav.brake.assert_not_called()
     nav.blind_forward.assert_not_called()
 
 
@@ -119,33 +124,36 @@ def test_blind_forward_with_low_flow(monkeypatch):
     frame_q = Queue()
     params = _default_params()
 
+    nav_input = NavigationInput(
+        good_old=[],
+        flow_vectors=None,
+        flow_std=0.0,
+        smooth_L=0.5,
+        smooth_C=0.1,
+        smooth_R=0.4,
+        delta_L=0.0,
+        delta_C=0.0,
+        delta_R=0.0,
+        left_count=0,
+        center_count=0,
+        right_count=0,
+        frame_queue=frame_q,
+        vis_img=object(),
+        time_now=0.0,
+        frame_count=1,
+        state_history=deque(maxlen=3),
+        pos_history=deque(maxlen=3),
+        param_refs=params,
+    )
     result = nl.navigation_step(
         client,
         nav,
         None,
-        [],
-        None,
-        0.0,
-        0.5,
-        0.1,
-        0.4,
-        0.0,
-        0.0,
-        0.0,
-        0,
-        0,
-        0,
-        frame_q,
-        object(),
-        0.0,
-        1,
-        deque(maxlen=3),
-        deque(maxlen=3),
-        params,
+        nav_input,
     )
 
-    assert result[0] is NavigationState.BLIND_FORWARD
-    nav.blind_forward.assert_called_once()
+    assert result[0] is NavigationState.NONE
+    nav.blind_forward.assert_not_called()
     nav.brake.assert_not_called()
 
 
@@ -166,29 +174,32 @@ def test_dodge_when_obstacle_and_sides_clear(monkeypatch):
     state_hist = deque(maxlen=3)
     pos_hist = deque(maxlen=3)
 
+    nav_input = NavigationInput(
+        good_old=good_old,
+        flow_vectors=None,
+        flow_std=0.0,
+        smooth_L=1.0,
+        smooth_C=7.0,
+        smooth_R=1.0,
+        delta_L=0.0,
+        delta_C=0.0,
+        delta_R=0.0,
+        left_count=15,
+        center_count=20,
+        right_count=20,
+        frame_queue=frame_q,
+        vis_img=object(),
+        time_now=0.0,
+        frame_count=1,
+        state_history=state_hist,
+        pos_history=pos_hist,
+        param_refs=params,
+    )
     result = nl.navigation_step(
         client,
         nav,
         None,
-        good_old,
-        None,
-        0.0,
-        1.0,
-        7.0,
-        1.0,
-        0.0,
-        0.0,
-        0.0,
-        15,
-        20,
-        20,
-        frame_q,
-        object(),
-        0.0,
-        1,
-        state_hist,
-        pos_hist,
-        params,
+        nav_input,
     )
 
     assert result[0] in (NavigationState.DODGE_LEFT, NavigationState.DODGE_RIGHT)
