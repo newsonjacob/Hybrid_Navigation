@@ -31,7 +31,25 @@ def finalise_files(ctx):
 
     try:
         base_dir = Path(getattr(ctx, "output_dir", "."))
-        log_csv = base_dir / "flow_logs" / f"reactive_log_{timestamp}.csv"
+
+        log_csv = None
+        ctx_log_file = getattr(ctx, "log_file", None)
+        if ctx_log_file is not None:
+            try:
+                log_csv = Path(ctx_log_file.name)
+            except Exception:
+                logger.warning("Could not determine log file path from ctx.log_file")
+
+        if log_csv is None:
+            reactive = base_dir / "flow_logs" / f"reactive_log_{timestamp}.csv"
+            slam = base_dir / "flow_logs" / f"slam_log_{timestamp}.csv"
+            if reactive.exists():
+                log_csv = reactive
+            elif slam.exists():
+                log_csv = slam
+            else:
+                logger.error(f"Log file not found: {reactive} or {slam}")
+                return
 
         if not os.path.exists(log_csv):
             logger.error(f"Log file not found: {log_csv}")

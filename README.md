@@ -233,6 +233,8 @@ setup_logging("run.log")  # also prints to stdout
 
 - Flight logs are stored in `flow_logs/` as `.csv` (use `--output-dir` to change the base folder)
 - When running SLAM navigation the file is named `slam_log_<timestamp>.csv` with minimal pose metrics
+- After each run the appropriate log (reactive or SLAM) is automatically analysed to generate a flight
+  report, performance plots and a 3D trajectory view
 - Each log row contains the AirSim ground truth position (`pos_x`, `pos_y`, `pos_z`)
   along with orientation and performance metrics.
 - 3D trajectory plots are saved in `analysis/` as interactive `.html` files
