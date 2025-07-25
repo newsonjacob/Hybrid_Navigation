@@ -620,8 +620,10 @@ def main(argv: Union[List[str], None] = None) -> None:
 
         if args.output.lower().endswith(".html"):
             logger.info("Generating HTML analysis report...")
+
             log_input = args.logs[0] if len(args.logs) == 1 else args.logs
             analyse_logs(log_input, args.output)
+
             logger.info(f"✅ Flight analysis completed successfully")
         else:
             if len(args.logs) != 1:

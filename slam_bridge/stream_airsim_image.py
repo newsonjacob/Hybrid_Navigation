@@ -1,9 +1,9 @@
 import sys
-from pathlib import Path
 
 import os
 import argparse
 import logging
+from uav.paths import FLAGS_DIR
 
 from datetime import datetime
 
@@ -231,7 +231,7 @@ def parse_args() -> argparse.Namespace:
 # This will parse arguments, set up logging, and start the streamer
 def main() -> None:
     log_name = f"airsim_stream_{datetime.now():%Y%m%d_%H%M%S}.log"
-    Path("flags").mkdir(exist_ok=True)
+    # FLAGS_DIR is imported to ensure the directory exists
     args = parse_args()
     streamer = ImageStreamer(args.host, args.port, args.mode, args.retries)
     try:

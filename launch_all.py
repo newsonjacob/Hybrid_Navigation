@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from uav.paths import FLAGS_DIR
 
 from uav.logging_config import setup_logging
 from uav.utils import retain_recent_logs
@@ -20,12 +21,12 @@ from uav import launch_utils as lutils
 # ---------------------------------------------------------------------------
 # Flag paths are defined at import time so tests may monkeypatch them.
 # ---------------------------------------------------------------------------
-flags_dir = Path("flags")
-AIRSIM_READY_FLAG = flags_dir / "airsim_ready.flag"
-SLAM_READY_FLAG = flags_dir / "slam_ready.flag"
-SLAM_FAILED_FLAG = flags_dir / "slam_failed.flag"
-START_NAV_FLAG = flags_dir / "start_nav.flag"
-STOP_FLAG = flags_dir / "stop.flag"
+flags_dir = FLAGS_DIR
+AIRSIM_READY_FLAG = FLAGS_DIR / "airsim_ready.flag"
+SLAM_READY_FLAG = FLAGS_DIR / "slam_ready.flag"
+SLAM_FAILED_FLAG = FLAGS_DIR / "slam_failed.flag"
+START_NAV_FLAG = FLAGS_DIR / "start_nav.flag"
+STOP_FLAG = FLAGS_DIR / "stop.flag"
 
 # When a shutdown is requested we wait this long for the main process to exit
 # before forcibly terminating it.
@@ -66,7 +67,6 @@ def init_logging_and_flags() -> str:
     logger = logging.getLogger("Launch")
     logger.info("Logging to logs/%s", launch_log)
 
-    flags_dir.mkdir(exist_ok=True)
     return timestamp
 
 # ---------------------------------------------------------------------------
@@ -176,7 +176,7 @@ class Launcher:
                     self.logger.warning("[SHUTDOWN] Forcing main script shutdown...")
                     self.main_proc.kill()
 
-        pid_file = flags_dir / "ue4_sim.pid"
+        pid_file = FLAGS_DIR / "ue4_sim.pid"
         if pid_file.exists():
             try:
                 ue4_pid = int(pid_file.read_text())
@@ -225,7 +225,7 @@ def wait_for_start_flag() -> bool:
 
 def wait_for_slam_done_flag(timeout: float = 15.0) -> bool:
     """Wait for the slam_done.flag to appear, or timeout."""
-    slam_done_flag = flags_dir / "slam_done.flag"
+    slam_done_flag = FLAGS_DIR / "slam_done.flag"
     logger.info("[MAIN] Waiting for SLAM backend to finish (slam_done.flag)...")
     start = time.time()
     while not slam_done_flag.exists():
@@ -239,6 +239,13 @@ def wait_for_slam_done_flag(timeout: float = 15.0) -> bool:
 
 def main(timestamp: str, selected_nav_mode: Optional[str] = None) -> bool:
     """Launch the simulation using the provided timestamp."""
+
+    # --- Remove old shutdown flag if it exists ---
+    slam_shutdown_flag = FLAGS_DIR / "slam_shutdown.flag"
+    if slam_shutdown_flag.exists():
+        slam_shutdown_flag.unlink()
+        logger.info("[MAIN] Removed stale slam_shutdown.flag at startup.")
+    
     args = parse_args()
     if selected_nav_mode is not None:
         args.nav_mode = selected_nav_mode
@@ -329,7 +336,6 @@ def main(timestamp: str, selected_nav_mode: Optional[str] = None) -> bool:
         while launcher.main_proc and getattr(launcher.main_proc, "poll", lambda: None)() is None:
             if STOP_FLAG.exists():
                 logger.info("[MAIN] Stop flag detected. Initiating graceful shutdown...")
-                launcher.shutdown()
                 break
             time.sleep(1)
         logger.info("[MAIN] main.py completed or terminated.")
@@ -349,13 +355,13 @@ def main(timestamp: str, selected_nav_mode: Optional[str] = None) -> bool:
 
 def wait_for_nav_mode_and_launch(timestamp: str) -> None:
     logger.info("Waiting for user to select navigation mode and launch simulation...")
-    while not (flags_dir / "nav_mode.flag").exists():
+    while not (FLAGS_DIR / "nav_mode.flag").exists():
         if STOP_FLAG.exists():
             logger.info("Stop flag detected before simulation started. Shutting down.")
             return
         time.sleep(0.2)
 
-    with open(flags_dir / "nav_mode.flag") as f:
+    with open(FLAGS_DIR / "nav_mode.flag") as f:
         selected_nav_mode = f.read().strip()
     logger.info(f"User selected navigation mode: {selected_nav_mode}")
 
@@ -374,7 +380,7 @@ def cli_main() -> None:
                  SLAM_FAILED_FLAG, 
                  START_NAV_FLAG, 
                  STOP_FLAG, 
-                 flags_dir / "nav_mode.flag",
+                 FLAGS_DIR / "nav_mode.flag",
                  ]:
         flag.unlink(missing_ok=True)
 

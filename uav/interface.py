@@ -22,6 +22,7 @@ import tkinter as tk
 from threading import Thread
 from threading import Event
 from .context import ParamRefs
+from uav.paths import FLAGS_DIR
 
 
 # Use a multiprocessing.Event to signal when the application should exit
@@ -48,13 +49,11 @@ def launch_control_gui(param_refs, nav_mode="unknown"):
 
     def on_launch_sim():
         """Write selected nav mode to a flag file to trigger simulation startup."""
-        from pathlib import Path
-        Path("flags/nav_mode.flag").write_text(nav_mode_var.get())
+        (FLAGS_DIR / "nav_mode.flag").write_text(nav_mode_var.get())
 
     def on_start_nav():
         """Create the start_nav.flag to trigger navigation."""
-        from pathlib import Path
-        Path("flags/start_nav.flag").touch()
+        (FLAGS_DIR / "start_nav.flag").touch()
 
 
     def update_status_lights():

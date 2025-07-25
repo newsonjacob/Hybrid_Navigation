@@ -38,19 +38,6 @@ def test_handle_waypoint_progress_stays(monkeypatch):
     assert dist > 0.0
 
 
-def test_check_slam_stop(monkeypatch, tmp_path):
-    nl = _load_nav_loop(monkeypatch)
-    flag = types.SimpleNamespace(is_set=lambda: True)
-    assert nl.check_slam_stop(flag, 0, 10) is True
-
-    flag = types.SimpleNamespace(is_set=lambda: False)
-    nl.STOP_FLAG_PATH = tmp_path / 'stop.flag'
-    nl.STOP_FLAG_PATH.write_text('1')
-    assert nl.check_slam_stop(flag, 0, 10) is True
-
-    nl.STOP_FLAG_PATH.unlink()
-    assert nl.check_slam_stop(flag, -2, 1) is True
-
 
 def test_ensure_stable_pose_uses_airsim(monkeypatch):
     nl = _load_nav_loop(monkeypatch)
@@ -71,7 +58,6 @@ def test_ensure_stable_pose_reinitialises(monkeypatch):
     boot_calls = []
     monkeypatch.setattr(nl, 'run_slam_bootstrap', lambda *a, **k: boot_calls.append(1))
     monkeypatch.setattr(nl.time, 'sleep', lambda *a, **k: None)
-    monkeypatch.setattr(nl, 'check_slam_stop', lambda *a, **k: False)
     pose, coords = nl.ensure_stable_slam_pose(types.SimpleNamespace(), 'slam', None, None, None, 0, 10)
     assert boot_calls
     assert pose is not None
