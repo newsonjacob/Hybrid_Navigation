@@ -260,8 +260,8 @@ def create_overlay_plot(trajectories: List[tuple], output_path: str):
         # Create trajectory name
         flight_name = f"Flight {i+1}"
         csv_name = Path(metadata["path"]).stem
-        if "full_log_" in csv_name:
-            timestamp = csv_name.replace("full_log_", "")
+        if "reactive_log_" in csv_name:
+            timestamp = csv_name.replace("reactive_log_", "")
             flight_name = f"Flight {timestamp[:8]}_{timestamp[9:13]}"
         
         # Add trajectory line

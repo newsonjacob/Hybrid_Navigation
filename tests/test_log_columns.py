@@ -14,7 +14,8 @@ def test_setup_environment_header_includes_perf(monkeypatch, tmp_path):
     monkeypatch.setattr(nl, "start_video_writer_thread", lambda *a, **k: types.SimpleNamespace(join=lambda: None))
     monkeypatch.setattr(nl, "retain_recent_logs", lambda *a, **k: None)
     monkeypatch.setattr(nl, "retain_recent_files", lambda *a, **k: None)
-    monkeypatch.setattr(nl, "retain_recent_views", lambda *a, **k: None)
+    if hasattr(nl, "retain_recent_views"):
+        monkeypatch.setattr(nl, "retain_recent_views", lambda *a, **k: None)
     monkeypatch.setattr(nl, "init_client", lambda *a, **k: None)
     monkeypatch.setattr(nl, "OpticalFlowTracker", lambda *a, **k: object())
     monkeypatch.setattr(nl, "FlowHistory", lambda *a, **k: object())
@@ -32,7 +33,7 @@ def test_setup_environment_header_includes_perf(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     ctx = nl.setup_environment(args, client)
     ctx.log_file.close()
-    log_file = next((tmp_path / "flow_logs").glob("full_log_*.csv"))
+    log_file = next((tmp_path / "flow_logs").glob("reactive_log_*.csv"))
     header = log_file.read_text().splitlines()[0]
     assert "cpu_percent" in header
     assert "memory_rss" in header

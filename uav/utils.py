@@ -55,12 +55,12 @@ def get_drone_state(client):
 
 
 def _timestamp_from_name(path: str) -> float:
-    """Return a UNIX timestamp parsed from ``full_log_YYYYMMDD_HHMMSS.csv``.
+    """Return a UNIX timestamp parsed from ``reactive_log_YYYYMMDD_HHMMSS.csv``.
 
     Falls back to the file's modification time if parsing fails.
     """
     name = os.path.basename(path)
-    ts = name[len("full_log_"):-len(".csv")]
+    ts = name[len("reactive_log_"):-len(".csv")]
     try:
         dt = datetime.strptime(ts, "%Y%m%d_%H%M%S")
         return dt.timestamp()
@@ -71,10 +71,10 @@ def _timestamp_from_name(path: str) -> float:
 def retain_recent_logs(log_dir: str, keep: int = 2) -> None:
     """
     Keep only the ``keep`` most recent logs for each log type in the logs folder.
-    Handles: full_log_*.csv, launch_*.log, slam_server_debug_*.log, pose_log_*.txt
+    Handles: reactive_log_*.csv, launch_*.log, slam_server_debug_*.log, pose_log_*.txt
     """
     log_patterns = [
-        "full_log_*.csv",
+        "reactive_log_*.csv",
         "launch_*.log",
         "slam_*.log",
         "pose_*.txt",
