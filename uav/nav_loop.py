@@ -34,6 +34,7 @@ from slam_bridge.slam_receiver import get_latest_pose_matrix, get_pose_history
 from uav.slam_utils import COVARIANCE_THRESHOLD, MIN_INLIERS_THRESHOLD
 from uav.performance import get_cpu_percent, get_memory_info
 from uav.perception_loop import process_perception_data
+from uav.utils import get_drone_state
 
 logger = logging.getLogger("nav_loop")
 
@@ -330,20 +331,16 @@ def log_slam_frame(ctx, frame_count, time_now, x, y, z, waypoint_index, dist_to_
         pos_x = pos_y = pos_z = 0.0
         speed = 0.0
         yaw = 0.0
+        collided = 0
         if client:
             try:
-                pose = client.simGetVehiclePose("UAV")
-                pos_x = pose.position.x_val
-                pos_y = pose.position.y_val
-                pos_z = pose.position.z_val
-                speed = np.linalg.norm([
-                    pose.linear_velocity.x_val,
-                    pose.linear_velocity.y_val,
-                    pose.linear_velocity.z_val,
-                ])
-                yaw = airsim.to_eularian_angles(pose.orientation)[2]
-            except Exception:
-                pass
+                pos, yaw, speed = get_drone_state(client)
+                pos_x = pos.x_val
+                pos_y = pos.y_val
+                pos_z = pos.z_val
+            except Exception as exc:
+                logger.error(f"Error getting drone state: {exc}")
+                pos_x = pos_y = pos_z = speed = yaw = 0.0
 
         from slam_bridge import slam_receiver
         covariance = slam_receiver.get_latest_covariance()
@@ -353,15 +350,25 @@ def log_slam_frame(ctx, frame_count, time_now, x, y, z, waypoint_index, dist_to_
             confidence = 1.0 / (1.0 + float(covariance))
 
         # --- Add raw SLAM coordinates ---
-        raw_x = raw_y = raw_z = float('nan')
+        slam_x_raw = slam_y_raw = slam_z_raw = float('nan')
         try:
             pose_matrix = slam_receiver.get_latest_pose_matrix()
             if pose_matrix is not None:
-                raw_x = float(pose_matrix[0, 3])
-                raw_y = float(pose_matrix[1, 3])
-                raw_z = float(pose_matrix[2, 3])
+                slam_x_raw = float(pose_matrix[0][3])
+                slam_y_raw = float(pose_matrix[1][3])
+                slam_z_raw = float(pose_matrix[2][3])
         except Exception:
             pass
+
+        # --- Transformed SLAM (no scale correction) ---
+        slam_x_trans = slam_z_raw
+        slam_y_trans = -slam_x_raw
+        slam_z_trans = -slam_y_raw
+
+        # --- Scale-corrected SLAM ---
+        slam_x_corr = 0.7 * slam_z_raw
+        slam_y_corr = 0.68 * -slam_x_raw
+        slam_z_corr = 0.48 * -slam_y_raw
 
         cpu_percent = get_cpu_percent()
         mem_mb = get_memory_info().rss / (1024 * 1024)
@@ -372,9 +379,11 @@ def log_slam_frame(ctx, frame_count, time_now, x, y, z, waypoint_index, dist_to_
             f"{frame_count},"
             f"{rel_time:.2f},"
             f"{slam_state}_WP{waypoint_index + 1},"
-            f"{pos_x:.2f},{pos_y:.2f},{pos_z:.2f},"
-            f"{x:.2f},{y:.2f},{z:.2f},"
-            f"{raw_x:.4f},{raw_y:.4f},{raw_z:.4f},"
+            f"{collided},"
+            f"{pos_x:.2f},{pos_y:.2f},{-pos_z:.2f},"
+            f"{slam_x_corr:.4f},{slam_y_corr:.4f},{slam_z_corr:.4f}," 
+            f"{slam_x_trans:.4f},{slam_y_trans:.4f},{slam_z_trans:.4f},"  
+            f"{slam_x_raw:.4f},{slam_y_raw:.4f},{slam_z_raw:.4f},"
             f"{yaw:.2f},"
             f"{speed:.2f},"
             f"{cpu_percent:.1f},"
