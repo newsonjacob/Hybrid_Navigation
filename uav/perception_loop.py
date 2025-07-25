@@ -12,7 +12,7 @@ from airsim import ImageRequest, ImageType
 
 from uav import config
 from uav.scoring import compute_region_stats
-from uav.perception import filter_flow_by_depth, PerceptionData
+from uav.perception import filter_flow_by_depth, PerceptionData, FrameStats
 
 logger = logging.getLogger("perception")
 
@@ -183,12 +183,8 @@ def process_perception_data(
 
     Returns
     -------
-    tuple
-        ``(vis_img, good_old, flow_vectors, flow_std, simgetimage_s,
-        decode_s, processing_s, smooth_L, smooth_C, smooth_R, delta_L,
-        delta_C, delta_R, probe_mag, probe_count, left_count, center_count,
-        right_count, top_mag, mid_mag, bottom_mag, top_count, mid_count,
-        bottom_count, in_grace)``.
+    Tuple[PerceptionData, FrameStats]
+        The original :class:`PerceptionData` and computed frame statistics.
     """
     vis_img = data.vis_img
     good_old = data.good_old
@@ -272,30 +268,24 @@ def process_perception_data(
                f"Features: L:{left_count} C:{center_count} R:{right_count} | "
                f"Total filtered features: {len(good_old)}")
 
-    return (
-        vis_img,
-        good_old,
-        flow_vectors,
-        flow_std,
-        simgetimage_s,
-        decode_s,
-        processing_s,
-        smooth_L,
-        smooth_C,
-        smooth_R,
-        delta_L,
-        delta_C,
-        delta_R,
-        probe_mag,
-        probe_count,
-        left_count,
-        center_count,
-        right_count,
-        top_mag,
-        mid_mag,
-        bottom_mag,
-        top_count,
-        mid_count,
-        bottom_count,
-        in_grace,
+    stats = FrameStats(
+        smooth_L=smooth_L,
+        smooth_C=smooth_C,
+        smooth_R=smooth_R,
+        delta_L=delta_L,
+        delta_C=delta_C,
+        delta_R=delta_R,
+        probe_mag=probe_mag,
+        probe_count=probe_count,
+        left_count=left_count,
+        center_count=center_count,
+        right_count=right_count,
+        top_mag=top_mag,
+        mid_mag=mid_mag,
+        bottom_mag=bottom_mag,
+        top_count=top_count,
+        mid_count=mid_count,
+        bottom_count=bottom_count,
+        in_grace=in_grace,
     )
+    return data, stats

@@ -107,6 +107,7 @@ int main(int argc, char **argv) {
     if (video_file.empty())
         video_file = join_path(log_dir, "slam_feed.avi");
 
+
     // Log the chosen output path early for troubleshooting
     log_event(std::string("[DEBUG] Video output file: ") + video_file);
 
@@ -430,11 +431,13 @@ int main(int argc, char **argv) {
                         bool is_color = !imLeft.empty();
                         cv::Size sz = is_color ? imLeft.size() : imLeftGray.size();
                         int fourcc = cv::VideoWriter::fourcc('M','J','P','G');
+
                         std::ostringstream omsg;
                         omsg << "[DEBUG] Initialising VideoWriter: path=" << video_file
                              << ", size=" << sz.width << "x" << sz.height
                              << ", color=" << (is_color ? "true" : "false");
                         log_event(omsg.str());
+
                         slam_video_writer.open(video_file, fourcc, 30.0, sz, is_color);
                         if (!slam_video_writer.isOpened()) {
                             log_event("[ERROR] Failed to open video writer: " + video_file);
@@ -444,7 +447,9 @@ int main(int argc, char **argv) {
                         }
                     }
                     if (video_writer_initialized && slam_video_writer.isOpened()) {
+
                         log_event("[DEBUG] Writing frame to video file");
+
                         if (!imLeft.empty()) {
                             slam_video_writer.write(imLeft);
                         } else {
@@ -754,10 +759,12 @@ int main(int argc, char **argv) {
     slam_server::cleanup_resources(sock, server_fd, pose_sock);
     if (pose_log_stream.is_open()) pose_log_stream.close();
     log_event("[DEBUG] Sockets closed. SLAM server shutting down.");
+
     if (slam_video_writer.isOpened()) {
         log_event("[DEBUG] Releasing video writer");
         slam_video_writer.release();
     }
+
     SLAM.Shutdown();
 
     SLAM.SaveTrajectoryTUM(join_path(log_dir, "CameraTrajectory.txt"));
