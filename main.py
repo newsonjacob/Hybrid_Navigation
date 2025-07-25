@@ -92,8 +92,14 @@ def get_arg_or_config(args, config, name, section, option, default=None):
         return default
     
 def wait_for_nav_trigger():
+    """Block until the start flag appears, exiting early if the stop flag is set."""
     logger.info("[INFO] Waiting for navigation start flag...")
     while not START_FLAG_PATH.exists():
+        if STOP_FLAG_PATH.exists():
+            logger.info(
+                "[INFO] Stop flag detected while waiting for start. Exiting wait loop."
+            )
+            return
         time.sleep(1)
     logger.info("[INFO] Navigation start flag found. Beginning nav logic...")
 
