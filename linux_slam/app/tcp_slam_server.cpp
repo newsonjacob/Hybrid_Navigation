@@ -126,6 +126,14 @@ int main(int argc, char **argv) {
     if (metrics_stream.is_open())
         metrics_stream << "timestamp,tracking_state,inliers,covariance\n";
 
+    // Create metrics CSV for runtime statistics
+    std::string metrics_file = join_path(log_dir, "slam_metrics.csv");
+    std::ofstream metrics_stream(metrics_file);
+    // Timestamp will be relative to when the server starts
+    double server_start_time = (double)cv::getTickCount() / cv::getTickFrequency();
+    if (metrics_stream.is_open())
+        metrics_stream << "frame,timestamp,tracking_state,inliers,covariance,x,y,z\n";
+
     std::string console_log = join_path(log_dir, "slam_console.txt");
     std::string console_err = join_path(log_dir, "slam_console_err.txt");
 
@@ -852,9 +860,17 @@ int main(int argc, char **argv) {
                         auto tracker_metrics = SLAM.GetTracker();
                         if (tracker_metrics) tracking_state = tracker_metrics->mState;
                         if (metrics_stream.is_open()) {
+                            double relative_time = timestamp - server_start_time;
+                            float x = 0.0f, y = 0.0f, z = 0.0f;
+                            if (!Twc_send.empty() && Twc_send.rows >= 3 && Twc_send.cols >= 4) {
+                                x = Twc_send.at<float>(0, 3);
+                                y = Twc_send.at<float>(1, 3);
+                                z = Twc_send.at<float>(2, 3);
+                            }
                             metrics_stream << std::fixed << std::setprecision(6)
-                                           << timestamp << ',' << tracking_state << ','
-                                           << inlier_count << ',' << covariance_value << '\n';
+                                           << frame_counter << ',' << relative_time << ','
+                                           << tracking_state << ',' << inlier_count << ','
+                                           << covariance_value << ',' << x << ',' << y << ',' << z << '\n';
                         }
                     } else {
                         log_event("[WARN] send_pose() returned false.");
