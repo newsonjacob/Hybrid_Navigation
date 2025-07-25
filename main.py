@@ -57,6 +57,43 @@ def get_settings_path(args, config):
     except Exception:
         return None
 
+
+def get_arg_or_config(args, config, name, section, option, default=None):
+    """Return ``args.name`` if set, otherwise value from ``config``.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed command line arguments.
+    config : configparser.ConfigParser
+        Loaded configuration object.
+    name : str
+        Attribute name on ``args``.
+    section : str
+        Section in the configuration file.
+    option : str
+        Option within ``section`` to read.
+    default : Any, optional
+        Value returned if neither argument nor config option is provided.
+    """
+
+    value = getattr(args, name, None)
+    if value is not None:
+        return value
+
+    getter = config.get
+    if isinstance(default, int):
+        getter = config.getint
+    elif isinstance(default, float):
+        getter = config.getfloat
+
+    try:
+        if default is None:
+            return getter(section, option)
+        return getter(section, option, fallback=default)
+    except Exception:
+        return default
+
 def wait_for_nav_trigger():
     logger.info("[INFO] Waiting for navigation start flag...")
     while not START_FLAG_PATH.exists():
@@ -81,28 +118,30 @@ def main() -> None:
     config = load_app_config(args.config)
     settings_path = get_settings_path(args, config)
 
-    if args.slam_covariance_threshold is None:
-        try:
-            args.slam_covariance_threshold = config.getfloat(
-                "slam", "covariance_threshold"
-            )
-        except Exception:
-            pass
-    if args.slam_inlier_threshold is None:
-        try:
-            args.slam_inlier_threshold = config.getint(
-                "slam", "inlier_threshold"
-            )
-        except Exception:
-            pass
+    args.slam_covariance_threshold = get_arg_or_config(
+        args, config, "slam_covariance_threshold", "slam", "covariance_threshold", None
+    )
+    args.slam_inlier_threshold = get_arg_or_config(
+        args, config, "slam_inlier_threshold", "slam", "inlier_threshold", None
+    )
 
-    slam_server_host = args.slam_server_host or config.get("network", "slam_server_host", fallback="127.0.0.1")
-    slam_server_port = int(args.slam_server_port or config.get("network", "slam_server_port", fallback="6000"))
+    slam_server_host = get_arg_or_config(
+        args, config, "slam_server_host", "network", "slam_server_host", "127.0.0.1"
+    )
+    slam_server_port = int(
+        get_arg_or_config(
+            args, config, "slam_server_port", "network", "slam_server_port", 6000
+        )
+    )
     slam_receiver_host = "0.0.0.0"
     logger.info(f"[main.py] SLAM receiver host resolved to: {slam_receiver_host}")
 
     # Resolve the SLAM receiver port from command line or config
-    slam_receiver_port = int(args.slam_receiver_port or config.get("network", "slam_receiver_port", fallback="6001"))
+    slam_receiver_port = int(
+        get_arg_or_config(
+            args, config, "slam_receiver_port", "network", "slam_receiver_port", 6001
+        )
+    )
 
     # Resolve the pose source from command line or config
     pose_source = args.slam_pose_source
