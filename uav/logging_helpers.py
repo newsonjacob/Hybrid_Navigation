@@ -81,6 +81,7 @@ def write_frame_output(
     center_blocked,
     combination_flow,
     minimum_flow,
+    slam_pos=None,
 ):
     """Overlay telemetry, write video, and log the frame."""
     pos, yaw, speed = get_drone_state(client)
@@ -141,6 +142,7 @@ def write_frame_output(
         obstacle_detected,
         side_safe,
         pos,
+        slam_pos,
         yaw,
         speed,
         time_now,
@@ -208,7 +210,7 @@ def handle_reset(client, ctx, frame_count):
             "left_count,center_count,right_count,"
             "brake_thres,dodge_thres,fps,"
             "state,collided,obstacle,side_safe,"
-            "pos_x,pos_y,pos_z,yaw,speed,"
+            "pos_x,pos_y,pos_z,slam_x,slam_y,slam_z,yaw,speed,"
             "time,features,simgetimage_s,decode_s,processing_s,loop_s,cpu_percent,memory_rss,"
             "sudden_rise,center_blocked,combination_flow,minimum_flow\n"
         )

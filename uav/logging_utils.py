@@ -21,6 +21,7 @@ def format_log_line(
     obstacle_detected,
     side_safe,
     pos,
+    slam_pos,
     yaw,
     speed,
     time_now,
@@ -38,13 +39,21 @@ def format_log_line(
 ) -> str:
     """Return a formatted CSV line for logging navigation state."""
 
+    slam_str = (
+        f"{slam_pos[0]:.2f},{slam_pos[1]:.2f},{slam_pos[2]:.2f},"
+        if slam_pos is not None
+        else ",,,"
+    )
+
     return (
         f"{frame_count},{smooth_L:.3f},{smooth_C:.3f},{smooth_R:.3f},"
         f"{delta_L:.3f},{delta_C:.3f},{delta_R:.3f},{flow_std:.3f},"
         f"{left_count},{center_count},{right_count},"
         f"{brake_thres:.2f},{dodge_thres:.2f},{actual_fps:.2f},"
         f"{state_str},{collided},{obstacle_detected},{int(side_safe)},"
-        f"{pos.x_val:.2f},{pos.y_val:.2f},{pos.z_val:.2f},{yaw:.2f},{speed:.2f},"
+        f"{pos.x_val:.2f},{pos.y_val:.2f},{pos.z_val:.2f},"
+        f"{slam_str}"
+        f"{yaw:.2f},{speed:.2f},"
         f"{time_now:.2f},{len(good_old)},"
         f"{simgetimage_s:.3f},{decode_s:.3f},{processing_s:.3f},{loop_elapsed:.3f},"
         f"{cpu_percent:.1f},{mem_rss},"

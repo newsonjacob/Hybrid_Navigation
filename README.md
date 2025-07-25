@@ -232,6 +232,8 @@ setup_logging("run.log")  # also prints to stdout
 ```
 
 - Flight logs are stored in `flow_logs/` as `.csv` (use `--output-dir` to change the base folder)
+- Each log row contains the AirSim ground truth position (`pos_x`, `pos_y`, `pos_z`)
+  and the SLAM pose coordinates (`slam_x`, `slam_y`, `slam_z`).
 - 3D trajectory plots are saved in `analysis/` as interactive `.html` files
 - Runtime messages are configured via `uav.logging_config.setup_logging` using the standard `logging` module
 - SLAM pose and feature debugging is printed to stdout and stored in `logs/` (affected by `--output-dir`)

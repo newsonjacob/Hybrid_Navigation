@@ -315,15 +315,21 @@ def log_slam_frame(ctx, frame_count, time_now, x, y, z, waypoint_index, dist_to_
     try:
         # Get drone state for additional context
         client = getattr(ctx, 'client', None)
+        gt_x = gt_y = gt_z = 0.0
         speed = 0.0
         yaw = 0.0
         if client:
             try:
                 pose = client.simGetVehiclePose("UAV")
-                speed = np.linalg.norm([pose.linear_velocity.x_val, 
-                                     pose.linear_velocity.y_val, 
-                                     pose.linear_velocity.z_val])
+                speed = np.linalg.norm([
+                    pose.linear_velocity.x_val,
+                    pose.linear_velocity.y_val,
+                    pose.linear_velocity.z_val,
+                ])
                 yaw = airsim.to_eularian_angles(pose.orientation)[2]
+                gt_x = pose.position.x_val
+                gt_y = pose.position.y_val
+                gt_z = pose.position.z_val
             except:
                 pass
         
@@ -344,7 +350,8 @@ def log_slam_frame(ctx, frame_count, time_now, x, y, z, waypoint_index, dist_to_
                    f"0,"                     # collided (assume no collision)
                    f"0,"                     # obstacle (N/A for SLAM)
                    f"1,"                     # side_safe (assume safe)
-                   f"{x:.6f},{y:.6f},{z:.6f}," # pos_x,pos_y,pos_z (actual SLAM position)
+                   f"{gt_x:.6f},{gt_y:.6f},{gt_z:.6f}," # GT coordinates
+                   f"{x:.6f},{y:.6f},{z:.6f}," # SLAM pose
                    f"{yaw:.6f},"             # yaw
                    f"{speed:.6f},"           # speed
                    f"{time_now:.6f},"        # time
