@@ -189,9 +189,7 @@ def analyse_logs(log_file_path, output_dir):
         required_columns = ["time", "frame", "state"]
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
-            logger.error(f"[ERROR] Missing required columns: {missing_columns}")
-            logger.info(f"[DEBUG] Available columns: {list(df.columns)}")
-            return
+            logger.warning(f"Missing expected columns: {missing_columns}")
         
         # Now safe to access data
         start_time = df["time"].iloc[0]
@@ -210,7 +208,19 @@ def analyse_logs(log_file_path, output_dir):
         path = df[["pos_x", "pos_y", "pos_z"]].to_numpy(dtype=float)
 
         # Generate separate 3D trajectory file
+        output = Path(output_dir)
         generate_3d_trajectory(path, df, output, time_col)
+
+        # Basic summary statistics for testing environments
+        stats = [
+            {
+                "frames": len(df),
+                "collisions": int(df.get("collision", pd.Series(0)).sum()),
+                "distance": float(df.get("pos_x", pd.Series()).diff().abs().sum()),
+                "fps_avg": float(df.get("fps", pd.Series()).mean()),
+                "loop_avg": float(df.get("loop_s", pd.Series()).mean()),
+            }
+        ]
 
         fig = make_subplots(
             rows=4,
@@ -507,7 +517,7 @@ def load_environment_mesh():
 def generate_3d_trajectory(path, df, output, time_col):
     """Generate 3D trajectory with environment mesh."""
     try:
-        from visualise_flight import build_plot
+        from .visualise_flight import build_plot
         
         # Fix AirSim Z-axis (negative Z = up → positive Z = up)
         corrected_path = path.copy()
@@ -610,7 +620,8 @@ def main(argv: Union[List[str], None] = None) -> None:
 
         if args.output.lower().endswith(".html"):
             logger.info("Generating HTML analysis report...")
-            analyse_logs(args.logs, args.output)
+            log_input = args.logs[0] if len(args.logs) == 1 else args.logs
+            analyse_logs(log_input, args.output)
             logger.info(f"✅ Flight analysis completed successfully")
         else:
             if len(args.logs) != 1:
