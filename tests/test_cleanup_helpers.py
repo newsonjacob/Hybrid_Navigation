@@ -11,9 +11,15 @@ import pytest
 def _reload_nav_loop(monkeypatch):
     airsim_stub = types.SimpleNamespace(ImageRequest=object, ImageType=object)
     monkeypatch.setitem(sys.modules, 'airsim', airsim_stub)
-    nl = importlib.import_module('uav.nav_loop')
-    importlib.reload(nl)
-    return nl
+    runtime = importlib.import_module('uav.nav_runtime')
+    importlib.reload(runtime)
+    analysis = importlib.import_module('uav.nav_analysis')
+    importlib.reload(analysis)
+    ns = types.SimpleNamespace(**{k: getattr(runtime, k) for k in dir(runtime) if not k.startswith('_')})
+    for k in dir(analysis):
+        if not k.startswith('_'):
+            setattr(ns, k, getattr(analysis, k))
+    return ns
 
 
 class DummyFlag:
@@ -95,7 +101,7 @@ def test_finalise_files(monkeypatch, tmp_path):
     nl = _reload_nav_loop(monkeypatch)
     calls = []
     monkeypatch.setattr(nl.subprocess, 'run', lambda cmd, **kw: calls.append(cmd))
-    monkeypatch.setattr(nl, 'retain_recent_views', lambda *a, **k: calls.append(('retain', a, k)))
+    monkeypatch.setattr('uav.nav_analysis.retain_recent_views', lambda *a, **k: calls.append(('retain', a, k)))
     monkeypatch.setattr('uav.slam_utils.generate_pose_comparison_plot', lambda: calls.append('pose_plot'))
     nl.STOP_FLAG_PATH = tmp_path/'stop.flag'
     nl.STOP_FLAG_PATH.write_text('1')
@@ -117,7 +123,7 @@ def test_finalise_files_calledprocesserror(monkeypatch, tmp_path, caplog):
         raise nl.subprocess.CalledProcessError(1, cmd, stderr="fail")
 
     monkeypatch.setattr(nl.subprocess, 'run', raise_error)
-    monkeypatch.setattr(nl, 'retain_recent_views', lambda *a, **k: None)
+    monkeypatch.setattr('uav.nav_analysis.retain_recent_views', lambda *a, **k: None)
     monkeypatch.setattr('uav.slam_utils.generate_pose_comparison_plot', lambda: None)
 
     nl.STOP_FLAG_PATH = tmp_path / 'stop.flag'

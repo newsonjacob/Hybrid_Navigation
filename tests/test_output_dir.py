@@ -8,7 +8,7 @@ import tests.conftest  # ensure stubs loaded
 def test_output_dir_creates_logs(monkeypatch, tmp_path):
     airsim_stub = types.SimpleNamespace(ImageRequest=object, ImageType=object)
     monkeypatch.setitem(sys.modules, "airsim", airsim_stub)
-    nl = importlib.import_module("uav.nav_loop")
+    nl = importlib.import_module("uav.nav_runtime")
     importlib.reload(nl)
 
     monkeypatch.setattr(nl, "start_video_writer_thread", lambda *a, **k: types.SimpleNamespace(join=lambda: None))

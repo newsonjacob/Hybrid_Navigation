@@ -15,7 +15,7 @@ def _load_nav_loop(monkeypatch):
         to_eularian_angles=lambda o: (0, 0, 0),
     )
     monkeypatch.setitem(sys.modules, "airsim", airsim_stub)
-    nl = importlib.import_module("uav.nav_loop")
+    nl = importlib.import_module("uav.nav_runtime")
     importlib.reload(nl)
     return nl
 
