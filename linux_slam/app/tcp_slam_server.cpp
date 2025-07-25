@@ -216,6 +216,7 @@ int main(int argc, char **argv) {
 
     // Initialize frame counter and flags
     int frame_counter = 0;              // Frame counter to track the number of frames processed
+    int total_frame_counter = 0;        // Total frames processed (never reset)
     bool slam_ready_flag_written = false; // Flag to indicate if SLAM is ready to process frames
     const int MIN_INLIERS_THRESHOLD = 0;  // Minimum inliers to consider SLAM stable
 
@@ -910,10 +911,12 @@ int main(int argc, char **argv) {
                 }
 
             frame_counter++;
+            total_frame_counter++;  // Add this line
 
         // Add this inside your main loop, after successful SLAM processing:
-        if (frame_counter % 50 == 0 && frame_counter > 0) {
-            log_event("[DEBUG] Periodic save at frame " + std::to_string(frame_counter));
+        if (total_frame_counter % 50 == 0 && total_frame_counter > 0) {
+            log_event("[DEBUG] Periodic save at total frame " + std::to_string(total_frame_counter) + 
+                      " (session frame " + std::to_string(frame_counter) + ")");
             try {
                 std::string periodic_traj = join_path(log_dir, "CameraTrajectory_periodic.txt");
                 SLAM.SaveTrajectoryTUM(periodic_traj);
