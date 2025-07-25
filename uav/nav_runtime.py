@@ -36,7 +36,7 @@ from uav.navigation_slam_boot import run_slam_bootstrap
 from uav.paths import STOP_FLAG_PATH
 from uav.slam_utils import is_slam_stable
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("nav_loop")
 
 __all__ = [
     "setup_environment",

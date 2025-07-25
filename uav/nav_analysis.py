@@ -12,7 +12,7 @@ from uav.analysis_helpers import (
     _generate_report,
 )
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("nav_loop")
 
 
 def finalise_files(ctx):
