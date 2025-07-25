@@ -24,9 +24,9 @@ def main():
 
     # Apply coordinate transformation to SLAM data
     # Correct SLAM coordinate mapping: Z→X, X→Y, Y→Z
-    df['slam_x_corrected'] = df['slam_z']    # SLAM Z → Display X
-    df['slam_y_corrected'] = -df['slam_x']    # SLAM X → Display Y
-    df['slam_z_corrected'] = -df['slam_y']    # SLAM Y → Display Z
+    df['slam_x_corrected'] = 0.68 * df['slam_z']    # SLAM Z → Display X
+    df['slam_y_corrected'] = 0.7 * -df['slam_x']    # SLAM X → Display Y
+    df['slam_z_corrected'] = 0.48 * -df['slam_y']    # SLAM Y → Display Z
     
     # Apply coordinate transformation to ground truth data  
     # Transform AirSim coordinates to match display coordinate system
