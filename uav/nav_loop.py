@@ -947,29 +947,68 @@ def finalise_files(ctx):
 
     logger.info("🏁 Post-flight analysis finalization complete")
 
+
+class ThreadManager:
+    """Context manager for shutting down worker threads."""
+
+    def __init__(self, ctx):
+        self.ctx = ctx
+
+    def __enter__(self):
+        return self.ctx
+
+    def __exit__(self, exc_type, exc, tb):
+        shutdown_threads(self.ctx)
+
+
+class LoggingContext:
+    """Context manager for flushing and closing log resources."""
+
+    def __init__(self, ctx):
+        self.ctx = ctx
+
+    def __enter__(self):
+        return self.ctx
+
+    def __exit__(self, exc_type, exc, tb):
+        close_logging(self.ctx)
+
+
+class SimulationProcess:
+    """Context manager for gracefully terminating the UE4 simulation."""
+
+    def __init__(self, proc):
+        self.proc = proc
+
+    def __enter__(self):
+        return self.proc
+
+    def __exit__(self, exc_type, exc, tb):
+        if self.proc:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=5)
+            except Exception:
+                self.proc.kill()
+            logger.info("UE4 simulation closed.")
+
 def cleanup(client, sim_process, ctx):
     """Clean up resources and land the drone."""
     logger.info("Landing...")
 
-    # Step 1: Shutdown threads and close logging
-    shutdown_threads(ctx)
-    close_logging(ctx)
+    with ThreadManager(ctx):
+        pass
 
-    # Step 2: Generate analysis files after log file is closed
+    with LoggingContext(ctx):
+        pass
+
     logger.info("Finalizing flight analysis and cleanup.")
     finalise_files(ctx)
 
-    # Step 3: Shutdown AirSim client
     shutdown_airsim(client)
-    
-    # Step 4: Close simulation
-    if sim_process:
-        sim_process.terminate()
-        try:
-            sim_process.wait(timeout=5)
-        except Exception:
-            sim_process.kill()
-        logger.info("UE4 simulation closed.")
-    
+
+    with SimulationProcess(sim_process):
+        pass
+
     logger.info("Cleanup complete. Exiting navigation loop.")
 
