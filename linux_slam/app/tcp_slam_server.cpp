@@ -116,6 +116,12 @@ int main(int argc, char **argv) {
     create_directories(image_dir);
     create_directories(std::filesystem::path(video_file).parent_path().string());
 
+    // Create metrics CSV for runtime statistics
+    std::string metrics_file = join_path(log_dir, "slam_metrics.csv");
+    std::ofstream metrics_stream(metrics_file);
+    if (metrics_stream.is_open())
+        metrics_stream << "timestamp,tracking_state,inliers,covariance\n";
+
     std::string console_log = join_path(log_dir, "slam_console.txt");
     std::string console_err = join_path(log_dir, "slam_console_err.txt");
 
@@ -742,6 +748,16 @@ int main(int argc, char **argv) {
                             log_event("[DEBUG] Inlier count sent to Python receiver: " + std::to_string(inlier_count));
                         }
                         log_event("Pose (Twc) sent to Python receiver.");
+
+                        // Record metrics for this frame
+                        int tracking_state = -1;
+                        auto tracker_metrics = SLAM.GetTracker();
+                        if (tracker_metrics) tracking_state = tracker_metrics->mState;
+                        if (metrics_stream.is_open()) {
+                            metrics_stream << std::fixed << std::setprecision(6)
+                                           << timestamp << ',' << tracking_state << ','
+                                           << inlier_count << ',' << covariance_value << '\n';
+                        }
                     } else {
                         log_event("[WARN] send_pose() returned false.");
                     }
@@ -758,6 +774,7 @@ int main(int argc, char **argv) {
     log_event("[DEBUG] Closing sockets and cleaning up...");
     slam_server::cleanup_resources(sock, server_fd, pose_sock);
     if (pose_log_stream.is_open()) pose_log_stream.close();
+    if (metrics_stream.is_open()) metrics_stream.close();
     log_event("[DEBUG] Sockets closed. SLAM server shutting down.");
 
     if (slam_video_writer.isOpened()) {
