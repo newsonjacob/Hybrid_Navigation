@@ -197,33 +197,19 @@ int main(int argc, char **argv) {
     bool slam_ready_flag_written = false; // Flag to indicate if SLAM is ready to process frames
     const int MIN_INLIERS_THRESHOLD = 0;  // Minimum inliers to consider SLAM stable
 
-    while (true) {       
+    while (true) {
         log_event("----- Begin image receive loop -----");
 
         // Log the loop start time
         double loop_timestamp = (double)cv::getTickCount() / cv::getTickFrequency();
 
+        // Inlier count will be obtained after SLAM.TrackStereo processes the frame
+        int inliers = 0;
 
-        // ----- Inliers Check -----
-        // Get the inliers after processing the frames with SLAM
-        int inliers = get_feature_inliers(SLAM);
-        log_event("[SLAM] Inliers after TrackStereo: " + std::to_string(inliers));
-
-        // Continue processing if enough inliers are present
-        if (inliers < MIN_INLIERS_THRESHOLD) {
-            log_event("[WARN] Too few inliers tracked. SLAM may be unstable.");
-            // Optionally, reset SLAM or take other actions
-            SLAM.Reset(); // Reset the SLAM system (if this is an acceptable approach)
-            std::this_thread::sleep_for(std::chrono::seconds(2)); // Wait before retrying to receive images
-        }
-
-        // If we have enough inliers, proceed with receiving images
-        if (inliers >= MIN_INLIERS_THRESHOLD) { 
-            // Process the received images with SLAM
-            std::ostringstream oss;
-            oss << "Frame #" << frame_counter << " | Loop timestamp: " << std::fixed << std::setprecision(6) << loop_timestamp;
-            log_event(oss.str());
-        }
+        // Process the received images with SLAM
+        std::ostringstream oss;
+        oss << "Frame #" << frame_counter << " | Loop timestamp: " << std::fixed << std::setprecision(6) << loop_timestamp;
+        log_event(oss.str());
 
             // Receive the left and right images from the TCP socket
             uint32_t net_height, net_width, net_bytes; // Network byte order variables for image dimensions and bytes
@@ -579,6 +565,16 @@ int main(int argc, char **argv) {
                     continue;
                 }
 
+                // Retrieve inlier count after successful tracking
+                inliers = get_feature_inliers(SLAM);
+                log_event("[SLAM] Inliers after TrackStereo: " + std::to_string(inliers));
+
+                if (inliers < MIN_INLIERS_THRESHOLD) {
+                    log_event("[WARN] Too few inliers tracked. SLAM may be unstable.");
+                    SLAM.Reset();
+                    std::this_thread::sleep_for(std::chrono::seconds(2));
+                }
+
                 // --- Handling SLAM results ---
                 static bool first_frame = true;
                 if (first_frame) {
@@ -586,7 +582,7 @@ int main(int argc, char **argv) {
                     first_frame = false;
                 }
 
-                // Calculate covariance based on pose difference and inliers
+                // Calculate covariance based on pose difference
                 covariance = get_pose_covariance_with_inliers(Tcw, prev_Tcw);  // Calculate covariance
 
                 // Always check for empty and correct type before accessing elements
@@ -849,12 +845,11 @@ int main(int argc, char **argv) {
                         }
 
                         // --- Send inlier count as an int ---
-                        int inlier_count = get_feature_inliers(SLAM);
-                        int inlier_sent = send(pose_sock, reinterpret_cast<char*>(&inlier_count), sizeof(int), 0);
+                        int inlier_sent = send(pose_sock, reinterpret_cast<char*>(&inliers), sizeof(int), 0);
                         if (inlier_sent != sizeof(int)) {
                             log_event("[ERROR] Failed to send inlier count.");
                         } else {
-                            log_event("[DEBUG] Inlier count sent to Python receiver: " + std::to_string(inlier_count));
+                            log_event("[DEBUG] Inlier count sent to Python receiver: " + std::to_string(inliers));
                         }
                         log_event("Pose (Twc) sent to Python receiver.");
 
@@ -872,7 +867,7 @@ int main(int argc, char **argv) {
                             }
                             metrics_stream << std::fixed << std::setprecision(6)
                                            << frame_counter << ',' << relative_time << ','
-                                           << tracking_state << ',' << inlier_count << ','
+                                           << tracking_state << ',' << inliers << ','
                                            << covariance_value << ',' << x << ',' << y << ',' << z << '\n';
                         }
                     } else {
