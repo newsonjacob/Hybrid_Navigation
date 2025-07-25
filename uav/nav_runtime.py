@@ -468,9 +468,10 @@ def ensure_stable_slam_pose(
     if pose is None or not is_slam_stable(cov_thres, inlier_thres):
         logger.warning("[SLAMNav] SLAM tracking lost. Attempting reinitialisation.")
     while pose is None or not is_slam_stable(cov_thres, inlier_thres):
-        if ctx is not None and getattr(ctx, "param_refs", None):
-            ctx.param_refs.state[0] = "bootstrap"
-        run_slam_bootstrap(client, duration=4.0)
+        if config.ENABLE_SLAM_BOOTSTRAP:
+            if ctx is not None and getattr(ctx, "param_refs", None):
+                ctx.param_refs.state[0] = "bootstrap"
+            run_slam_bootstrap(client, duration=4.0)
         time.sleep(1.0)
         if check_slam_stop(exit_flag, start_time, max_duration):
             logger.info("[SLAMNav] Exit signal during reinitialisation.")

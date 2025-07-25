@@ -11,6 +11,9 @@ DEPTH_FILTER_DIST = 2  # Distance threshold for depth filtering
 
 GRACE_PERIOD_SEC = 1.0 # Grace period for state transitions
 
+# Toggle SLAM bootstrap manoeuvre used for initialization
+ENABLE_SLAM_BOOTSTRAP = False
+
 SLAM_YAW_OFFSET = 0.0
 MAX_SIM_DURATION = 120  # seconds
 GOAL_X = 48 # meters

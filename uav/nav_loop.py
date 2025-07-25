@@ -183,7 +183,7 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
     # Store client reference in context for logging
     ctx.client = client
 
-    if max_duration != 0:
+    if max_duration != 0 and uav_config.ENABLE_SLAM_BOOTSTRAP:
         if ctx is not None and getattr(ctx, "param_refs", None):
             ctx.param_refs.state[0] = "bootstrap"
         run_slam_bootstrap(client, duration=6.0)

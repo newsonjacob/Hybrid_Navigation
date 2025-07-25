@@ -33,8 +33,8 @@ def main():
     df['slam_z_trans'] = -df['slam_y']     # SLAM Y → Display Z
 
     # Scale-corrected SLAM (already present)
-    df['slam_x_corrected'] = 0.68 * df['slam_z']    # SLAM Z → Display X
-    df['slam_y_corrected'] = 0.7 * -df['slam_x']    # SLAM X → Display Y
+    df['slam_x_corrected'] = 0.7 * df['slam_z']    # SLAM Z → Display X
+    df['slam_y_corrected'] = 0.68 * -df['slam_x']    # SLAM X → Display Y
     df['slam_z_corrected'] = 0.48 * -df['slam_y']    # SLAM Y → Display Z
     
     # Apply coordinate transformation to ground truth data  
