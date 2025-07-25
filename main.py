@@ -1,8 +1,7 @@
 import threading
 import time
 import os
-from pathlib import Path
-from uav.paths import STOP_FLAG_PATH
+from uav.paths import STOP_FLAG_PATH, FLAGS_DIR
 import queue
 from datetime import datetime
 import cv2
@@ -43,9 +42,7 @@ logger.info(
 )
 
 # --- Flag paths ---
-flags_dir = Path("flags")
-flags_dir.mkdir(exist_ok=True)
-START_FLAG_PATH = flags_dir / "start_nav.flag"
+START_FLAG_PATH = FLAGS_DIR / "start_nav.flag"
 
 
 def get_settings_path(args, config):
@@ -156,7 +153,7 @@ def main() -> None:
     nav_mode = getattr(args, "nav_mode", "slam")  # Default to slam if not specified
 
     sim_process = launch_sim(args, settings_path, config)
-    pid_path = Path("flags/ue4_sim.pid")
+    pid_path = FLAGS_DIR / "ue4_sim.pid"
     pid_path.write_text(str(sim_process.pid))
 
     # Wait for the simulator to be ready before connecting the AirSim client
@@ -174,7 +171,7 @@ def main() -> None:
         cleanup(None, sim_process, None)
         return
 
-    (flags_dir / "airsim_ready.flag").touch()
+    (FLAGS_DIR / "airsim_ready.flag").touch()
     logger.info("[INFO] AirSim + camera ready — flag set")
 
     logger.info("[TEST] nav_loop logger test")
@@ -207,12 +204,12 @@ def main() -> None:
                 logger.info("[main.py] Waiting for SLAM receiver to finish...")
                 receiver_thread.join()
                 logger.info("[main.py] SLAM receiver thread joined successfully.")
-            for flag in [flags_dir / "airsim_ready.flag", flags_dir / "start_nav.flag"]:
+            for flag in [FLAGS_DIR / "airsim_ready.flag", FLAGS_DIR / "start_nav.flag"]:
                 try:
                     flag.unlink()
                 except FileNotFoundError:
                     pass
-            Path("flags/slam_shutdown.flag").touch()
+            (FLAGS_DIR / "slam_shutdown.flag").touch()
             logger.info("[main.py] slam_shutdown.flag created to signal SLAM backend to exit.")
             logger.info("[main.py] SLAM navigation loop finished - Calling cleanup.")
             cleanup(client, sim_process, ctx if ctx is not None else None)
@@ -240,7 +237,7 @@ def main() -> None:
             navigation_loop(args, client, ctx)
 
         finally:
-            for flag in [flags_dir / "airsim_ready.flag", flags_dir / "start_nav.flag", flags_dir / "stop.flag"]:
+            for flag in [FLAGS_DIR / "airsim_ready.flag", FLAGS_DIR / "start_nav.flag", FLAGS_DIR / "stop.flag"]:
                 try:
                     flag.unlink()
                 except FileNotFoundError:
