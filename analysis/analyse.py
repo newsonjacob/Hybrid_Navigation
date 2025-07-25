@@ -49,7 +49,7 @@ logger.info(f"Analysis logging configured - writing to {log_file_path}")
 try:
     import trimesh
     TRIMESH_AVAILABLE = True
-    logger.info("✅ trimesh available for mesh loading")
+    logger.info("[OK] trimesh available for mesh loading")
 except ImportError:
     TRIMESH_AVAILABLE = False
     logger.warning("⚠️ trimesh not available. Install with: pip install trimesh")
@@ -72,7 +72,7 @@ except ImportError as e:
             plot_distance_over_time,
         )
         from visualise_flight import build_plot
-        logger.info("✅ Imported modules using direct imports")
+        logger.info("[OK] Imported modules using direct imports")
     except ImportError as e:
         logger.error(f"❌ Failed to import required modules: {e}")
         logger.error("Make sure flight_review.py and visualise_flight.py are in the analysis directory")
@@ -170,179 +170,206 @@ def apply_mesh_corrections(vertices):
     logger.info(f"Applied mesh corrections: X offset={x_offset:.2f}, Y center={y_center:.2f}")
     return corrected
 
-def analyse_logs(log_paths: List[str], output: str) -> None:
-    """Parse ``log_paths`` and write an interactive HTML report."""
-    dfs = []
-    stats = []
-
-    for p in log_paths:
-        stats.append(parse_log(p))
-        dfs.append(pd.read_csv(p))
-    df = pd.concat(dfs, ignore_index=True)
-
-    # Convert time to relative seconds from start
-    if "time" in df.columns:
-        start_time = df["time"].iloc[0]
-        df["time_relative"] = df["time"] - start_time
-        time_col = "time_relative"
-        time_label = "Time (seconds from start)"
-    else:
-        time_col = "time"
-        time_label = "Time"
-
-    path = df[["pos_x", "pos_y", "pos_z"]].to_numpy(dtype=float)
-
-    # Generate separate 3D trajectory file
-    generate_3d_trajectory(path, df, output, time_col)
-
-    fig = make_subplots(
-        rows=4,
-        cols=1,
-        specs=[
-            [{"type": "xy"}],
-            [{"type": "xy"}],
-            [{"type": "xy", "secondary_y": True}],  # Enable secondary y-axis for row 3
-            [{"type": "table"}]
-        ],
-        subplot_titles=( 
-            "Flow Magnitudes", 
-            "Speed",
-            "Performance",
-            "Flight Summary"
-        ),
-        row_heights=[0.25, 0.25, 0.25, 0.25],  # Give table equal height with other plots
-        vertical_spacing=0.08  # Adjust spacing between subplots
-    )
-
-    # Add flow magnitudes to row 1 (now works because it's "xy" type)
-    if {time_col, "flow_left", "flow_center", "flow_right"}.issubset(df.columns):
-        fig.add_trace(go.Scatter(
-            x=df[time_col], 
-            y=df["flow_left"], 
-            name="flow_left", 
-            line=dict(color='red')
-        ), row=1, col=1)  
-        fig.add_trace(go.Scatter(
-            x=df[time_col], 
-            y=df["flow_center"], 
-            name="flow_center",
-            line=dict(color='blue')
-        ), row=1, col=1)  
-        fig.add_trace(go.Scatter(
-            x=df[time_col], 
-            y=df["flow_right"], 
-            name="flow_right",
-            line=dict(color='orange')
-        ), row=1, col=1)
-
-    # Add speed
-    if time_col in df.columns and "speed" in df.columns:
-        fig.add_trace(go.Scatter(
-            x=df[time_col], 
-            y=df["speed"], 
-            name="speed",
-            line=dict(color='blue')
-        ), row=2, col=1)
-
-    # Add performance metrics
-    if time_col in df.columns and "cpu_percent" in df.columns:
-        fig.add_trace(go.Scatter(
-            x=df[time_col], 
-            y=df["cpu_percent"], 
-            name="CPU %",
-            line=dict(color='red')
-        ), row=3, col=1, secondary_y=False)  # Primary y-axis
+def analyse_logs(log_file_path, output_dir):
+    """Analyze navigation logs and generate reports."""
+    try:
+        df = pd.read_csv(log_file_path)
+        logger.info(f"[DEBUG] Loaded CSV with {len(df)} rows and {len(df.columns)} columns")
         
-    if time_col in df.columns and "memory_rss" in df.columns:
-        fig.add_trace(go.Scatter(
-            x=df[time_col], 
-            y=df["memory_rss"] / (1024 * 1024),
-            name="Memory (MB)",
-            line=dict(color='purple')
-        ), row=3, col=1, secondary_y=True)  # Secondary y-axis
+        # Check if dataframe is empty
+        if df.empty:
+            logger.error(f"[ERROR] Log file is empty: {log_file_path}")
+            return
+            
+        if len(df) == 0:
+            logger.error(f"[ERROR] No data rows in log file: {log_file_path}")
+            return
+            
+        # Check if required columns exist
+        required_columns = ["time", "frame", "state"]
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            logger.error(f"[ERROR] Missing required columns: {missing_columns}")
+            logger.info(f"[DEBUG] Available columns: {list(df.columns)}")
+            return
+        
+        # Now safe to access data
+        start_time = df["time"].iloc[0]
+        logger.info(f"[OK] Analysis starting - first timestamp: {start_time}")
+        
+        # Convert time to relative seconds from start
+        if "time" in df.columns:
+            start_time = df["time"].iloc[0]
+            df["time_relative"] = df["time"] - start_time
+            time_col = "time_relative"
+            time_label = "Time (seconds from start)"
+        else:
+            time_col = "time"
+            time_label = "Time"
 
-    # Calculate summary statistics
-    total_frames = sum(s["frames"] for s in stats)
-    total_collisions = sum(s["collisions"] for s in stats) -1  # Subtract 1 from total collision count
-    total_distance = sum(s["distance"] for s in stats)
-    fps_vals = [s["fps_avg"] for s in stats if not np.isnan(s["fps_avg"])]
-    loop_vals = [s["loop_avg"] for s in stats if not np.isnan(s["loop_avg"])]
+        path = df[["pos_x", "pos_y", "pos_z"]].to_numpy(dtype=float)
 
-    # Calculate CPU and memory statistics
-    cpu_vals = df["cpu_percent"].dropna() if "cpu_percent" in df.columns else pd.Series(dtype=float)
-    memory_vals = df["memory_rss"].dropna() / (1024 * 1024) if "memory_rss" in df.columns else pd.Series(dtype=float)  # Convert to MB
+        # Generate separate 3D trajectory file
+        generate_3d_trajectory(path, df, output, time_col)
 
-    # Calculate flight duration
-    flight_duration = 0
-    if time_col in df.columns and len(df) > 0:
-        flight_duration = df[time_col].max()
-
-    # Create summary statistics table
-    summary_data = [
-        ["Flight Duration", f"{flight_duration:.2f} seconds"],
-        ["Total Frames", f"{total_frames:,}"],
-        ["Collisions", f"{total_collisions}"],
-        ["Distance Travelled", f"{total_distance:.2f} m"],
-    ]
-    
-    if fps_vals:
-        summary_data.append(["Average FPS", f"{np.mean(fps_vals):.2f}"])
-    if loop_vals:
-        summary_data.append(["Average Loop Time", f"{np.mean(loop_vals):.3f}s"])
-    
-    # Add CPU statistics
-    if len(cpu_vals) > 0:
-        summary_data.append(["Average CPU", f"{cpu_vals.mean():.1f}%"])
-        summary_data.append(["Peak CPU", f"{cpu_vals.max():.1f}%"])
-    
-    # Add memory statistics
-    if len(memory_vals) > 0:
-        summary_data.append(["Average Memory", f"{memory_vals.mean():.1f} MB"])
-        summary_data.append(["Peak Memory", f"{memory_vals.max():.1f} MB"])
-    
-    fig.add_trace(go.Table(
-        header=dict(
-            values=["Metric", "Value"],
-            fill_color='lightblue',
-            align='left',
-            font=dict(size=14, color='darkblue')
-        ),
-        cells=dict(
-            values=list(zip(*summary_data)),  # Transpose the data
-            fill_color='white',
-            align='left',
-            font=dict(size=12)
+        fig = make_subplots(
+            rows=4,
+            cols=1,
+            specs=[
+                [{"type": "xy"}],
+                [{"type": "xy"}],
+                [{"type": "xy", "secondary_y": True}],  # Enable secondary y-axis for row 3
+                [{"type": "table"}]
+            ],
+            subplot_titles=( 
+                "Flow Magnitudes", 
+                "Speed",
+                "Performance",
+                "Flight Summary"
+            ),
+            row_heights=[0.25, 0.25, 0.25, 0.25],  # Give table equal height with other plots
+            vertical_spacing=0.08  # Adjust spacing between subplots
         )
-    ), row=4, col=1)
 
-    fig.update_layout(
-        height=1800,  # Increased from 1500 to 1800 for more table space
-        width=1000,
-        title="🚁 UAV Flight Analysis Report",
-        showlegend=True
-    )
+        # Add flow magnitudes to row 1 (now works because it's "xy" type)
+        if {time_col, "flow_left", "flow_center", "flow_right"}.issubset(df.columns):
+            fig.add_trace(go.Scatter(
+                x=df[time_col], 
+                y=df["flow_left"], 
+                name="flow_left", 
+                line=dict(color='red')
+            ), row=1, col=1)  
+            fig.add_trace(go.Scatter(
+                x=df[time_col], 
+                y=df["flow_center"], 
+                name="flow_center",
+                line=dict(color='blue')
+            ), row=1, col=1)  
+            fig.add_trace(go.Scatter(
+                x=df[time_col], 
+                y=df["flow_right"], 
+                name="flow_right",
+                line=dict(color='orange')
+            ), row=1, col=1)
+
+        # Add speed
+        if time_col in df.columns and "speed" in df.columns:
+            fig.add_trace(go.Scatter(
+                x=df[time_col], 
+                y=df["speed"], 
+                name="speed",
+                line=dict(color='blue')
+            ), row=2, col=1)
+
+        # Add performance metrics
+        if time_col in df.columns and "cpu_percent" in df.columns:
+            fig.add_trace(go.Scatter(
+                x=df[time_col], 
+                y=df["cpu_percent"], 
+                name="CPU %",
+                line=dict(color='red')
+            ), row=3, col=1, secondary_y=False)  # Primary y-axis
+            
+        if time_col in df.columns and "memory_rss" in df.columns:
+            fig.add_trace(go.Scatter(
+                x=df[time_col], 
+                y=df["memory_rss"] / (1024 * 1024),
+                name="Memory (MB)",
+                line=dict(color='purple')
+            ), row=3, col=1, secondary_y=True)  # Secondary y-axis
+
+        # Calculate summary statistics
+        total_frames = sum(s["frames"] for s in stats)
+        total_collisions = sum(s["collisions"] for s in stats) -1  # Subtract 1 from total collision count
+        total_distance = sum(s["distance"] for s in stats)
+        fps_vals = [s["fps_avg"] for s in stats if not np.isnan(s["fps_avg"])]
+        loop_vals = [s["loop_avg"] for s in stats if not np.isnan(s["loop_avg"])]
+
+        # Calculate CPU and memory statistics
+        cpu_vals = df["cpu_percent"].dropna() if "cpu_percent" in df.columns else pd.Series(dtype=float)
+        memory_vals = df["memory_rss"].dropna() / (1024 * 1024) if "memory_rss" in df.columns else pd.Series(dtype=float)  # Convert to MB
+
+        # Calculate flight duration
+        flight_duration = 0
+        if time_col in df.columns and len(df) > 0:
+            flight_duration = df[time_col].max()
+
+        # Create summary statistics table
+        summary_data = [
+            ["Flight Duration", f"{flight_duration:.2f} seconds"],
+            ["Total Frames", f"{total_frames:,}"],
+            ["Collisions", f"{total_collisions}"],
+            ["Distance Travelled", f"{total_distance:.2f} m"],
+        ]
+        
+        if fps_vals:
+            summary_data.append(["Average FPS", f"{np.mean(fps_vals):.2f}"])
+        if loop_vals:
+            summary_data.append(["Average Loop Time", f"{np.mean(loop_vals):.3f}s"])
+        
+        # Add CPU statistics
+        if len(cpu_vals) > 0:
+            summary_data.append(["Average CPU", f"{cpu_vals.mean():.1f}%"])
+            summary_data.append(["Peak CPU", f"{cpu_vals.max():.1f}%"])
+        
+        # Add memory statistics
+        if len(memory_vals) > 0:
+            summary_data.append(["Average Memory", f"{memory_vals.mean():.1f} MB"])
+            summary_data.append(["Peak Memory", f"{memory_vals.max():.1f} MB"])
+        
+        fig.add_trace(go.Table(
+            header=dict(
+                values=["Metric", "Value"],
+                fill_color='lightblue',
+                align='left',
+                font=dict(size=14, color='darkblue')
+            ),
+            cells=dict(
+                values=list(zip(*summary_data)),  # Transpose the data
+                fill_color='white',
+                align='left',
+                font=dict(size=12)
+            )
+        ), row=4, col=1)
+
+        fig.update_layout(
+            height=1800,  # Increased from 1500 to 1800 for more table space
+            width=1000,
+            title="🚁 UAV Flight Analysis Report",
+            showlegend=True
+        )
+        
+        # Update axis labels
+        fig.update_xaxes(title_text=time_label, row=1, col=1)
+        fig.update_yaxes(title_text="Flow Magnitude", row=1, col=1)
+        fig.update_xaxes(title_text=time_label, row=2, col=1)
+        fig.update_yaxes(title_text="Speed (m/s)", row=2, col=1)
+        fig.update_xaxes(title_text=time_label, row=3, col=1)
+        fig.update_yaxes(title_text="CPU (%)", row=3, col=1, secondary_y=False)
+        fig.update_yaxes(title_text="Memory (MB)", row=3, col=1, secondary_y=True)
+
+        Path(output).parent.mkdir(parents=True, exist_ok=True)
+        fig.write_html(output)
+
+        # Still print to console as well
+        logger.info(f"Flight Duration: {flight_duration:.2f} seconds")
+        logger.info(f"Frames: {total_frames}")
+        logger.info(f"Collisions: {total_collisions}")
+        logger.info(f"Distance travelled: {total_distance:.2f} m")
+        if fps_vals:
+            logger.info(f"Average FPS: {np.mean(fps_vals):.2f}")
+        if loop_vals:
+            logger.info(f"Average loop time: {np.mean(loop_vals):.3f}s")
+
+    except Exception as e:
+        logger.error("[ERROR] Analysis failed: %s", e)
+        import traceback
+        logger.error("Full error traceback:")
+        logger.error(traceback.format_exc())
+        sys.exit(1)
     
-    # Update axis labels
-    fig.update_xaxes(title_text=time_label, row=1, col=1)
-    fig.update_yaxes(title_text="Flow Magnitude", row=1, col=1)
-    fig.update_xaxes(title_text=time_label, row=2, col=1)
-    fig.update_yaxes(title_text="Speed (m/s)", row=2, col=1)
-    fig.update_xaxes(title_text=time_label, row=3, col=1)
-    fig.update_yaxes(title_text="CPU (%)", row=3, col=1, secondary_y=False)
-    fig.update_yaxes(title_text="Memory (MB)", row=3, col=1, secondary_y=True)
-
-    Path(output).parent.mkdir(parents=True, exist_ok=True)
-    fig.write_html(output)
-
-    # Still print to console as well
-    logger.info(f"Flight Duration: {flight_duration:.2f} seconds")
-    logger.info(f"Frames: {total_frames}")
-    logger.info(f"Collisions: {total_collisions}")
-    logger.info(f"Distance travelled: {total_distance:.2f} m")
-    if fps_vals:
-        logger.info(f"Average FPS: {np.mean(fps_vals):.2f}")
-    if loop_vals:
-        logger.info(f"Average loop time: {np.mean(loop_vals):.3f}s")
+    logger.info("Analysis completed successfully, exiting with code 0")
+    sys.exit(0)
 
 # ========== Environment Mesh Loading ========== #
 # This function loads the environment mesh and applies scaling based on flight data.
@@ -566,11 +593,11 @@ def parse_args(argv: Union[List[str], None] = None) -> argparse.Namespace:
 # This is the main entry point for the analysis script.
 def main(argv: Union[List[str], None] = None) -> None:
     try:
-        logger.info("🚀 Starting main analysis function")
+        logger.info("[START] Starting main analysis function")
         
         args = parse_args(argv)
         
-        logger.info("🔍 Starting analysis:")
+        logger.info("[ANALYZE] Starting analysis:")
         logger.info(f"  Input logs: {args.logs}")
         logger.info(f"  Output: {args.output}")
         logger.info(f"  Working directory: {os.getcwd()}")
@@ -579,7 +606,7 @@ def main(argv: Union[List[str], None] = None) -> None:
         for log_file in args.logs:
             if not os.path.exists(log_file):
                 raise FileNotFoundError(f"Log file not found: {log_file}")
-            logger.info(f"✅ Found log file: {log_file}")
+            logger.info("[OK] Found log file: %s", log_file)  
 
         if args.output.lower().endswith(".html"):
             logger.info("Generating HTML analysis report...")
@@ -593,7 +620,7 @@ def main(argv: Union[List[str], None] = None) -> None:
             logger.info(f"✅ Plot generation completed successfully")
             
     except Exception as e:
-        logger.error(f"❌ Analysis failed: {e}")
+        logger.error("[ERROR] Analysis failed: %s", e)
         import traceback
         logger.error("Full error traceback:")
         logger.error(traceback.format_exc())

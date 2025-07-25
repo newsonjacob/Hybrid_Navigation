@@ -533,16 +533,16 @@ def close_logging(ctx):
         except Exception:
             pass
 
+    # Use the new finalize_logging function
     log_file = getattr(ctx, "log_file", None)
     log_buffer = getattr(ctx, "log_buffer", None)
+    
     if log_file is not None:
         try:
-            if log_buffer:
-                log_file.writelines(log_buffer)
-                log_buffer.clear()
-            log_file.close()
+            from uav.logging_helpers import finalize_logging
+            finalize_logging(log_file, log_buffer)
         except Exception as exc:
-            logger.warning("⚠️ Log file already closed or error writing: %s", exc)
+            logger.warning("Log finalization failed: %s", exc)
 
 
 def shutdown_airsim(client):

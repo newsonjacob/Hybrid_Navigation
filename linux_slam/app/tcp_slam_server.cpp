@@ -147,8 +147,13 @@ int main(int argc, char **argv) {
     std::string console_log = join_path(log_dir, "slam_console.txt");
     std::string console_err = join_path(log_dir, "slam_console_err.txt");
 
-    (void)freopen(console_log.c_str(), "w", stdout);
-    (void)freopen(console_err.c_str(), "w", stderr);
+    // Fix warnings by checking return values
+    if (!freopen(console_log.c_str(), "w", stdout)) {
+        std::cerr << "[WARN] Failed to redirect stdout to " << console_log << std::endl;
+    }
+    if (!freopen(console_err.c_str(), "w", stderr)) {
+        std::cerr << "[WARN] Failed to redirect stderr to " << console_err << std::endl;
+    }
 
     // Set the locale to C for consistent number formatting
 
@@ -905,7 +910,19 @@ int main(int argc, char **argv) {
                 }
 
             frame_counter++;
+
+        // Add this inside your main loop, after successful SLAM processing:
+        if (frame_counter % 50 == 0 && frame_counter > 0) {
+            log_event("[DEBUG] Periodic save at frame " + std::to_string(frame_counter));
+            try {
+                std::string periodic_traj = join_path(log_dir, "CameraTrajectory_periodic.txt");
+                SLAM.SaveTrajectoryTUM(periodic_traj);
+                log_event("[DEBUG] Periodic trajectory saved");
+            } catch (const std::exception& e) {
+                log_event("[ERROR] Periodic save failed: " + std::string(e.what()));
+            }
         }
+    }
 
     // --- Cleanup and exit ---
     log_event("[DEBUG] Closing sockets and cleaning up...");
@@ -919,11 +936,86 @@ int main(int argc, char **argv) {
         slam_video_writer.release();
     }
 
-    SLAM.Shutdown();
+    // Quick check - if frame_counter is very low, probably no useful data
+    if (frame_counter < 10) {
+        log_event("[WARN] Very few frames processed (" + std::to_string(frame_counter) + 
+                 ") - skipping trajectory save");
+    } else {
+        log_event("[DEBUG] Attempting to save trajectory files...");
+        
+        try {
+            // Save camera trajectory (this works)
+            std::string traj_file = join_path(log_dir, "CameraTrajectory.txt");
+            log_event("[DEBUG] Saving trajectory to: " + traj_file);
+            SLAM.SaveTrajectoryTUM(traj_file);
+            log_event("[DEBUG] CameraTrajectory.txt saved successfully");
+            
+            // Check if trajectory file has content before proceeding
+            if (std::ifstream(traj_file).good()) {
+                std::ifstream check_file(traj_file);
+                std::string first_line;
+                std::getline(check_file, first_line);
+                
+                if (first_line.empty()) {
+                    log_event("[WARN] CameraTrajectory.txt is empty - skipping other saves");
+                } else {
+                    log_event("[DEBUG] CameraTrajectory.txt verified with data");
+                    
+                    // Try keyframe save with caution
+                    std::string keyframe_file = join_path(log_dir, "KeyFrameTrajectory.txt");
+                    log_event("[DEBUG] Attempting to save keyframes to: " + keyframe_file);
+                    
+                    try {
+                        // Get tracker to check if keyframes exist
+                        auto tracker = SLAM.GetTracker();
+                        if (tracker) {
+                            int num_keyframes = tracker->GetNumLocalKeyFrames();
+                            log_event("[DEBUG] Number of local keyframes: " + std::to_string(num_keyframes));
+                            
+                            if (num_keyframes > 0) {
+                                SLAM.SaveKeyFrameTrajectoryTUM(keyframe_file);
+                                log_event("[DEBUG] KeyFrameTrajectory.txt saved successfully");
+                            } else {
+                                log_event("[WARN] No keyframes available - creating empty file");
+                                std::ofstream empty_kf(keyframe_file);
+                                empty_kf << "# No keyframes generated during this session\n";
+                                empty_kf.close();
+                            }
+                        } else {
+                            log_event("[WARN] Tracker is null - skipping keyframe save");
+                        }
+                    } catch (const std::exception& e) {
+                        log_event("[ERROR] Exception during keyframe save: " + std::string(e.what()));
+                    }
+                    
+                    // Try map points save
+                    std::string mappoints_file = join_path(log_dir, "MapPoints.txt");
+                    log_event("[DEBUG] Attempting to save map points to: " + mappoints_file);
+                    
+                    try {
+                        SLAM.SaveMapPoints(mappoints_file);
+                        log_event("[DEBUG] MapPoints.txt saved successfully");
+                    } catch (const std::exception& e) {
+                        log_event("[ERROR] Exception during map points save: " + std::string(e.what()));
+                        // Create empty file as fallback
+                        std::ofstream empty_mp(mappoints_file);
+                        empty_mp << "# No map points available during this session\n";
+                        empty_mp.close();
+                    }
+                }
+            } else {
+                log_event("[ERROR] CameraTrajectory.txt was NOT created");
+            }
+            
+        } catch (const std::exception& e) {
+            log_event("[ERROR] Exception during trajectory save: " + std::string(e.what()));
+        } catch (...) {
+            log_event("[ERROR] Unknown exception during trajectory save");
+        }
+    }
 
-    SLAM.SaveTrajectoryTUM(join_path(log_dir, "CameraTrajectory.txt"));
-    SLAM.SaveKeyFrameTrajectoryTUM(join_path(log_dir, "KeyFrameTrajectory.txt"));
-    SLAM.SaveMapPoints(join_path(log_dir, "MapPoints.txt"));
+    log_event("[DEBUG] Shutting down SLAM system...");
+    SLAM.Shutdown();
 
     return 0;
 }
