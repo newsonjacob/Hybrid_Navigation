@@ -118,12 +118,15 @@ int main(int argc, char **argv) {
 
     // Create metrics CSV for runtime statistics
     std::string metrics_file = join_path(log_dir, "slam_metrics.csv");
-    std::ofstream metrics_stream(metrics_file);
+    std::ofstream metrics_stream;
+    metrics_stream.open(metrics_file);
     // Timestamp will be relative to when the server starts
     double server_start_time = (double)cv::getTickCount() / cv::getTickFrequency();
-    if (metrics_stream.is_open())
-        metrics_stream << "frame,timestamp,tracking_state,inliers,covariance,x,y,z\n";
-
+    if (metrics_stream.is_open()) {
+        metrics_stream
+            << "frame,timestamp,tracking_state,inliers,covariance,x,y,z\n";
+    }
+    
     std::string console_log = join_path(log_dir, "slam_console.txt");
     std::string console_err = join_path(log_dir, "slam_console_err.txt");
 
