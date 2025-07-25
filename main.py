@@ -196,7 +196,7 @@ def main() -> None:
             # plotter_thread.start()
             # atexit.register(save_interactive_plot)
 
-            ctx = setup_environment(args, client)
+            ctx = setup_environment(args, client, nav_mode="slam")
             set_state_ref(ctx.param_refs.state)
             start_perception_thread(ctx)
             slam_navigation_loop(args, client, ctx, config, pose_source=pose_source)
@@ -223,7 +223,7 @@ def main() -> None:
         wait_for_nav_trigger()
         init_client(client)
 
-        ctx = setup_environment(args, client)
+        ctx = setup_environment(args, client, nav_mode="reactive")
         start_perception_thread(ctx)
 
         # Logging: startup debug

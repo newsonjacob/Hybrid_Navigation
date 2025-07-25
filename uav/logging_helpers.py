@@ -202,7 +202,7 @@ def handle_reset(client, ctx, frame_count):
     base_dir = Path(getattr(ctx, "output_dir", "."))
     flow_dir = base_dir / "flow_logs"
     flow_dir.mkdir(parents=True, exist_ok=True)
-    log_path = flow_dir / f"full_log_{timestamp}.csv"
+    log_path = flow_dir / f"reactive_log_{timestamp}.csv"
     with open(log_path, 'w') as new_log:
         new_log.write(
             "frame,flow_left,flow_center,flow_right,"

@@ -63,7 +63,7 @@ __all__ = [
 
 # === Perception Processing ===
 
-def setup_environment(args, client):
+def setup_environment(args, client, nav_mode="reactive"):
     """Initialize the navigation environment and return a context dict."""
     from uav.interface import exit_flag
 
@@ -102,7 +102,9 @@ def setup_environment(args, client):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     flow_dir = output_base / "flow_logs"
     flow_dir.mkdir(parents=True, exist_ok=True)
-    log_file = open(flow_dir / f"full_log_{timestamp}.csv", "w")
+    log_file = None
+    if nav_mode == "reactive":
+        log_file = open(flow_dir / f"reactive_log_{timestamp}.csv", "w")
     log_file.write(
         "frame,flow_left,flow_center,flow_right,"
         "delta_left,delta_center,delta_right,flow_std,"
@@ -113,8 +115,9 @@ def setup_environment(args, client):
         "time,features,simgetimage_s,decode_s,processing_s,loop_s,cpu_percent,memory_rss,"
         "sudden_rise,center_blocked,combination_flow,minimum_flow\n"
     )
-    retain_recent_logs(str(flow_dir))
-    retain_recent_logs(str(output_base / "logs"))
+    if nav_mode == "reactive":
+        retain_recent_logs(str(flow_dir))
+        retain_recent_logs(str(output_base / "logs"))
     retain_recent_files(str(output_base / "analysis"), "slam_traj_*.html", keep=5)
     retain_recent_files(str(output_base / "analysis"), "slam_output_*.mp4", keep=5)
     try:

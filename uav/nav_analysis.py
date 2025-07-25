@@ -31,7 +31,7 @@ def finalise_files(ctx):
 
     try:
         base_dir = Path(getattr(ctx, "output_dir", "."))
-        log_csv = base_dir / "flow_logs" / f"full_log_{timestamp}.csv"
+        log_csv = base_dir / "flow_logs" / f"reactive_log_{timestamp}.csv"
 
         if not os.path.exists(log_csv):
             logger.error(f"Log file not found: {log_csv}")

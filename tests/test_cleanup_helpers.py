@@ -108,7 +108,7 @@ def test_finalise_files(monkeypatch, tmp_path):
     monkeypatch.setattr('uav.paths.STOP_FLAG_PATH', nl.STOP_FLAG_PATH, raising=False)
     log_dir = Path('flow_logs')
     log_dir.mkdir(exist_ok=True)
-    (log_dir / 'full_log_1234.csv').write_text('x' * 200)
+    (log_dir / 'reactive_log_1234.csv').write_text('x' * 200)
     ctx = types.SimpleNamespace(timestamp='1234')
     nl.finalise_files(ctx)
     assert any('analysis/visualise_flight.py' in ' '.join(c) for c in calls)
@@ -130,7 +130,7 @@ def test_finalise_files_calledprocesserror(monkeypatch, tmp_path, caplog):
     monkeypatch.setattr('uav.paths.STOP_FLAG_PATH', nl.STOP_FLAG_PATH, raising=False)
     log_dir = Path('flow_logs')
     log_dir.mkdir(exist_ok=True)
-    (log_dir / 'full_log_ts.csv').write_text('x' * 200)
+    (log_dir / 'reactive_log_ts.csv').write_text('x' * 200)
     ctx = types.SimpleNamespace(timestamp='ts')
 
     with caplog.at_level(nl.logging.WARNING):
