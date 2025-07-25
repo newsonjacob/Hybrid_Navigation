@@ -8,6 +8,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
+from uav.paths import STOP_FLAG_PATH
 
 try:
     import pygetwindow as gw
@@ -16,7 +17,7 @@ except Exception:  # pragma: no cover - platform without GUI
 
 # Default stop flag used to cancel wait operations. Tests or callers may
 # monkeypatch this path.
-STOP_FLAG: Path = Path("flags/stop.flag")
+STOP_FLAG: Path = STOP_FLAG_PATH
 
 __all__ = [
     "wait_for_window",

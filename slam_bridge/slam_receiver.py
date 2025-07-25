@@ -7,6 +7,7 @@ import time
 import argparse
 import csv
 from pathlib import Path
+from uav.paths import FLAGS_DIR
 import threading
 import numpy as np
 
@@ -42,7 +43,7 @@ class SlamReceiver:
         if self.receiver is not None:
             self.receiver.start()
             logger.info("[SLAMReceiver] PoseReceiver started.")
-            (Path("flags") / "pose_receiver_ready.flag").touch()
+            (FLAGS_DIR / "pose_receiver_ready.flag").touch()
 
             log_dir = Path("analysis")
             log_dir.mkdir(exist_ok=True)
