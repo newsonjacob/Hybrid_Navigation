@@ -806,15 +806,16 @@ int main(int argc, char **argv) {
                 // Twc.at<float>(0, 3) = 0.05f * fake_motion_counter;  // Move along X
 
                 // Send Twc instead of Tcw if tracking is good
-                // if (pose_sock >= 0 && track_state >= ORB_SLAM2::Tracking::OK && cv::checkRange(Twc)) {
+                int track_state = SLAM.GetTrackingState();
                 log_event("[CHECK] About to test pose_sock condition in main().");
 
                 std::ostringstream live_sock_check;
-                live_sock_check << "[CHECK] At pose send time, pose_sock=" << pose_sock;
+                live_sock_check << "[CHECK] At pose send time, pose_sock=" << pose_sock
+                                 << ", track_state=" << track_state;
                 log_event(live_sock_check.str());
 
-                if (true) {
-                    log_event("[DEBUG] Entering pose send block unconditionally for testing.");
+                if (pose_sock >= 0 && track_state >= ORB_SLAM2::Tracking::OK && cv::checkRange(Twc)) {
+                    log_event("[DEBUG] Entering pose send block.");
 
                     // Diagnostic: Confirm matrix validity
                     std::ostringstream status;
@@ -873,6 +874,8 @@ int main(int argc, char **argv) {
                     } else {
                         log_event("[WARN] send_pose() returned false.");
                     }
+                } else {
+                    log_event("[DEBUG] Pose send conditions not met.");
                 }
 
                 } else {
