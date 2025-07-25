@@ -110,7 +110,8 @@ def main() -> None:
         logger = logging.getLogger(__name__)
         logger.warning("Logger was missing handlers. Reconfigured logging as fallback.")
 
-    from uav.nav_loop import setup_environment, start_perception_thread, navigation_loop, slam_navigation_loop, cleanup
+    from uav.nav_runtime import setup_environment, start_perception_thread, cleanup
+    from uav.nav_loop import navigation_loop, slam_navigation_loop
     from slam_bridge.slam_receiver import start_receiver, stop_receiver, set_state_ref
     from slam_bridge.slam_plotter import plot_slam_trajectory
 

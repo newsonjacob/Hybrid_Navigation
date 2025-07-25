@@ -49,9 +49,9 @@ pip install -e .
 ### Navigation Workflow
 
 1. `navigation_loop` polls perception results and checks for exit conditions.
-2. `update_navigation_state` converts perception data into a navigation decision.
+2. `uav.nav_runtime.update_navigation_state` converts perception data into a navigation decision.
 3. `navigation_step` performs obstacle detection, dodging and recovery.
-4. `log_and_record_frame` overlays telemetry and records the frame for analysis.
+4. `uav.nav_runtime.log_and_record_frame` overlays telemetry and records the frame for analysis.
 
 ---
 

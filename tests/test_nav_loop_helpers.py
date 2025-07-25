@@ -12,32 +12,42 @@ def test_helper_functions_exist(monkeypatch):
         YawMode=lambda *a, **k: None,
     )
     monkeypatch.setitem(sys.modules, 'airsim', airsim_stub)
-    nl = importlib.import_module('uav.nav_loop')
-    importlib.reload(nl)
-    for name in (
+    nlr = importlib.import_module('uav.nav_runtime')
+    importlib.reload(nlr)
+    nla = importlib.import_module('uav.nav_analysis')
+    importlib.reload(nla)
+    nll = importlib.import_module('uav.nav_loop')
+    importlib.reload(nll)
+
+    runtime_funcs = [
         'setup_environment',
         'start_perception_thread',
-        'navigation_loop',
         'check_startup_grace',
         'get_perception_data',
         'update_navigation_state',
         'log_and_record_frame',
-        'process_perception_data',
-        'write_frame_output',
-        'handle_reset',
         'shutdown_threads',
         'close_logging',
         'shutdown_airsim',
-        'finalise_files',
         'cleanup',
         'ThreadManager',
         'LoggingContext',
         'SimulationProcess',
+    ]
+    for name in runtime_funcs:
+        assert hasattr(nlr, name)
+
+    assert hasattr(nla, 'finalise_files')
+
+    loop_funcs = [
+        'navigation_loop',
+        'slam_navigation_loop',
         'detect_obstacle',
         'determine_side_safety',
         'handle_obstacle',
-    ):
-        assert hasattr(nl, name)
+    ]
+    for name in loop_funcs:
+        assert hasattr(nll, name)
 
 
 class DummyFuture:
