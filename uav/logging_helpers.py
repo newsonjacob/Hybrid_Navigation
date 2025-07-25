@@ -140,7 +140,6 @@ def write_frame_output(
         obstacle_detected,
         side_safe,
         pos,
-        slam_pos,
         yaw,
         speed,
         time_now,

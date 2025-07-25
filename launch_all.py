@@ -245,7 +245,13 @@ def main(timestamp: str, selected_nav_mode: Optional[str] = None) -> bool:
     if slam_shutdown_flag.exists():
         slam_shutdown_flag.unlink()
         logger.info("[MAIN] Removed stale slam_shutdown.flag at startup.")
-    
+
+    # --- Remove old stop flag if it exists ---
+    stop_flag = FLAGS_DIR / "stop.flag"
+    if stop_flag.exists():
+        stop_flag.unlink()
+        logger.info("[MAIN] Removed stale stop.flag at startup.")
+
     args = parse_args()
     if selected_nav_mode is not None:
         args.nav_mode = selected_nav_mode

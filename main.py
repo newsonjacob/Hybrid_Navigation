@@ -240,6 +240,7 @@ def main() -> None:
         # The navigation loop internally checks ``navigator.settling`` and
         # should proceed normally at this level.
         try:
+            logger.info("[main.py] Starting reactive navigation loop...")
             navigation_loop(args, client, ctx)
 
         finally:
