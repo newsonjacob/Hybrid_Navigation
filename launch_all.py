@@ -96,10 +96,6 @@ def start_streamer(host: str, port: int, stream_mode: str = "stereo") -> subproc
 def launch_slam_backend(receiver_host: str, receiver_port: int) -> subprocess.Popen:
     return lutils.launch_slam_backend(receiver_host, receiver_port)
 
-
-def record_slam_video(window_substring: str = "ORB-SLAM2", duration: int = 60):
-    return lutils.record_slam_video(window_substring, duration)
-
 # ---------------------------------------------------------------------------
 # Shutdown helpers
 # ---------------------------------------------------------------------------
@@ -136,7 +132,6 @@ class Launcher:
     main_proc: Optional[subprocess.Popen] = None
     slam_proc: Optional[subprocess.Popen] = None
     stream_proc: Optional[subprocess.Popen] = None
-    ffmpeg_proc: Optional[subprocess.Popen] = None
     slam_video_path: Optional[str] = None
 
     def shutdown(self) -> None:
@@ -168,15 +163,6 @@ class Launcher:
             except subprocess.TimeoutExpired:
                 self.logger.warning("[SHUTDOWN] Forcing SLAM backend shutdown...")
                 self.slam_proc.kill()
-
-        if isinstance(self.ffmpeg_proc, subprocess.Popen):
-            self.logger.info("[SHUTDOWN] Terminating screen recording (PID %s)", getattr(self.ffmpeg_proc, "pid", "n/a"))
-            self.ffmpeg_proc.terminate()
-            try:
-                self.ffmpeg_proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.logger.warning("[SHUTDOWN] Forcing screen recorder shutdown...")
-                self.ffmpeg_proc.kill()
 
         graceful = request_shutdown(self.main_proc, self.logger)
 
@@ -311,12 +297,6 @@ def main(timestamp: str, selected_nav_mode: Optional[str] = None) -> bool:
                 launcher.shutdown()
                 return False
             logger.info("[MAIN] Pangolin window found.")
-
-            launcher.ffmpeg_proc, launcher.slam_video_path = record_slam_video("ORB-SLAM2")
-            if launcher.ffmpeg_proc:
-                logger.info("[MAIN] Screen recording started (PID %s)", getattr(launcher.ffmpeg_proc, "pid", "n/a"))
-            else:
-                logger.warning("[MAIN] Screen recording failed to start.")
 
             if SLAM_FAILED_FLAG.exists():
                 logger.error("[MAIN] SLAM backend reported failure — aborting simulation.")
