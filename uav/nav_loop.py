@@ -335,7 +335,7 @@ def log_slam_frame(ctx, frame_count, time_now, x, y, z, waypoint_index, dist_to_
         
         # Create log line compatible with existing analysis format
         # Format: frame,flow_left,flow_center,flow_right,delta_left,delta_center,delta_right,flow_std,
-        #         left_count,center_count,right_count,brake_thres,dodge_thres,fps,state,collided,obstacle,side_safe,
+        #         left_count,center_count,right_count,brake_thres,fps,state,collided,obstacle,side_safe,
         #         pos_x,pos_y,pos_z,yaw,speed,time,features,simgetimage_s,decode_s,processing_s,loop_s,cpu_percent,memory_rss,
         #         sudden_rise,center_blocked,combination_flow,minimum_flow
         
@@ -344,14 +344,13 @@ def log_slam_frame(ctx, frame_count, time_now, x, y, z, waypoint_index, dist_to_
                    f"0.0,0.0,0.0,"           # delta_left,delta_center,delta_right (N/A)
                    f"0.0,"                   # flow_std (N/A)
                    f"0,0,0,"                 # left_count,center_count,right_count (N/A)
-                   f"0.0,0.0,"               # brake_thres,dodge_thres (N/A)
+                   f"0.0,"                   # brake_thres (N/A)
                    f"10.0,"                  # fps (approximate SLAM rate)
                    f"{slam_state}_WP{waypoint_index + 1}," # state (includes waypoint info)
                    f"0,"                     # collided (assume no collision)
                    f"0,"                     # obstacle (N/A for SLAM)
                    f"1,"                     # side_safe (assume safe)
                    f"{gt_x:.6f},{gt_y:.6f},{gt_z:.6f}," # GT coordinates
-                   f"{x:.6f},{y:.6f},{z:.6f}," # SLAM pose
                    f"{yaw:.6f},"             # yaw
                    f"{speed:.6f},"           # speed
                    f"{time_now:.6f},"        # time

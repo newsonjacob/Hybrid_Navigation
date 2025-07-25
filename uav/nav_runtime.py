@@ -109,9 +109,9 @@ def setup_environment(args, client, nav_mode="reactive"):
         "frame,flow_left,flow_center,flow_right,"
         "delta_left,delta_center,delta_right,flow_std,"
         "left_count,center_count,right_count,"
-        "brake_thres,dodge_thres,fps,"
+        "brake_thres,fps,"
         "state,collided,obstacle,side_safe,"
-        "pos_x,pos_y,pos_z,slam_x,slam_y,slam_z,yaw,speed,"
+        "pos_x,pos_y,pos_z,yaw,speed,"
         "time,features,simgetimage_s,decode_s,processing_s,loop_s,cpu_percent,memory_rss,"
         "sudden_rise,center_blocked,combination_flow,minimum_flow\n"
     )
@@ -386,7 +386,6 @@ def log_and_record_frame(
         obstacle_detected,
         side_safe,
         brake_thres,
-        dodge_thres,
         simgetimage_s,
         decode_s,
         processing_s,
