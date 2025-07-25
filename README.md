@@ -200,6 +200,7 @@ Two helper applications live under `linux_slam/app`:
 
 - `offline_slam_evaluation` now accepts `--data-dir=DIR` to specify where RGB and depth images are loaded from.
 - `tcp_slam_server` reads log and flag locations from the command line or the environment variables `SLAM_LOG_DIR`, `SLAM_FLAG_DIR` and `SLAM_IMAGE_DIR`.
+- `tcp_slam_server` can record the incoming stereo feed. Provide `--video-file=PATH` or set `SLAM_VIDEO_FILE` to override the default `logs/slam_feed.avi`.
 - `launch_slam_backend` automatically exports these variables, pointing to the
   repository's `flags/` and `logs/` folders, before starting `tcp_slam_server`.
 
