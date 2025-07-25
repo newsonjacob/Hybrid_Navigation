@@ -239,6 +239,13 @@ def wait_for_slam_done_flag(timeout: float = 15.0) -> bool:
 
 def main(timestamp: str, selected_nav_mode: Optional[str] = None) -> bool:
     """Launch the simulation using the provided timestamp."""
+
+    # --- Remove old shutdown flag if it exists ---
+    slam_shutdown_flag = FLAGS_DIR / "slam_shutdown.flag"
+    if slam_shutdown_flag.exists():
+        slam_shutdown_flag.unlink()
+        logger.info("[MAIN] Removed stale slam_shutdown.flag at startup.")
+    
     args = parse_args()
     if selected_nav_mode is not None:
         args.nav_mode = selected_nav_mode
