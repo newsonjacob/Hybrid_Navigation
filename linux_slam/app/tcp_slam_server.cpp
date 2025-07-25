@@ -108,13 +108,23 @@ int main(int argc, char **argv) {
         video_file = join_path(log_dir, "slam_feed.avi");
 
 
-    // Log the chosen output path early for troubleshooting
-    log_event(std::string("[DEBUG] Video output file: ") + video_file);
+    
 
     create_directories(log_dir);
     create_directories(flag_dir);
     create_directories(image_dir);
-    create_directories(std::filesystem::path(video_file).parent_path().string());
+
+
+    std::string video_dir = video_file.substr(0, video_file.find_last_of("/\\"));
+    if (!video_dir.empty()) {
+        create_directories(video_dir);
+    }
+
+    // Create metrics CSV for runtime statistics
+    std::string metrics_file = join_path(log_dir, "slam_metrics.csv");
+    std::ofstream metrics_stream(metrics_file);
+    if (metrics_stream.is_open())
+        metrics_stream << "timestamp,tracking_state,inliers,covariance\n";
 
     std::string console_log = join_path(log_dir, "slam_console.txt");
     std::string console_err = join_path(log_dir, "slam_console_err.txt");
@@ -146,6 +156,9 @@ int main(int argc, char **argv) {
 
         g_log_file_path = oss.str();
     }
+
+    // Log the chosen output path early for troubleshooting
+    log_event(std::string("[DEBUG] Video output file: ") + video_file);
 
     // --- Setup pose sent log file ---
     std::ostringstream pose_log_oss;
@@ -448,13 +461,104 @@ int main(int argc, char **argv) {
                     }
                     if (video_writer_initialized && slam_video_writer.isOpened()) {
 
-                        log_event("[DEBUG] Writing frame to video file");
-
+                        log_event("[DEBUG] Writing frame with SLAM visualization to video file");
+                        
+                        // Create enhanced frame with SLAM features
+                        cv::Mat enhanced_frame;
+                        
+                        // Start with the color left image (or convert grayscale to color)
                         if (!imLeft.empty()) {
-                            slam_video_writer.write(imLeft);
+                            enhanced_frame = imLeft.clone();
+                        } else if (!imLeftGray.empty()) {
+                            cv::cvtColor(imLeftGray, enhanced_frame, cv::COLOR_GRAY2BGR);
                         } else {
-                            slam_video_writer.write(imLeftGray);
+                            log_event("[WARN] No valid image for video recording");
+                            continue;
                         }
+
+                        // Get the tracker from SLAM system
+                        auto tracker = SLAM.GetTracker();
+                        
+                        // Add SLAM feature visualization
+                        if (tracker && !tracker->mCurrentFrame.mvKeys.empty()) {
+                            // Get current frame features
+                            std::vector<cv::KeyPoint> current_keypoints = tracker->mCurrentFrame.mvKeys;
+                            std::vector<cv::Point2f> tracked_points;
+                            
+                            // Extract tracked map points
+                            for (size_t i = 0; i < tracker->mCurrentFrame.mvpMapPoints.size(); i++) {
+                                if (tracker->mCurrentFrame.mvpMapPoints[i] && 
+                                    !tracker->mCurrentFrame.mvbOutlier[i]) {
+                                    tracked_points.push_back(current_keypoints[i].pt);
+                                }
+                            }
+                            
+                            // Draw all detected features (gray circles)
+                            for (const auto& kp : current_keypoints) {
+                                cv::circle(enhanced_frame, kp.pt, 3, cv::Scalar(128, 128, 128), 1);
+                            }
+                            
+                            // Draw tracked features (green circles)
+                            for (const auto& pt : tracked_points) {
+                                cv::circle(enhanced_frame, pt, 4, cv::Scalar(0, 255, 0), 2);
+                            }
+                            
+                            // Add tracking state text overlay
+                            std::string state_text;
+                            switch (tracker->mState) {
+                                case ORB_SLAM2::Tracking::SYSTEM_NOT_READY:
+                                    state_text = "NOT READY";
+                                    break;
+                                case ORB_SLAM2::Tracking::NO_IMAGES_YET:
+                                    state_text = "NO IMAGES";
+                                    break;
+                                case ORB_SLAM2::Tracking::NOT_INITIALIZED:
+                                    state_text = "INITIALIZING";
+                                    break;
+                                case ORB_SLAM2::Tracking::OK:
+                                    state_text = "TRACKING OK";
+                                    break;
+                                case ORB_SLAM2::Tracking::LOST:
+                                    state_text = "LOST";
+                                    break;
+                                default:
+                                    state_text = "UNKNOWN";
+                            }
+                            
+                            // Add text overlays
+                            cv::putText(enhanced_frame, state_text, cv::Point(10, 30), 
+                                       cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 255, 255), 2);
+                            
+                            std::ostringstream info_text;
+                            info_text << "Frame: " << frame_counter 
+                                     << " | Features: " << current_keypoints.size()
+                                     << " | Tracked: " << tracked_points.size();
+                            cv::putText(enhanced_frame, info_text.str(), cv::Point(10, 60), 
+                                       cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 255, 255), 1);
+                            
+                            // Add pose information if available
+                            if (!Tcw.empty() && Tcw.rows == 4 && Tcw.cols == 4) {
+                                cv::Mat Twc = Tcw.inv();
+                                if (Twc.type() == CV_32F) {
+                                    float x = Twc.at<float>(0, 3);
+                                    float y = Twc.at<float>(1, 3);
+                                    float z = Twc.at<float>(2, 3);
+                                    
+                                    std::ostringstream pose_text;
+                                    pose_text << "Pos: (" << std::fixed << std::setprecision(2) 
+                                             << x << ", " << y << ", " << z << ")";
+                                    cv::putText(enhanced_frame, pose_text.str(), cv::Point(10, 90), 
+                                               cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 255, 0), 1);
+                                }
+                            }
+                            
+                            log_event("[DEBUG] Added feature visualization: " + 
+                                     std::to_string(current_keypoints.size()) + " features, " +
+                                     std::to_string(tracked_points.size()) + " tracked");
+                        }
+                        
+                        // Write the enhanced frame to video
+                        slam_video_writer.write(enhanced_frame);
                     }
                 } catch (const std::exception& e) {
                     log_event(std::string("[FATAL] SLAM.TrackStereo threw std::exception: ") + e.what());
@@ -742,6 +846,16 @@ int main(int argc, char **argv) {
                             log_event("[DEBUG] Inlier count sent to Python receiver: " + std::to_string(inlier_count));
                         }
                         log_event("Pose (Twc) sent to Python receiver.");
+
+                        // Record metrics for this frame
+                        int tracking_state = -1;
+                        auto tracker_metrics = SLAM.GetTracker();
+                        if (tracker_metrics) tracking_state = tracker_metrics->mState;
+                        if (metrics_stream.is_open()) {
+                            metrics_stream << std::fixed << std::setprecision(6)
+                                           << timestamp << ',' << tracking_state << ','
+                                           << inlier_count << ',' << covariance_value << '\n';
+                        }
                     } else {
                         log_event("[WARN] send_pose() returned false.");
                     }
@@ -758,6 +872,7 @@ int main(int argc, char **argv) {
     log_event("[DEBUG] Closing sockets and cleaning up...");
     slam_server::cleanup_resources(sock, server_fd, pose_sock);
     if (pose_log_stream.is_open()) pose_log_stream.close();
+    if (metrics_stream.is_open()) metrics_stream.close();
     log_event("[DEBUG] Sockets closed. SLAM server shutting down.");
 
     if (slam_video_writer.isOpened()) {
