@@ -884,6 +884,7 @@ int main(int argc, char **argv) {
 
     SLAM.SaveTrajectoryTUM(join_path(log_dir, "CameraTrajectory.txt"));
     SLAM.SaveKeyFrameTrajectoryTUM(join_path(log_dir, "KeyFrameTrajectory.txt"));
+    SLAM.SaveMapPoints(join_path(log_dir, "MapPoints.txt"));
 
     return 0;
 }
