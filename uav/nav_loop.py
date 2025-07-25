@@ -43,6 +43,26 @@ def _resolve(cli_val, default_val):
     return default_val if cli_val is None else cli_val
 
 
+def _load_waypoints(config, default):
+    """Parse waypoint tuples from the config if available."""
+    if config is None or not hasattr(config, "items"):
+        return list(default)
+    try:
+        items = config.items("waypoints")
+    except Exception:
+        return list(default)
+
+    waypoints = []
+    for _, value in items:
+        try:
+            parts = [float(v.strip()) for v in value.split(",")]
+            if len(parts) == 3:
+                waypoints.append(tuple(parts))
+        except Exception:
+            continue
+    return waypoints or list(default)
+
+
 def navigation_loop(args, client, ctx):
     """Run the reactive navigation cycle."""
     max_flow_mag = uav_config.MAX_FLOW_MAG
@@ -174,13 +194,14 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
             pose_mat = get_latest_pose_matrix()
         return navigator.slam_to_goal(pose_mat, (goal_x, goal_y, goal_z))
 
-    waypoints = [
+    default_waypoints = [
         (20, 0, -2),
         (20, -2.5, -2),
         (22.5, -2.5, -2),
         (23.5, -0.5, -2),
         (45, 0, -2),
     ]
+    waypoints = _load_waypoints(config, default_waypoints)
     current_waypoint_index = 0
     landing_future = None
 
