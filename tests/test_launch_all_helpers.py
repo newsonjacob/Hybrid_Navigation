@@ -36,22 +36,6 @@ def test_launch_slam_backend_invokes_subprocess(monkeypatch):
     assert "SLAM_IMAGE_DIR=" in bash_cmd
 
 
-def test_record_slam_video_returns_path(monkeypatch):
-    calls = []
-    monkeypatch.setattr(subprocess, "Popen", lambda cmd, *a, **k: calls.append(cmd) or DummyProc())
-    monkeypatch.setattr(lutils, "gw", types.SimpleNamespace(getAllTitles=lambda: ["ORB-SLAM2"]))
-
-    class DummyDT:
-        @staticmethod
-        def now():
-            return datetime(2020, 1, 1, 0, 0, 0)
-    monkeypatch.setattr(lutils, "datetime", DummyDT)
-
-    proc, path = lutils.record_slam_video("ORB-SLAM2", duration=5)
-    assert isinstance(proc, DummyProc)
-    assert path.endswith("20200101_000000.mp4")
-    assert calls and calls[0][0] == "ffmpeg"
-
 def test_wait_helpers_cancel(tmp_path, monkeypatch):
     flags = tmp_path / "flags"
     flags.mkdir()

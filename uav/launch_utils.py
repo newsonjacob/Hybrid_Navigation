@@ -24,7 +24,6 @@ __all__ = [
     "wait_for_port",
     "start_streamer",
     "launch_slam_backend",
-    "record_slam_video",
     "resize_window",
     "STOP_FLAG",
 ]
@@ -135,39 +134,6 @@ def launch_slam_backend(receiver_host: str, receiver_port: int) -> subprocess.Po
     proc = subprocess.Popen(slam_cmd)
     logger.info("[LAUNCH] SLAM backend started (PID %s)", getattr(proc, "pid", "n/a"))
     return proc
-
-
-def record_slam_video(window_substring: str = "ORB-SLAM2", duration: int = 60) -> Tuple[Optional[subprocess.Popen], Optional[str]]:
-    """Record the SLAM visualization window using ``ffmpeg``."""
-    logger = logging.getLogger(__name__)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    video_path = f"analysis/slam_output_{timestamp}.mp4"
-    try:
-        time.sleep(1)
-        window_title = None
-        titles = gw.getAllTitles() if gw else []
-        for title in titles:
-            if window_substring in title:
-                window_title = title
-                break
-        if not window_title:
-            raise RuntimeError(f"Could not find window with title containing '{window_substring}'.")
-        ffmpeg_cmd = [
-            "ffmpeg",
-            "-hide_banner", "-loglevel", "error",
-            "-y",
-            "-f", "gdigrab",
-            "-framerate", "30",
-            "-i", f"title={window_title}",
-            "-t", str(duration),
-            video_path,
-        ]
-        proc = subprocess.Popen(ffmpeg_cmd)
-        logger.info("Started screen recording to %s", video_path)
-        return proc, video_path
-    except Exception as e:  # pragma: no cover - depends on system
-        logger.warning("Screen recording failed to start: %s", e)
-        return None, None
 
 
 def resize_window(title_substring: str, width: int, height: int) -> bool:

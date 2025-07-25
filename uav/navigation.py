@@ -55,6 +55,11 @@ class Navigator:
         self.post_dodge_grace_end_time = 0.0   # When grace period ends
         self.in_post_dodge_grace = False       # Flag for grace period state
 
+    def get_altitude(self):
+        """Return the current altitude (z position)."""
+        state = self.client.getMultirotorState()
+        return state.kinematics_estimated.position.z_val
+
     def get_state(self):
         """Return the drone position, yaw angle and speed.
 
@@ -101,9 +106,8 @@ class Navigator:
             )
         except AttributeError:
             # Fallback if state unavailable
-            state = self.client.getMultirotorState()
-            current_z = state.kinematics_estimated.position.z_val
-            
+            current_z = self.get_altitude()
+
             self.client.moveByVelocityZAsync(0, 0, current_z, 0.5)
             
         self.braked = True
@@ -145,8 +149,7 @@ class Navigator:
         time.sleep(0.5)  # Allow time for braking to take effect
         
         # FIX: Get current altitude and maintain it during dodge
-        state = self.client.getMultirotorState()
-        current_z = state.kinematics_estimated.position.z_val  # NED: negative up
+        current_z = self.get_altitude()  # NED: negative up
 
         # Execute dodge movement
         self.client.moveByVelocityBodyFrameAsync(forward_speed, lateral * strength, current_z, duration)
@@ -189,8 +192,7 @@ class Navigator:
         self.client.moveByVelocityAsync(0, 0, 0, 0)
         time.sleep(0.2)  # Allow time for braking to take effect
         
-        state = self.client.getMultirotorState()
-        z = state.kinematics_estimated.position.z_val  # NED: z is negative up
+        z = self.get_altitude()  # NED: z is negative up
         self.client.moveByVelocityZAsync(2, 0, z, duration=3,
             drivetrain=airsim.DrivetrainType.ForwardOnly,
             yaw_mode=airsim.YawMode(False, 0))
@@ -233,8 +235,7 @@ class Navigator:
         """
         logger.warning(
             "\u26A0\uFE0F No features — continuing blind forward motion")
-        state = self.client.getMultirotorState()
-        z = state.kinematics_estimated.position.z_val  # NED: z is negative up
+        z = self.get_altitude()  # NED: z is negative up
         self.client.moveByVelocityZAsync(2,0,z,duration=2,
             drivetrain=airsim.DrivetrainType.ForwardOnly,
             yaw_mode=airsim.YawMode(False, 0),)
@@ -256,8 +257,7 @@ class Navigator:
         logger.warning(
             "\u26A0\uFE0F Low flow + zero velocity — nudging forward"
         )
-        state = self.client.getMultirotorState()
-        z = state.kinematics_estimated.position.z_val  # NED: z is negative up
+        z = self.get_altitude()  # NED: z is negative up
         self.client.moveByVelocityZAsync(0.5, 0, z, 1)
         self.last_movement_time = time.time()
         return NavigationState.NUDGE
@@ -271,8 +271,7 @@ class Navigator:
             ``NavigationState.RESUME_REINFORCE``.
         """
         logger.info("\U0001F501 Reinforcing forward motion")
-        state = self.client.getMultirotorState()
-        z = state.kinematics_estimated.position.z_val  # NED: z is negative up
+        z = self.get_altitude()  # NED: z is negative up
         self.client.moveByVelocityZAsync(
             2, 0, z,
             duration=3,

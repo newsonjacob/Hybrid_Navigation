@@ -26,6 +26,7 @@
 #include <pangolin/pangolin.h>
 #include <iomanip>
 #include <unistd.h>
+#include <fstream>
 
 
 namespace ORB_SLAM2
@@ -471,6 +472,28 @@ void System::SaveTrajectoryKITTI(const string &filename)
     }
     f.close();
     cout << endl << "trajectory saved!" << endl;
+}
+
+void System::SaveMapPoints(const string &filename)
+{
+    cout << endl << "Saving map points to " << filename << " ..." << endl;
+    vector<MapPoint*> vpMP = mpMap->GetAllMapPoints();
+
+    ofstream f;
+    f.open(filename.c_str());
+    f << fixed;
+
+    for(MapPoint* pMP : vpMP)
+    {
+        if(!pMP || pMP->isBad())
+            continue;
+        cv::Mat pos = pMP->GetWorldPos();
+        f << setprecision(6) << pos.at<float>(0) << " "
+          << pos.at<float>(1) << " "
+          << pos.at<float>(2) << endl;
+    }
+    f.close();
+    cout << endl << "map points saved!" << endl;
 }
 
 int System::GetTrackingState()

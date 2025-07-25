@@ -56,7 +56,6 @@ def test_launch_all_main_flag_flow(tmp_path, monkeypatch):
     monkeypatch.setattr(launch_all, "wait_for_start_flag", fake_wait_for_start_flag)
 
     monkeypatch.setattr(launch_all, "wait_for_window", lambda *a, **k: True)
-    monkeypatch.setattr(launch_all, "record_slam_video", lambda *a, **k: (DummyProc(), str(tmp_path/"video.mp4")))
     monkeypatch.setattr(launch_all, "start_streamer", lambda *a, **k: DummyProc())
     monkeypatch.setattr(launch_all, "launch_slam_backend", lambda *a, **k: DummyProc())
     monkeypatch.setattr(launch_all.time, "sleep", lambda *_: None)
@@ -128,7 +127,6 @@ def test_stop_flag_waits_for_main(tmp_path, monkeypatch):
     monkeypatch.setattr(launch_all, "wait_for_start_flag", fake_start)
     monkeypatch.setattr(launch_all, "wait_for_port", lambda *a, **k: True)
     monkeypatch.setattr(launch_all, "wait_for_window", lambda *a, **k: True)
-    monkeypatch.setattr(launch_all, "record_slam_video", lambda *a, **k: (DummyProc(), str(tmp_path/"v.mp4")))
     monkeypatch.setattr(launch_all, "start_streamer", lambda *a, **k: DummyProc())
     monkeypatch.setattr(launch_all, "launch_slam_backend", lambda *a, **k: DummyProc())
     monkeypatch.setattr(launch_all.time, "sleep", lambda *_: None)
