@@ -18,7 +18,6 @@ from uav.nav_runtime import (
     ensure_stable_slam_pose,
     handle_waypoint_progress,
     ThreadManager,
-    LoggingContext,
     SimulationProcess,
     shutdown_threads,
     close_logging,
@@ -33,9 +32,23 @@ from uav.navigation_core import (
 from uav.navigation_slam_boot import run_slam_bootstrap
 from slam_bridge.slam_receiver import get_latest_pose_matrix, get_pose_history
 from uav.slam_utils import COVARIANCE_THRESHOLD, MIN_INLIERS_THRESHOLD
+from uav.performance import get_cpu_percent, get_memory_info
 from uav.perception_loop import process_perception_data
 
 logger = logging.getLogger("nav_loop")
+
+
+class LoggingContext:
+    """Context manager for flushing and closing log resources."""
+
+    def __init__(self, ctx):
+        self.ctx = ctx
+
+    def __enter__(self):
+        return self.ctx
+
+    def __exit__(self, exc_type, exc, tb):
+        close_logging(self.ctx)
 
 
 def _resolve(cli_val, default_val):
@@ -308,67 +321,62 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
 
 
 def log_slam_frame(ctx, frame_count, time_now, x, y, z, waypoint_index, dist_to_goal, action, slam_state="OK"):
-    """Log SLAM-specific navigation data in a format compatible with analysis tools."""
+    """Log SLAM navigation data to ``slam_log_*.csv``."""
     if not ctx.log_file:
         return
-        
+
     try:
-        # Get drone state for additional context
-        client = getattr(ctx, 'client', None)
-        gt_x = gt_y = gt_z = 0.0
+        client = getattr(ctx, "client", None)
+        pos_x = pos_y = pos_z = 0.0
         speed = 0.0
         yaw = 0.0
         if client:
             try:
                 pose = client.simGetVehiclePose("UAV")
+                pos_x = pose.position.x_val
+                pos_y = pose.position.y_val
+                pos_z = pose.position.z_val
                 speed = np.linalg.norm([
                     pose.linear_velocity.x_val,
                     pose.linear_velocity.y_val,
                     pose.linear_velocity.z_val,
                 ])
                 yaw = airsim.to_eularian_angles(pose.orientation)[2]
-                gt_x = pose.position.x_val
-                gt_y = pose.position.y_val
-                gt_z = pose.position.z_val
-            except:
+            except Exception:
                 pass
-        
-        # Create log line compatible with existing analysis format
-        # Format: frame,flow_left,flow_center,flow_right,delta_left,delta_center,delta_right,flow_std,
-        #         left_count,center_count,right_count,brake_thres,fps,state,collided,obstacle,side_safe,
-        #         pos_x,pos_y,pos_z,yaw,speed,time,features,simgetimage_s,decode_s,processing_s,loop_s,cpu_percent,memory_rss,
-        #         sudden_rise,center_blocked,combination_flow,minimum_flow
-        
-        log_line = (f"{frame_count},"         # frame
-                   f"0.0,0.0,0.0,"           # flow_left,flow_center,flow_right (N/A for SLAM)
-                   f"0.0,0.0,0.0,"           # delta_left,delta_center,delta_right (N/A)
-                   f"0.0,"                   # flow_std (N/A)
-                   f"0,0,0,"                 # left_count,center_count,right_count (N/A)
-                   f"0.0,"                   # brake_thres (N/A)
-                   f"10.0,"                  # fps (approximate SLAM rate)
-                   f"{slam_state}_WP{waypoint_index + 1}," # state (includes waypoint info)
-                   f"0,"                     # collided (assume no collision)
-                   f"0,"                     # obstacle (N/A for SLAM)
-                   f"1,"                     # side_safe (assume safe)
-                   f"{gt_x:.6f},{gt_y:.6f},{gt_z:.6f}," # GT coordinates
-                   f"{yaw:.6f},"             # yaw
-                   f"{speed:.6f},"           # speed
-                   f"{time_now:.6f},"        # time
-                   f"0,"                     # features (could add SLAM feature count later)
-                   f"0.0,0.0,0.0,"          # simgetimage_s,decode_s,processing_s (N/A)
-                   f"0.1,"                   # loop_s (SLAM loop time ~0.1s)
-                   f"0.0,0,"                 # cpu_percent,memory_rss (could add later)
-                   f"0,0,"                   # sudden_rise,center_blocked (N/A)
-                   f"{dist_to_goal:.6f},"    # combination_flow (repurpose for distance to goal)
-                   f"{action}\n")            # minimum_flow (repurpose for action)
-        
-        # Write to log file
+
+        from slam_bridge import slam_receiver
+        covariance = slam_receiver.get_latest_covariance()
+        inliers = slam_receiver.get_latest_inliers()
+        confidence = None
+        if covariance is not None:
+            confidence = 1.0 / (1.0 + float(covariance))
+
+        cpu_percent = get_cpu_percent()
+        mem_mb = get_memory_info().rss / (1024 * 1024)
+
+        rel_time = time_now - ctx.start_time
+
+        log_line = (
+            f"{frame_count},"
+            f"{rel_time:.2f},"
+            f"{slam_state}_WP{waypoint_index + 1},"
+            f"{pos_x:.2f},{pos_y:.2f},{pos_z:.2f},"
+            f"{x:.2f},{y:.2f},{z:.2f},"
+            f"{yaw:.2f},"
+            f"{speed:.2f},"
+            f"{cpu_percent:.1f},"
+            f"{mem_mb:.1f},"
+            f"{'' if covariance is None else f'{covariance:.4f}'},"
+            f"{'' if inliers is None else inliers},"
+            f"{'' if confidence is None else f'{confidence:.4f}'}\n"
+        )
+
         ctx.log_file.write(log_line)
-        
-        # Flush every 5 frames for SLAM (more frequent than reactive)
+
         if frame_count % 5 == 0:
             ctx.log_file.flush()
             logger.debug(f"SLAM frame {frame_count} logged and flushed")
-            
+
     except Exception as e:
         logger.error(f"Failed to log SLAM frame {frame_count}: {e}")
