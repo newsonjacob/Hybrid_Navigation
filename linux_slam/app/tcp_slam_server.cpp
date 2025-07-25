@@ -387,12 +387,12 @@ int main(int argc, char **argv) {
 
             // Defensive image display (imshow)
             // Only display if not empty and correct type
-            if (!imLeftGray.empty() && imLeftGray.type() == CV_8UC1) {
-                cv::imshow("Stereo Left", imLeftGray);
-            }
-            if (!imRightGray.empty() && imRightGray.type() == CV_8UC1) {
-                cv::imshow("Stereo Right", imRightGray);
-            }
+            // if (!imLeftGray.empty() && imLeftGray.type() == CV_8UC1) {
+            //     cv::imshow("Stereo Left", imLeftGray);
+            // }
+            // if (!imRightGray.empty() && imRightGray.type() == CV_8UC1) {
+            //     cv::imshow("Stereo Right", imRightGray);
+            // }
             cv::waitKey(1);
 
             // --- Log frame count and timestamp ---
