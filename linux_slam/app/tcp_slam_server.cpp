@@ -107,24 +107,14 @@ int main(int argc, char **argv) {
     if (video_file.empty())
         video_file = join_path(log_dir, "slam_feed.avi");
 
-
-    
-
     create_directories(log_dir);
     create_directories(flag_dir);
     create_directories(image_dir);
-
 
     std::string video_dir = video_file.substr(0, video_file.find_last_of("/\\"));
     if (!video_dir.empty()) {
         create_directories(video_dir);
     }
-
-    // Create metrics CSV for runtime statistics
-    std::string metrics_file = join_path(log_dir, "slam_metrics.csv");
-    std::ofstream metrics_stream(metrics_file);
-    if (metrics_stream.is_open())
-        metrics_stream << "timestamp,tracking_state,inliers,covariance\n";
 
     // Create metrics CSV for runtime statistics
     std::string metrics_file = join_path(log_dir, "slam_metrics.csv");
@@ -185,17 +175,20 @@ int main(int argc, char **argv) {
     log_event("[INFO] SLAM system initialized.");
 
     // -- Setup TCP server for receiving AirSim images --
-    int server_fd = slam_server::create_server_socket(6000);
+    int server_fd = slam_server::create_server_socket(6000); // Create a TCP server socket on port 6000
     if (server_fd < 0) return 1;
-    int sock = slam_server::accept_client(server_fd);
+    int sock = slam_server::accept_client(server_fd); // Accept a client connection
     if (sock < 0) return 1;
 
+    // --- Setup pose sender socket ---
     int pose_sock = slam_server::connect_pose_sender(slam_server::POSE_RECEIVER_IP,
                                                      slam_server::POSE_RECEIVER_PORT);
+
     // --- Main loop to receive images and process them with SLAM ---
     cv::Mat imLeft, imRight; // Matrices to hold the received images
     cv::Mat imLeftGray, imRightGray; // Grayscale versions of the images for SLAM processing
     log_event("[DEBUG] Starting main image receive loop...");
+
     // Initialize frame counter and flags
     int frame_counter = 0;              // Frame counter to track the number of frames processed
     bool slam_ready_flag_written = false; // Flag to indicate if SLAM is ready to process frames
@@ -207,6 +200,8 @@ int main(int argc, char **argv) {
         // Log the loop start time
         double loop_timestamp = (double)cv::getTickCount() / cv::getTickFrequency();
 
+
+        // ----- Inliers Check -----
         // Get the inliers after processing the frames with SLAM
         int inliers = get_feature_inliers(SLAM);
         log_event("[SLAM] Inliers after TrackStereo: " + std::to_string(inliers));
@@ -226,8 +221,9 @@ int main(int argc, char **argv) {
             oss << "Frame #" << frame_counter << " | Loop timestamp: " << std::fixed << std::setprecision(6) << loop_timestamp;
             log_event(oss.str());
         }
-        
-            uint32_t net_height, net_width, net_bytes;
+
+            // Receive the left and right images from the TCP socket
+            uint32_t net_height, net_width, net_bytes; // Network byte order variables for image dimensions and bytes
             uint32_t rgb_height, rgb_width, rgb_bytes;
 
             // --- Receive Left Grayscale Image ---
@@ -250,6 +246,7 @@ int main(int argc, char **argv) {
                     std::to_string(rgb_bytes) + " bytes.");
                 break;
             }
+
             // Allocate buffer for left image
             vector<uchar> left_buffer(rgb_bytes);
             if (!recv_all(sock, (char*)left_buffer.data(), rgb_bytes)) break; // Receive the image data
@@ -259,11 +256,14 @@ int main(int argc, char **argv) {
                 continue;  // or break, depending on your policy
             }
 
+            // Log the received left image properties
             log_event("Received Left image: height=" + std::to_string(left_gray.rows) + ", width=" + std::to_string(left_gray.cols));
+            
+            // Convert to BGR for visualization
             imLeftGray = left_gray.clone();
             cv::cvtColor(left_gray, imLeft, cv::COLOR_GRAY2BGR); // for debug snapshots
 
-            // --- DEBUG: Log right image properties ---
+            // --- DEBUG: Log left image properties ---
             {
                 std::ostringstream log;
                 log << "[DEBUG] Left image received: "
@@ -355,14 +355,14 @@ int main(int argc, char **argv) {
             }
 
             // --- Check if images are valid ---
-            // Defensive debug image write: only save if not empty and has expected dimensions [FIX 3C]
+            // Defensive debug image write: only save if not empty and has expected dimensions 
             if (frame_counter % 10 == 0) {
-                if (!imLeft.empty() && imLeft.rows > 0 && imLeft.cols > 0) { // [FIX 3C]
+                if (!imLeft.empty() && imLeft.rows > 0 && imLeft.cols > 0) { 
                     std::ostringstream frame_left;
                     frame_left << "logs/debug_left_" << frame_counter << ".png";
                     cv::imwrite(frame_left.str(), imLeft);
                 }
-                if (!imRight.empty() && imRight.rows > 0 && imRight.cols > 0) { // [FIX 3C]
+                if (!imRight.empty() && imRight.rows > 0 && imRight.cols > 0) { 
                     std::ostringstream frame_right;
                     frame_right << "logs/debug_right_" << frame_counter << ".png";
                     cv::imwrite(frame_right.str(), imRight);
