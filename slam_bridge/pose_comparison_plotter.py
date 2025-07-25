@@ -22,8 +22,17 @@ def main():
         logger.error(f"CSV file is empty or contains only null values.")
         sys.exit(1)
 
-    # Apply coordinate transformation to SLAM data
-    # Correct SLAM coordinate mapping: Z→X, X→Y, Y→Z
+    # Raw SLAM (no transformation)
+    df['slam_x_raw'] = df['slam_x']
+    df['slam_y_raw'] = df['slam_y']
+    df['slam_z_raw'] = df['slam_z']
+
+    # Transformed SLAM (no scale correction)
+    df['slam_x_trans'] = df['slam_z']      # SLAM Z → Display X
+    df['slam_y_trans'] = -df['slam_x']     # SLAM X → Display Y
+    df['slam_z_trans'] = -df['slam_y']     # SLAM Y → Display Z
+
+    # Scale-corrected SLAM (already present)
     df['slam_x_corrected'] = 0.68 * df['slam_z']    # SLAM Z → Display X
     df['slam_y_corrected'] = 0.7 * -df['slam_x']    # SLAM X → Display Y
     df['slam_z_corrected'] = 0.48 * -df['slam_y']    # SLAM Y → Display Z
@@ -40,16 +49,33 @@ def main():
 
     # Plot both trajectories together using corrected coordinates
     fig = go.Figure()
+
+    # Ground Truth (corrected)
     fig.add_trace(go.Scatter3d(
         x=df['gt_x_corrected'], y=df['gt_y_corrected'], z=df['gt_z_corrected'],
         mode='lines', name='Ground Truth (Corrected)',
         line=dict(color='green')
     ))
 
+    # SLAM Trajectory (scale-corrected)
     fig.add_trace(go.Scatter3d(
         x=df['slam_x_corrected'], y=df['slam_y_corrected'], z=df['slam_z_corrected'],
-        mode='lines', name='SLAM Trajectory (Corrected)',
+        mode='lines', name='SLAM (Scale Corrected)',
         line=dict(color='blue', width=3)
+    ))
+
+    # SLAM Trajectory (transformed, no scale)
+    fig.add_trace(go.Scatter3d(
+        x=df['slam_x_trans'], y=df['slam_y_trans'], z=df['slam_z_trans'],
+        mode='lines', name='SLAM (Transformed, No Scale)',
+        line=dict(color='orange', width=2, dash='dash')
+    ))
+
+    # SLAM Trajectory (raw)
+    fig.add_trace(go.Scatter3d(
+        x=df['slam_x_raw'], y=df['slam_y_raw'], z=df['slam_z_raw'],
+        mode='lines', name='SLAM (Raw)',
+        line=dict(color='red', width=1, dash='dot')
     ))
 
     fig.update_layout(
