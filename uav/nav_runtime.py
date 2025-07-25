@@ -105,11 +105,12 @@ def setup_environment(args, client, nav_mode="reactive"):
     log_file = None
     if nav_mode == "reactive":
         log_file = open(flow_dir / f"reactive_log_{timestamp}.csv", "w")
+
         log_file.write(
             "frame,flow_left,flow_center,flow_right,"
             "delta_left,delta_center,delta_right,flow_std,"
             "left_count,center_count,right_count,"
-            "brake_thres,dodge_thres,fps,"
+            "brake_thres,fps,"
             "state,collided,obstacle,side_safe,"
             "pos_x,pos_y,pos_z,slam_x,slam_y,slam_z,yaw,speed,"
             "time,features,simgetimage_s,decode_s,processing_s,loop_s,cpu_percent,memory_rss,"
@@ -123,6 +124,7 @@ def setup_environment(args, client, nav_mode="reactive"):
             "frame,time,state,pos_x,pos_y,pos_z,slam_x,slam_y,slam_z,"
             "yaw,speed,cpu_percent,memory_mb,covariance,inliers,slam_confidence\n"
         )
+
         retain_recent_logs(str(flow_dir))
         retain_recent_logs(str(output_base / "logs"))
     retain_recent_files(str(output_base / "analysis"), "slam_traj_*.html", keep=5)
@@ -393,7 +395,6 @@ def log_and_record_frame(
         obstacle_detected,
         side_safe,
         brake_thres,
-        dodge_thres,
         simgetimage_s,
         decode_s,
         processing_s,
