@@ -131,3 +131,52 @@ def test_finalise_files_calledprocesserror(monkeypatch, tmp_path, caplog):
         nl.finalise_files(ctx)
 
     assert any('fail' in record.message for record in caplog.records)
+
+
+def test_context_managers(monkeypatch):
+    nl = _reload_nav_loop(monkeypatch)
+    calls = []
+
+    monkeypatch.setattr(nl, 'shutdown_threads', lambda ctx: calls.append('threads'))
+    monkeypatch.setattr(nl, 'close_logging', lambda ctx: calls.append('logging'))
+    monkeypatch.setattr(nl, 'finalise_files', lambda ctx: calls.append('finalise'))
+    monkeypatch.setattr(nl, 'shutdown_airsim', lambda client: calls.append('airsim'))
+
+    proc = types.SimpleNamespace(
+        terminate=lambda: calls.append('terminate'),
+        wait=lambda timeout=5: calls.append(('wait', timeout)),
+    )
+
+    nl.cleanup('client', proc, 'ctx')
+
+    assert calls == [
+        'threads',
+        'logging',
+        'finalise',
+        'airsim',
+        'terminate',
+        ('wait', 5),
+    ]
+
+
+def test_logging_context(monkeypatch):
+    nl = _reload_nav_loop(monkeypatch)
+    calls = []
+    monkeypatch.setattr(nl, 'close_logging', lambda ctx: calls.append('closed'))
+    with nl.LoggingContext('ctx'):
+        calls.append('inside')
+    assert calls == ['inside', 'closed']
+
+
+def test_simulation_process(monkeypatch):
+    nl = _reload_nav_loop(monkeypatch)
+    calls = []
+    proc = types.SimpleNamespace(
+        terminate=lambda: calls.append('term'),
+        wait=lambda timeout=5: calls.append(('wait', timeout)),
+        kill=lambda: calls.append('kill'),
+    )
+    with nl.SimulationProcess(proc):
+        calls.append('run')
+    assert calls[:2] == ['run', 'term']
+    assert ('wait', 5) in calls
