@@ -19,6 +19,7 @@
 #include <cerrno>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <cstdio>
 #ifdef _WIN32
 #include <direct.h>
 #endif
@@ -75,6 +76,22 @@ static std::string join_path(const std::string& a, const std::string& b) {
     if (a.empty()) return b;
     if (a.back() == PATH_SEP) return a + b;
     return a + PATH_SEP + b;
+}
+
+static void perform_full_reinit(ORB_SLAM2::System& SLAM,
+                                int& frame_counter,
+                                bool& slam_ready_flag_written,
+                                bool& first_frame,
+                                int& identity_frame_count,
+                                const std::string& flag_dir) {
+    SLAM.Reset();
+    first_frame = true;
+    frame_counter = 0;
+    identity_frame_count = 0;
+    slam_ready_flag_written = false;
+    std::string flag_path = join_path(flag_dir, "slam_ready.flag");
+    std::remove(flag_path.c_str());
+    log_event("[INFO] SLAM fully reinitialized. Awaiting first stereo pair...");
 }
 
 int main(int argc, char **argv) {
@@ -196,6 +213,9 @@ int main(int argc, char **argv) {
     int frame_counter = 0;              // Frame counter to track the number of frames processed
     bool slam_ready_flag_written = false; // Flag to indicate if SLAM is ready to process frames
     const int MIN_INLIERS_THRESHOLD = 0;  // Minimum inliers to consider SLAM stable
+
+    static bool first_frame = true;          // Tracks initialization after resets
+    static int identity_frame_count = 0;     // Counter for frames showing no motion
 
     while (true) {
         log_event("----- Begin image receive loop -----");
@@ -570,13 +590,13 @@ int main(int argc, char **argv) {
                 log_event("[SLAM] Inliers after TrackStereo: " + std::to_string(inliers));
 
                 if (inliers < MIN_INLIERS_THRESHOLD) {
-                    log_event("[WARN] Too few inliers tracked. SLAM may be unstable.");
-                    SLAM.Reset();
-                    std::this_thread::sleep_for(std::chrono::seconds(2));
+                    log_event("[WARN] Too few inliers tracked. Performing full reinitialization.");
+                    perform_full_reinit(SLAM, frame_counter, slam_ready_flag_written,
+                                      first_frame, identity_frame_count, flag_dir);
+                    continue;
                 }
 
                 // --- Handling SLAM results ---
-                static bool first_frame = true;
                 if (first_frame) {
                     prev_Tcw = Tcw.clone();
                     first_frame = false;
@@ -608,7 +628,6 @@ int main(int argc, char **argv) {
 
                 cv::Mat Tcw_copy = Tcw.clone();  // Defensive copy of the pose matrix
 
-                static int identity_frame_count = 0;  // Use static so it persists between frames
 
                 if (Tcw_copy.empty() || Tcw_copy.rows != 4 || Tcw_copy.cols != 4) {
                     log_event("[WARN] Tcw_copy invalid; skipping identity check.");
@@ -628,18 +647,21 @@ int main(int argc, char **argv) {
                             // Still within grace period, just log and continue
                             log_event("[INFO] Tcw appears to be an identity matrix — no motion detected. Count: " + std::to_string(identity_frame_count));
                         } else {
-                            // Grace period exceeded, reset SLAM if no motion detected
-                            log_event("[ERROR] Too many frames with no motion, resetting SLAM.");
-                            SLAM.Reset();
-                            identity_frame_count = 0;  // Reset the counter after reset
+                            // Grace period exceeded, perform a full reinitialization
+                            log_event("[ERROR] Too many frames with no motion, reinitializing SLAM.");
+                            perform_full_reinit(SLAM, frame_counter, slam_ready_flag_written,
+                                              first_frame, identity_frame_count, flag_dir);
+                            continue;
                         }
                     }
 
                     if (identity_frame_count >= MAX_GRACE_FRAMES) {
                         log_event("[INFO] Grace period over. Checking for motion.");
                         if (frobenius_norm < 1e-3) {
-                            log_event("[WARN] No motion detected. Resetting SLAM.");
-                            SLAM.Reset();
+                            log_event("[WARN] No motion detected. Performing full reinitialization.");
+                            perform_full_reinit(SLAM, frame_counter, slam_ready_flag_written,
+                                              first_frame, identity_frame_count, flag_dir);
+                            continue;
                         } else {
                             log_event("[INFO] Motion detected. Continuing normal operation.");
                         }
