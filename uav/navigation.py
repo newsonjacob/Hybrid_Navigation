@@ -35,7 +35,7 @@ class Navigator:
         self.obstacle_detection_count = 0
         self.obstacle_clear_count = 0
         self.obstacle_confirmed = False
-        self.DETECTION_THRESHOLD = 1  # Frames required to confirm detection/clearing
+        self.DETECTION_THRESHOLD = 2  # Frames required to confirm detection/clearing
         self.CLEAR_THRESHOLD = 2  # Frames required to confirm clearing
         
         # Store individual condition states for logging
