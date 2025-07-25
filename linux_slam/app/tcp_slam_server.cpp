@@ -142,7 +142,7 @@ int main(int argc, char **argv) {
     double server_start_time = (double)cv::getTickCount() / cv::getTickFrequency();
     if (metrics_stream.is_open()) {
         metrics_stream
-            << "frame,timestamp,tracking_state,inliers,covariance,keyframes,map_points,x,y,z,qx,qy,qz,qw\n";
+            << "frame,total_frame,timestamp,tracking_state,inliers,covariance,keyframes,map_points,x,y,z,qx,qy,qz,qw\n";
     }
     
     std::string console_log = join_path(log_dir, "slam_console.txt");
@@ -903,7 +903,7 @@ int main(int argc, char **argv) {
                             int keyframes = SLAM.KeyFramesInMap();
                             int map_points = SLAM.MapPointsInMap();
                             metrics_stream << std::fixed << std::setprecision(6)
-                                           << frame_counter << ',' << relative_time << ','
+                                           << frame_counter << ',' << total_frame_counter << ',' << relative_time << ','
                                            << tracking_state << ',' << inliers << ','
                                            << covariance_value << ',' << keyframes << ',' << map_points << ','
                                            << x << ',' << y << ',' << z << ','
