@@ -227,6 +227,12 @@ int main(int argc, char **argv) {
     while (true) {
         log_event("----- Begin image receive loop -----");
 
+        // Check for shutdown flag
+        std::ifstream shutdown_flag(join_path(flag_dir, "slam_shutdown.flag"));
+        if (shutdown_flag.good()) {
+            log_event("[INFO] slam_shutdown.flag detected, exiting main loop for cleanup.");
+            break;}
+
         // Log the loop start time
         double loop_timestamp = (double)cv::getTickCount() / cv::getTickFrequency();
 
@@ -1026,6 +1032,9 @@ int main(int argc, char **argv) {
             log_event("[ERROR] Unknown exception during trajectory save");
         }
     }
+    std::ofstream done_flag(join_path(flag_dir, "slam_done.flag"));
+    done_flag << "DONE" << std::endl;
+    done_flag.close();
 
     log_event("[DEBUG] Shutting down SLAM system...");
     SLAM.Shutdown();

@@ -212,6 +212,8 @@ def main() -> None:
                     flag.unlink()
                 except FileNotFoundError:
                     pass
+            Path("flags/slam_shutdown.flag").touch()
+            logger.info("[main.py] slam_shutdown.flag created to signal SLAM backend to exit.")
             logger.info("[main.py] SLAM navigation loop finished - Calling cleanup.")
             cleanup(client, sim_process, ctx if ctx is not None else None)
     elif nav_mode == "reactive":

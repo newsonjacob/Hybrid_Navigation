@@ -223,6 +223,20 @@ def wait_for_start_flag() -> bool:
     return True
 
 
+def wait_for_slam_done_flag(timeout: float = 15.0) -> bool:
+    """Wait for the slam_done.flag to appear, or timeout."""
+    slam_done_flag = flags_dir / "slam_done.flag"
+    logger.info("[MAIN] Waiting for SLAM backend to finish (slam_done.flag)...")
+    start = time.time()
+    while not slam_done_flag.exists():
+        if time.time() - start > timeout:
+            logger.warning("[MAIN] Timeout waiting for slam_done.flag.")
+            return False
+        time.sleep(0.2)
+    logger.info("[MAIN] slam_done.flag detected.")
+    return True
+
+
 def main(timestamp: str, selected_nav_mode: Optional[str] = None) -> bool:
     """Launch the simulation using the provided timestamp."""
     args = parse_args()
@@ -319,6 +333,10 @@ def main(timestamp: str, selected_nav_mode: Optional[str] = None) -> bool:
                 break
             time.sleep(1)
         logger.info("[MAIN] main.py completed or terminated.")
+
+        # Wait for SLAM backend to finish saving files
+        wait_for_slam_done_flag(timeout=15.0)
+
         return True
 
     finally:
