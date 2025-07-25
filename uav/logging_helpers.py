@@ -246,3 +246,30 @@ def finalize_logging(log_file, log_buffer):
             logger.info("Log file closed successfully")
         except Exception as e:
             logger.error(f"Failed to close log file: {e}")
+
+class ThreadManager:
+    """Context manager for shutting down worker threads."""
+
+    def __init__(self, ctx):
+        self.ctx = ctx
+
+    def __enter__(self):
+        return self.ctx
+
+    def __exit__(self, exc_type, exc, tb):
+        from uav.nav_runtime import shutdown_threads
+        shutdown_threads(self.ctx)
+
+
+class LoggingContext:
+    """Context manager for flushing and closing log resources."""
+
+    def __init__(self, ctx):
+        self.ctx = ctx
+
+    def __enter__(self):
+        return self.ctx
+
+    def __exit__(self, exc_type, exc, tb):
+        from uav.nav_runtime import close_logging
+        close_logging(self.ctx)

@@ -6,6 +6,7 @@ import numpy as np
 import airsim
 
 import uav.config as uav_config
+from uav.logging_helpers import LoggingContext, ThreadManager
 from uav.nav_runtime import (
     setup_environment,
     check_startup_grace,
@@ -17,7 +18,6 @@ from uav.nav_runtime import (
     check_slam_stop,
     ensure_stable_slam_pose,
     handle_waypoint_progress,
-    ThreadManager,
     SimulationProcess,
     shutdown_threads,
     close_logging,
@@ -37,19 +37,6 @@ from uav.perception_loop import process_perception_data
 from uav.utils import get_drone_state
 
 logger = logging.getLogger("nav_loop")
-
-
-class LoggingContext:
-    """Context manager for flushing and closing log resources."""
-
-    def __init__(self, ctx):
-        self.ctx = ctx
-
-    def __enter__(self):
-        return self.ctx
-
-    def __exit__(self, exc_type, exc, tb):
-        close_logging(self.ctx)
 
 
 def _resolve(cli_val, default_val):

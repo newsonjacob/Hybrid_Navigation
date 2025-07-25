@@ -21,7 +21,11 @@ from uav.navigation import Navigator
 from uav.utils import get_drone_state, retain_recent_logs, init_client
 from uav.utils import retain_recent_files
 from uav import config
-from uav.logging_helpers import write_frame_output
+from uav.logging_helpers import (
+    write_frame_output,
+    ThreadManager,
+    LoggingContext,
+)
 from uav.context import ParamRefs, NavContext
 from uav.perception_loop import (
     perception_loop,
@@ -573,30 +577,6 @@ def shutdown_airsim(client):
         logger.error("Landing error: %s", exc)
 
 
-class ThreadManager:
-    """Context manager for shutting down worker threads."""
-
-    def __init__(self, ctx):
-        self.ctx = ctx
-
-    def __enter__(self):
-        return self.ctx
-
-    def __exit__(self, exc_type, exc, tb):
-        shutdown_threads(self.ctx)
-
-
-class LoggingContext:
-    """Context manager for flushing and closing log resources."""
-
-    def __init__(self, ctx):
-        self.ctx = ctx
-
-    def __enter__(self):
-        return self.ctx
-
-    def __exit__(self, exc_type, exc, tb):
-        close_logging(self.ctx)
 
 
 class SimulationProcess:

@@ -62,9 +62,9 @@ def finalise_files(ctx):
 
         try:
             files = [
-                _generate_visualisation(str(log_csv), str(analysis_dir), timestamp),
-                _generate_performance(str(log_csv), str(analysis_dir), timestamp),
-                _generate_report(str(log_csv), str(analysis_dir), timestamp),
+                _generate_visualisation(log_csv, analysis_dir, timestamp),
+                _generate_performance(log_csv, analysis_dir, timestamp),
+                _generate_report(log_csv, analysis_dir, timestamp),
             ]
         except subprocess.CalledProcessError as proc_error:
             logger.error(f"Analysis subprocess failed: {proc_error.stderr}")
