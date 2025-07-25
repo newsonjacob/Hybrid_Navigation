@@ -336,7 +336,6 @@ def main(timestamp: str, selected_nav_mode: Optional[str] = None) -> bool:
         while launcher.main_proc and getattr(launcher.main_proc, "poll", lambda: None)() is None:
             if STOP_FLAG.exists():
                 logger.info("[MAIN] Stop flag detected. Initiating graceful shutdown...")
-                launcher.shutdown()
                 break
             time.sleep(1)
         logger.info("[MAIN] main.py completed or terminated.")

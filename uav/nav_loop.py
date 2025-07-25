@@ -15,7 +15,6 @@ from uav.nav_runtime import (
     get_perception_data,
     update_navigation_state,
     log_and_record_frame,
-    check_slam_stop,
     ensure_stable_slam_pose,
     handle_waypoint_progress,
     SimulationProcess,
@@ -224,11 +223,6 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
             time_now = time.time()
             loop_start = time_now  # Track loop timing
 
-            if check_slam_stop(exit_flag, start_time, max_duration):
-                if ctx is not None and getattr(ctx, "param_refs", None):
-                    ctx.param_refs.state[0] = "landing"
-                break
-
             pose_data = ensure_stable_slam_pose(
                 client,
                 pose_source,
@@ -283,12 +277,6 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
             
             log_slam_frame(ctx, frame_count, time_now, x, y, z, 
                           current_waypoint_index, dist_to_goal, last_action, slam_state)
-            
-            # Log waypoint progress every 10 frames
-            if frame_count % 10 == 0:
-                logger.info(f"[SLAMNav] Frame {frame_count}: Pos({x:.2f},{y:.2f},{z:.2f}) "
-                           f"-> WP{current_waypoint_index + 1}({waypoint_x:.1f},{waypoint_y:.1f}) "
-                           f"Dist: {dist_to_goal:.2f}m Action: {last_action}")
             
             time.sleep(0.1)
             

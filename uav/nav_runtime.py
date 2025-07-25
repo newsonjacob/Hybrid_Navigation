@@ -52,7 +52,6 @@ __all__ = [
     "update_navigation_state",
     "log_and_record_frame",
     "transform_slam_to_airsim",
-    "check_slam_stop",
     "ensure_stable_slam_pose",
     "handle_waypoint_progress",
     "shutdown_threads",
@@ -442,23 +441,6 @@ def transform_slam_to_airsim(slam_pose_matrix):
 
     return transformed_pose, (x_airsim, y_airsim, z_airsim)
 
-
-def check_slam_stop(exit_flag, start_time, max_duration):
-    """Check if SLAM navigation should stop."""
-    if exit_flag.is_set():
-        return True
-
-    if max_duration is None:
-        logger.warning("max_duration is None in check_slam_stop")
-        return False
-
-    if time.time() - start_time > max_duration:
-        logger.info(f"SLAM navigation time limit reached ({max_duration}s)")
-        return True
-
-    return False
-
-
 def ensure_stable_slam_pose(
     client,
     pose_source,
@@ -491,9 +473,6 @@ def ensure_stable_slam_pose(
                 ctx.param_refs.state[0] = "bootstrap"
             run_slam_bootstrap(client, duration=4.0)
         time.sleep(1.0)
-        if check_slam_stop(exit_flag, start_time, max_duration):
-            logger.info("[SLAMNav] Exit signal during reinitialisation.")
-            return None, (None, None, None)
         pose = get_latest_pose_matrix()
 
     if ctx is not None and getattr(ctx, "param_refs", None):
