@@ -13,9 +13,9 @@ GRACE_PERIOD_SEC = 1.0 # Grace period for state transitions
 
 SLAM_YAW_OFFSET = 0.0
 MAX_SIM_DURATION = 120  # seconds
-GOAL_X = 46 # meters
+GOAL_X = 48 # meters
 GOAL_Y = 0  # meters
-GOAL_THRESHOLD = 1  # Distance threshold for goal completion (meters)
+GOAL_THRESHOLD = 2  # Distance threshold for goal completion (meters)
 
 FLOW_CAMERA = "0"  # camera used for optical flow
 STEREO_LEFT_CAMERA = "front_left"  # left camera used for depth filtering

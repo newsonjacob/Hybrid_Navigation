@@ -149,7 +149,7 @@ def detect_obstacle(
             raise ValueError("Reactive mode requires smooth_C, delta_C, center_count, brake_thres")
 
         DELTA_C_SUDDEN = 1.5 # Sudden rise threshold
-        CENTER_COUNT_MIN = 10 # Minimum center count
+        CENTER_COUNT_MIN = 5 # Minimum center count
         COMBO_COUNT = 40 # Combination high flow count
         DELTA_C_MIN = 0.75 # Minimum delta C
         SMOOTH_C_MIN = 0.5 # Minimum smooth C
@@ -346,8 +346,6 @@ def handle_grace_period(time_now, navigator, frame_queue, vis_img, param_refs):
         frame_queue.put(vis_img)
         return True
     return False
-
-
 
 
 def update_dodge_history(client, state_history, pos_history, state_str, navigator,
