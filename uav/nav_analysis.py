@@ -27,7 +27,7 @@ def finalise_files(ctx):
         logger.warning("No timestamp found - skipping file finalization")
         return
 
-    logger.info(f"🎯 Starting post-flight analysis for timestamp: {timestamp}")
+    logger.info(f"Starting post-flight analysis for timestamp: {timestamp}")
 
     try:
         base_dir = Path(getattr(ctx, "output_dir", "."))
@@ -44,14 +44,27 @@ def finalise_files(ctx):
             )
         logger.info(f"Processing log file: {log_csv} ({file_size} bytes)")
 
+        # DEBUG: Check log file content
+        try:
+            with open(log_csv, "r") as f:
+                lines = f.readlines()
+                logger.info(f"Log file has {len(lines)} lines")
+                if len(lines) > 0:
+                    logger.info(f"First line: {lines[0].strip()}")
+                if len(lines) > 1:
+                    logger.info(f"Second line: {lines[1].strip()}")
+        except Exception as read_error:
+            logger.error(f"Could not read log file: {read_error}")
+            return
+
         analysis_dir = base_dir / "analysis"
         analysis_dir.mkdir(parents=True, exist_ok=True)
 
         try:
             files = [
-                _generate_visualisation(log_csv, analysis_dir, timestamp),
-                _generate_performance(log_csv, analysis_dir, timestamp),
-                _generate_report(log_csv, analysis_dir, timestamp),
+                _generate_visualisation(str(log_csv), str(analysis_dir), timestamp),
+                _generate_performance(str(log_csv), str(analysis_dir), timestamp),
+                _generate_report(str(log_csv), str(analysis_dir), timestamp),
             ]
         except subprocess.CalledProcessError as proc_error:
             logger.error(f"Analysis subprocess failed: {proc_error.stderr}")
@@ -64,35 +77,38 @@ def finalise_files(ctx):
 
         try:
             from uav import slam_utils
+
             slam_utils.generate_pose_comparison_plot()
-            logger.info("✅ SLAM pose comparison plot generated")
+            logger.info("SLAM pose comparison plot generated")
         except Exception as slam_error:
             logger.info(f"SLAM plot generation skipped: {slam_error}")
 
         if generated_files:
-            logger.info("🎯 Analysis complete! Generated files:")
+            logger.info("Analysis complete! Generated files:")
             for file_path in generated_files:
                 file_size = os.path.getsize(file_path)
-                logger.info(f"  📊 {file_path} ({file_size} bytes)")
+                logger.info(f" {file_path} ({file_size} bytes)")
         else:
             logger.warning("No analysis files were successfully generated")
 
     except Exception as outer_error:
         logger.error(f"Unexpected error in finalise_files: {outer_error}")
         import traceback
+
         logger.error(f"Traceback: {traceback.format_exc()}")
 
     try:
         retain_recent_views(str(analysis_dir), 5)
-        logger.info("✅ Old analysis files cleaned up")
+        logger.info("Old analysis files cleaned up")
     except Exception as cleanup_error:
         logger.error(f"Error retaining recent views: {cleanup_error}")
 
     try:
         if os.path.exists(paths.STOP_FLAG_PATH):
             os.remove(paths.STOP_FLAG_PATH)
-            logger.info("✅ Stop flag file removed")
+            logger.info("Stop flag file removed")
+
     except Exception as flag_error:
         logger.error(f"Error removing stop flag file: {flag_error}")
 
-    logger.info("🏁 Post-flight analysis finalization complete")
+    logger.info("Post-flight analysis finalization complete")
