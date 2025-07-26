@@ -163,13 +163,19 @@ def plot_translation_error(df, save_dir="analysis"):
            (df['gt_y_corrected'] - df['slam_y_corrected']) ** 2 +
            (df['gt_z_corrected'] - df['slam_z_corrected']) ** 2) ** 0.5
 
-    xvals = df['timestamp'] if 'timestamp' in df.columns else df.index
+    if 'timestamp' in df.columns:
+        start = df['timestamp'].iloc[0]
+        xvals = df['timestamp'] - start
+        x_title = "Time (s)"
+    else:
+        xvals = df.index
+        x_title = 'Index'
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=xvals, y=err, mode='lines', name='error'))
     fig.update_layout(
         title="Translation Error Over Time",
-        xaxis_title="Time (s)" if 'timestamp' in df.columns else 'Index',
+        xaxis_title=x_title,
         yaxis_title="Error (m)",
     )
 
