@@ -11,7 +11,8 @@ from uav.analysis_helpers import (
     _generate_performance,
     _generate_report,
 )
-from uav.utils import retain_recent_views
+from uav.config import RETENTION_CONFIG
+from uav.utils import retain_recent_files_config
 
 logger = logging.getLogger("nav_loop")
 
@@ -129,7 +130,7 @@ def finalise_files(ctx):
         logger.error(f"Traceback: {traceback.format_exc()}")
 
     try:
-        retain_recent_views(str(analysis_dir), 5)
+        retain_recent_files_config(RETENTION_CONFIG)
         logger.info("Old analysis files cleaned up")
     except Exception as cleanup_error:
         logger.error(f"Error retaining recent views: {cleanup_error}")

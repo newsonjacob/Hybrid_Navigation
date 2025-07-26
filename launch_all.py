@@ -11,7 +11,8 @@ from typing import Optional
 from uav.paths import FLAGS_DIR
 
 from uav.logging_config import setup_logging
-from uav.utils import retain_recent_logs
+from uav.config import RETENTION_CONFIG
+from uav.utils import retain_recent_files_config
 from uav.cli import parse_args
 from uav.config import load_app_config
 from uav.interface import start_gui, exit_flag
@@ -369,7 +370,7 @@ def wait_for_nav_mode_and_launch(timestamp: str) -> None:
     try:
         main(timestamp, selected_nav_mode)
     finally:
-        retain_recent_logs("logs")
+        retain_recent_files_config(RETENTION_CONFIG)
 
 
 def cli_main() -> None:

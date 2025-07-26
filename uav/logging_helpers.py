@@ -10,7 +10,8 @@ import cv2
 from uav import config
 from uav.video_utils import start_video_writer_thread
 from uav.logging_utils import format_log_line
-from uav.utils import retain_recent_logs, retain_recent_files, get_drone_state
+from uav.config import RETENTION_CONFIG
+from uav.utils import retain_recent_files_config, get_drone_state
 from uav.performance import get_cpu_percent, get_memory_info
 from uav.overlay import draw_overlay
 from uav.perception import FlowHistory
@@ -211,10 +212,7 @@ def handle_reset(client, ctx, frame_count):
         )
     log_file = open(log_path, 'a')
     ctx.log_file = log_file
-    retain_recent_logs(str(flow_dir))
-    retain_recent_logs(str(base_dir / "logs"))
-    retain_recent_files(str(base_dir / "analysis"), "slam_traj_*.html", keep=5)
-    retain_recent_files(str(base_dir / "analysis"), "slam_output_*.mp4", keep=5)
+    retain_recent_files_config(RETENTION_CONFIG)
 
     frame_queue.put(None)
     video_thread.join()

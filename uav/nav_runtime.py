@@ -18,8 +18,8 @@ except Exception:  # pragma: no cover - stubbed environments
 from uav.video_utils import start_video_writer_thread
 from uav.perception import OpticalFlowTracker, FlowHistory
 from uav.navigation import Navigator
-from uav.utils import get_drone_state, retain_recent_logs, init_client
-from uav.utils import retain_recent_files
+from uav.config import RETENTION_CONFIG
+from uav.utils import get_drone_state, retain_recent_files_config, init_client
 from uav import config
 from uav.logging_helpers import (
     write_frame_output,
@@ -119,8 +119,7 @@ def setup_environment(args, client, nav_mode="reactive"):
             "time,features,simgetimage_s,decode_s,processing_s,loop_s,cpu_percent,memory_mb,"
             "sudden_rise,center_blocked,combination_flow,minimum_flow\n"
         )
-        retain_recent_logs(str(flow_dir))
-        retain_recent_logs(str(output_base / "logs"))
+        retain_recent_files_config(RETENTION_CONFIG)
     elif nav_mode == "slam":
         log_file = open(flow_dir / f"slam_log_{timestamp}.csv", "w")
         log_file.write(
@@ -130,11 +129,7 @@ def setup_environment(args, client, nav_mode="reactive"):
             "slam_x_raw,slam_y_raw,slam_z_raw,"
             "yaw,speed,cpu_percent,memory_mb,covariance,inliers,slam_confidence\n"
         )
-
-        retain_recent_logs(str(flow_dir))
-        retain_recent_logs(str(output_base / "logs"))
-    retain_recent_files(str(output_base / "analysis"), "slam_traj_*.html", keep=5)
-    retain_recent_files(str(output_base / "analysis"), "slam_output_*.mp4", keep=5)
+        retain_recent_files_config(RETENTION_CONFIG)
     try:
         fourcc = cv2.VideoWriter_fourcc(*"MJPG")
     except AttributeError:  # pragma: no cover
