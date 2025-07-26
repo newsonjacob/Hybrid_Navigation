@@ -39,6 +39,8 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
+See `SCRIPT_DEPENDENCIES.md` for a table summarising which external packages are required by each script.
+
 ## 🚁 How It Works
 
 - A drone is spawned in a UE4 + AirSim environment
