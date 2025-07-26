@@ -382,6 +382,7 @@ def cli_main() -> None:
     timestamp = init_logging_and_flags()
 
     args = parse_args()
+
     logger.info("[RESET] Clearing flags directory %s", FLAGS_DIR)
     for f in FLAGS_DIR.glob("*"):
         if f.is_file():

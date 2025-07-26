@@ -172,6 +172,7 @@ The `hybrid-nav` entry point exposes several options:
 | `--slam-inlier-threshold INT` | Minimum inliers for SLAM stability |
 | `--log-timestamp STR` | Timestamp used to sync logging across modules |
 | `--output-dir DIR` | Directory where logs and analysis files are saved |
+| `--reset` | Delete all flag files before starting a new run |
 
 ### SLAM Stability
 
