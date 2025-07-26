@@ -9,13 +9,13 @@ def test_retain_recent_logs_keeps_latest(tmp_path):
 
     for i in range(6):
         ts = f"20240101_00000{i}"
-        p = log_dir / f"full_log_{ts}.csv"
+        p = log_dir / f"reactive_log_{ts}.csv"
         p.write_text("data")
 
     retain_recent_logs(str(log_dir), keep=3)
     remaining = sorted(f.name for f in log_dir.iterdir())
     assert remaining == [
-        f"full_log_20240101_00000{i}.csv" for i in range(3, 6)
+        f"reactive_log_20240101_00000{i}.csv" for i in range(3, 6)
     ]
 
 

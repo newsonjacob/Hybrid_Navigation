@@ -2,6 +2,7 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui.hpp>
+#include <opencv2/videoio.hpp>
 #include <iostream>
 #include <vector>
 #include <fstream>
@@ -13,11 +14,13 @@
 #include "server/logging.hpp"
 #include "server/network.hpp"
 #include "server/slam_runner.hpp"
+#include "Converter.h"
 #include <filesystem>
 #include <sys/stat.h>
 #include <cerrno>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <cstdio>
 #ifdef _WIN32
 #include <direct.h>
 #endif
@@ -76,39 +79,93 @@ static std::string join_path(const std::string& a, const std::string& b) {
     return a + PATH_SEP + b;
 }
 
+static void perform_full_reinit(ORB_SLAM2::System& SLAM,
+                                int& frame_counter,
+                                bool& slam_ready_flag_written,
+                                bool& first_frame,
+                                int& identity_frame_count,
+                                const std::string& flag_dir) {
+    SLAM.Reset();
+    first_frame = true;
+    frame_counter = 0;
+    identity_frame_count = 0;
+    slam_ready_flag_written = false;
+    std::string flag_path = join_path(flag_dir, "slam_ready.flag");
+    std::remove(flag_path.c_str());
+    log_event("[INFO] SLAM fully reinitialized. Awaiting first stereo pair...");
+}
+
 int main(int argc, char **argv) {
 
     std::string log_dir = getenv("SLAM_LOG_DIR") ? getenv("SLAM_LOG_DIR") : "logs";
     std::string flag_dir = getenv("SLAM_FLAG_DIR") ? getenv("SLAM_FLAG_DIR") : "flags";
     std::string image_dir = getenv("SLAM_IMAGE_DIR") ? getenv("SLAM_IMAGE_DIR") : join_path(log_dir, "images");
+    std::string video_file = getenv("SLAM_VIDEO_FILE") ? getenv("SLAM_VIDEO_FILE") : "";
 
-    if (argc < 3) {
-        cerr << "Usage: ./tcp_slam_server vocab settings [log_dir] [flag_dir]" << endl;
+    std::vector<std::string> args;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        const std::string prefix = "--video-file=";
+        if (arg.rfind(prefix, 0) == 0) {
+            video_file = arg.substr(prefix.size());
+        } else {
+            args.push_back(arg);
+        }
+    }
+
+    if (args.size() < 2) {
+        cerr << "Usage: ./tcp_slam_server vocab settings [log_dir] [flag_dir] [image_dir] [--video-file=FILE]" << endl;
         return 1;
     }
 
-    if (argc >= 4) log_dir = argv[3];
-    if (argc >= 5) flag_dir = argv[4];
-    if (argc >= 6) image_dir = argv[5];
+    if (args.size() >= 3) log_dir = args[2];
+    if (args.size() >= 4) flag_dir = args[3];
+    if (args.size() >= 5) image_dir = args[4];
+
+    if (video_file.empty())
+        video_file = join_path(log_dir, "slam_feed.avi");
 
     create_directories(log_dir);
     create_directories(flag_dir);
     create_directories(image_dir);
 
+    std::string video_dir = video_file.substr(0, video_file.find_last_of("/\\"));
+    if (!video_dir.empty()) {
+        create_directories(video_dir);
+    }
+
+    // Create metrics CSV for runtime statistics
+    std::string metrics_file = join_path(log_dir, "slam_metrics.csv");
+    std::ofstream metrics_stream;
+    metrics_stream.open(metrics_file);
+    // Timestamp will be relative to when the server starts
+    double server_start_time = (double)cv::getTickCount() / cv::getTickFrequency();
+    if (metrics_stream.is_open()) {
+        metrics_stream
+            << "frame,total_frame,timestamp,tracking_state,inliers,covariance,keyframes,map_points,x,y,z,qx,qy,qz,qw\n";
+    }
+    
     std::string console_log = join_path(log_dir, "slam_console.txt");
     std::string console_err = join_path(log_dir, "slam_console_err.txt");
 
-    (void)freopen(console_log.c_str(), "w", stdout);
-    (void)freopen(console_err.c_str(), "w", stderr);
+    // Fix warnings by checking return values
+    if (!freopen(console_log.c_str(), "w", stdout)) {
+        std::cerr << "[WARN] Failed to redirect stdout to " << console_log << std::endl;
+    }
+    if (!freopen(console_err.c_str(), "w", stderr)) {
+        std::cerr << "[WARN] Failed to redirect stderr to " << console_err << std::endl;
+    }
 
     // Set the locale to C for consistent number formatting
 
     // Add this static variable at the top of your main function
     static cv::Mat prev_Tcw;  // Previous pose (initialize once)
+    cv::VideoWriter slam_video_writer;
+    bool video_writer_initialized = false;
 
     // Get vocabulary and settings file paths from command line arguments
-    std::string vocab = argv[1];
-    std::string settings = argv[2];
+    std::string vocab = args[0];
+    std::string settings = args[1];
 
     // Set log file path with timestamp if not provided
     const char* log_file_env = getenv("SLAM_LOG_FILE");
@@ -123,6 +180,9 @@ int main(int argc, char **argv) {
 
         g_log_file_path = oss.str();
     }
+
+    // Log the chosen output path early for troubleshooting
+    log_event(std::string("[DEBUG] Video output file: ") + video_file);
 
     // --- Setup pose sent log file ---
     std::ostringstream pose_log_oss;
@@ -141,49 +201,51 @@ int main(int argc, char **argv) {
     log_event("[INFO] SLAM system initialized.");
 
     // -- Setup TCP server for receiving AirSim images --
-    int server_fd = slam_server::create_server_socket(6000);
+    int server_fd = slam_server::create_server_socket(6000); // Create a TCP server socket on port 6000
     if (server_fd < 0) return 1;
-    int sock = slam_server::accept_client(server_fd);
+    int sock = slam_server::accept_client(server_fd); // Accept a client connection
     if (sock < 0) return 1;
 
+    // --- Setup pose sender socket ---
     int pose_sock = slam_server::connect_pose_sender(slam_server::POSE_RECEIVER_IP,
                                                      slam_server::POSE_RECEIVER_PORT);
+
     // --- Main loop to receive images and process them with SLAM ---
     cv::Mat imLeft, imRight; // Matrices to hold the received images
     cv::Mat imLeftGray, imRightGray; // Grayscale versions of the images for SLAM processing
     log_event("[DEBUG] Starting main image receive loop...");
+
     // Initialize frame counter and flags
     int frame_counter = 0;              // Frame counter to track the number of frames processed
+    int total_frame_counter = 0;        // Total frames processed (never reset)
     bool slam_ready_flag_written = false; // Flag to indicate if SLAM is ready to process frames
     const int MIN_INLIERS_THRESHOLD = 0;  // Minimum inliers to consider SLAM stable
 
-    while (true) {       
+    static bool first_frame = true;          // Tracks initialization after resets
+    static int identity_frame_count = 0;     // Counter for frames showing no motion
+
+    while (true) {
         log_event("----- Begin image receive loop -----");
+
+        // Check for shutdown flag
+        std::ifstream shutdown_flag(join_path(flag_dir, "slam_shutdown.flag"));
+        if (shutdown_flag.good()) {
+            log_event("[INFO] slam_shutdown.flag detected, exiting main loop for cleanup.");
+            break;}
 
         // Log the loop start time
         double loop_timestamp = (double)cv::getTickCount() / cv::getTickFrequency();
 
-        // Get the inliers after processing the frames with SLAM
-        int inliers = get_feature_inliers(SLAM);
-        log_event("[SLAM] Inliers after TrackStereo: " + std::to_string(inliers));
+        // Inlier count will be obtained after SLAM.TrackStereo processes the frame
+        int inliers = 0;
 
-        // Continue processing if enough inliers are present
-        if (inliers < MIN_INLIERS_THRESHOLD) {
-            log_event("[WARN] Too few inliers tracked. SLAM may be unstable.");
-            // Optionally, reset SLAM or take other actions
-            SLAM.Reset(); // Reset the SLAM system (if this is an acceptable approach)
-            std::this_thread::sleep_for(std::chrono::seconds(2)); // Wait before retrying to receive images
-        }
+        // Process the received images with SLAM
+        std::ostringstream oss;
+        oss << "Frame #" << frame_counter << " | Loop timestamp: " << std::fixed << std::setprecision(6) << loop_timestamp;
+        log_event(oss.str());
 
-        // If we have enough inliers, proceed with receiving images
-        if (inliers >= MIN_INLIERS_THRESHOLD) { 
-            // Process the received images with SLAM
-            std::ostringstream oss;
-            oss << "Frame #" << frame_counter << " | Loop timestamp: " << std::fixed << std::setprecision(6) << loop_timestamp;
-            log_event(oss.str());
-        }
-        
-            uint32_t net_height, net_width, net_bytes;
+            // Receive the left and right images from the TCP socket
+            uint32_t net_height, net_width, net_bytes; // Network byte order variables for image dimensions and bytes
             uint32_t rgb_height, rgb_width, rgb_bytes;
 
             // --- Receive Left Grayscale Image ---
@@ -206,6 +268,7 @@ int main(int argc, char **argv) {
                     std::to_string(rgb_bytes) + " bytes.");
                 break;
             }
+
             // Allocate buffer for left image
             vector<uchar> left_buffer(rgb_bytes);
             if (!recv_all(sock, (char*)left_buffer.data(), rgb_bytes)) break; // Receive the image data
@@ -215,11 +278,14 @@ int main(int argc, char **argv) {
                 continue;  // or break, depending on your policy
             }
 
+            // Log the received left image properties
             log_event("Received Left image: height=" + std::to_string(left_gray.rows) + ", width=" + std::to_string(left_gray.cols));
+            
+            // Convert to BGR for visualization
             imLeftGray = left_gray.clone();
             cv::cvtColor(left_gray, imLeft, cv::COLOR_GRAY2BGR); // for debug snapshots
 
-            // --- DEBUG: Log right image properties ---
+            // --- DEBUG: Log left image properties ---
             {
                 std::ostringstream log;
                 log << "[DEBUG] Left image received: "
@@ -311,14 +377,14 @@ int main(int argc, char **argv) {
             }
 
             // --- Check if images are valid ---
-            // Defensive debug image write: only save if not empty and has expected dimensions [FIX 3C]
+            // Defensive debug image write: only save if not empty and has expected dimensions 
             if (frame_counter % 10 == 0) {
-                if (!imLeft.empty() && imLeft.rows > 0 && imLeft.cols > 0) { // [FIX 3C]
+                if (!imLeft.empty() && imLeft.rows > 0 && imLeft.cols > 0) { 
                     std::ostringstream frame_left;
                     frame_left << "logs/debug_left_" << frame_counter << ".png";
                     cv::imwrite(frame_left.str(), imLeft);
                 }
-                if (!imRight.empty() && imRight.rows > 0 && imRight.cols > 0) { // [FIX 3C]
+                if (!imRight.empty() && imRight.rows > 0 && imRight.cols > 0) { 
                     std::ostringstream frame_right;
                     frame_right << "logs/debug_right_" << frame_counter << ".png";
                     cv::imwrite(frame_right.str(), imRight);
@@ -327,12 +393,12 @@ int main(int argc, char **argv) {
 
             // Defensive image display (imshow)
             // Only display if not empty and correct type
-            if (!imLeftGray.empty() && imLeftGray.type() == CV_8UC1) {
-                cv::imshow("Stereo Left", imLeftGray);
-            }
-            if (!imRightGray.empty() && imRightGray.type() == CV_8UC1) {
-                cv::imshow("Stereo Right", imRightGray);
-            }
+            // if (!imLeftGray.empty() && imLeftGray.type() == CV_8UC1) {
+            //     cv::imshow("Stereo Left", imLeftGray);
+            // }
+            // if (!imRightGray.empty() && imRightGray.type() == CV_8UC1) {
+            //     cv::imshow("Stereo Right", imRightGray);
+            // }
             cv::waitKey(1);
 
             // --- Log frame count and timestamp ---
@@ -403,6 +469,127 @@ int main(int argc, char **argv) {
                 try {
                     Tcw = SLAM.TrackStereo(left_input, right_input, timestamp);
                     log_event("[DEBUG] SLAM.TrackStereo completed.");
+
+                    if (!video_writer_initialized) {
+                        bool is_color = !imLeft.empty();
+                        cv::Size sz = is_color ? imLeft.size() : imLeftGray.size();
+                        int fourcc = cv::VideoWriter::fourcc('M','J','P','G');
+
+                        std::ostringstream omsg;
+                        omsg << "[DEBUG] Initialising VideoWriter: path=" << video_file
+                             << ", size=" << sz.width << "x" << sz.height
+                             << ", color=" << (is_color ? "true" : "false");
+                        log_event(omsg.str());
+
+                        slam_video_writer.open(video_file, fourcc, 30.0, sz, is_color);
+                        if (!slam_video_writer.isOpened()) {
+                            log_event("[ERROR] Failed to open video writer: " + video_file);
+                        } else {
+                            log_event("[INFO] Video writer opened: " + video_file);
+                            video_writer_initialized = true;
+                        }
+                    }
+                    if (video_writer_initialized && slam_video_writer.isOpened()) {
+
+                        log_event("[DEBUG] Writing frame with SLAM visualization to video file");
+                        
+                        // Create enhanced frame with SLAM features
+                        cv::Mat enhanced_frame;
+                        
+                        // Start with the color left image (or convert grayscale to color)
+                        if (!imLeft.empty()) {
+                            enhanced_frame = imLeft.clone();
+                        } else if (!imLeftGray.empty()) {
+                            cv::cvtColor(imLeftGray, enhanced_frame, cv::COLOR_GRAY2BGR);
+                        } else {
+                            log_event("[WARN] No valid image for video recording");
+                            continue;
+                        }
+
+                        // Get the tracker from SLAM system
+                        auto tracker = SLAM.GetTracker();
+                        
+                        // Add SLAM feature visualization
+                        if (tracker && !tracker->mCurrentFrame.mvKeys.empty()) {
+                            // Get current frame features
+                            std::vector<cv::KeyPoint> current_keypoints = tracker->mCurrentFrame.mvKeys;
+                            std::vector<cv::Point2f> tracked_points;
+                            
+                            // Extract tracked map points
+                            for (size_t i = 0; i < tracker->mCurrentFrame.mvpMapPoints.size(); i++) {
+                                if (tracker->mCurrentFrame.mvpMapPoints[i] && 
+                                    !tracker->mCurrentFrame.mvbOutlier[i]) {
+                                    tracked_points.push_back(current_keypoints[i].pt);
+                                }
+                            }
+                            
+                            // Draw all detected features (gray circles)
+                            for (const auto& kp : current_keypoints) {
+                                cv::circle(enhanced_frame, kp.pt, 3, cv::Scalar(128, 128, 128), 1);
+                            }
+                            
+                            // Draw tracked features (green circles)
+                            for (const auto& pt : tracked_points) {
+                                cv::circle(enhanced_frame, pt, 4, cv::Scalar(0, 255, 0), 2);
+                            }
+                            
+                            // Add tracking state text overlay
+                            std::string state_text;
+                            switch (tracker->mState) {
+                                case ORB_SLAM2::Tracking::SYSTEM_NOT_READY:
+                                    state_text = "NOT READY";
+                                    break;
+                                case ORB_SLAM2::Tracking::NO_IMAGES_YET:
+                                    state_text = "NO IMAGES";
+                                    break;
+                                case ORB_SLAM2::Tracking::NOT_INITIALIZED:
+                                    state_text = "INITIALIZING";
+                                    break;
+                                case ORB_SLAM2::Tracking::OK:
+                                    state_text = "TRACKING OK";
+                                    break;
+                                case ORB_SLAM2::Tracking::LOST:
+                                    state_text = "LOST";
+                                    break;
+                                default:
+                                    state_text = "UNKNOWN";
+                            }
+                            
+                            // Add text overlays
+                            cv::putText(enhanced_frame, state_text, cv::Point(10, 30), 
+                                       cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 255, 255), 2);
+                            
+                            std::ostringstream info_text;
+                            info_text << "Frame: " << frame_counter 
+                                     << " | Features: " << current_keypoints.size()
+                                     << " | Tracked: " << tracked_points.size();
+                            cv::putText(enhanced_frame, info_text.str(), cv::Point(10, 60), 
+                                       cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 255, 255), 1);
+                            
+                            // Add pose information if available
+                            if (!Tcw.empty() && Tcw.rows == 4 && Tcw.cols == 4) {
+                                cv::Mat Twc = Tcw.inv();
+                                if (Twc.type() == CV_32F) {
+                                    float x = Twc.at<float>(0, 3);
+                                    float y = Twc.at<float>(1, 3);
+                                    float z = Twc.at<float>(2, 3);
+                                    
+                                    std::ostringstream pose_text;
+                                    pose_text << "Pos: (" << std::fixed << std::setprecision(2) 
+                                             << x << ", " << y << ", " << z << ")";
+                                    cv::putText(enhanced_frame, pose_text.str(), cv::Point(10, 90), 
+                                               cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 255, 0), 1);
+                                }
+                            }
+                            
+                            log_event("[DEBUG] Added feature visualization: " + 
+                                     std::to_string(current_keypoints.size()) + " features, " +
+                                     std::to_string(tracked_points.size()) + " tracked");
+                        }
+                        
+                        // Write the enhanced frame to video
+                        slam_video_writer.write(enhanced_frame);
+                    }
                 } catch (const std::exception& e) {
                     log_event(std::string("[FATAL] SLAM.TrackStereo threw std::exception: ") + e.what());
                     continue;
@@ -411,14 +598,24 @@ int main(int argc, char **argv) {
                     continue;
                 }
 
+                // Retrieve inlier count after successful tracking
+                inliers = get_feature_inliers(SLAM);
+                log_event("[SLAM] Inliers after TrackStereo: " + std::to_string(inliers));
+
+                if (inliers < MIN_INLIERS_THRESHOLD) {
+                    log_event("[WARN] Too few inliers tracked. Performing full reinitialization.");
+                    perform_full_reinit(SLAM, frame_counter, slam_ready_flag_written,
+                                      first_frame, identity_frame_count, flag_dir);
+                    continue;
+                }
+
                 // --- Handling SLAM results ---
-                static bool first_frame = true;
                 if (first_frame) {
                     prev_Tcw = Tcw.clone();
                     first_frame = false;
                 }
 
-                // Calculate covariance based on pose difference and inliers
+                // Calculate covariance based on pose difference
                 covariance = get_pose_covariance_with_inliers(Tcw, prev_Tcw);  // Calculate covariance
 
                 // Always check for empty and correct type before accessing elements
@@ -444,7 +641,6 @@ int main(int argc, char **argv) {
 
                 cv::Mat Tcw_copy = Tcw.clone();  // Defensive copy of the pose matrix
 
-                static int identity_frame_count = 0;  // Use static so it persists between frames
 
                 if (Tcw_copy.empty() || Tcw_copy.rows != 4 || Tcw_copy.cols != 4) {
                     log_event("[WARN] Tcw_copy invalid; skipping identity check.");
@@ -464,18 +660,21 @@ int main(int argc, char **argv) {
                             // Still within grace period, just log and continue
                             log_event("[INFO] Tcw appears to be an identity matrix — no motion detected. Count: " + std::to_string(identity_frame_count));
                         } else {
-                            // Grace period exceeded, reset SLAM if no motion detected
-                            log_event("[ERROR] Too many frames with no motion, resetting SLAM.");
-                            SLAM.Reset();
-                            identity_frame_count = 0;  // Reset the counter after reset
+                            // Grace period exceeded, perform a full reinitialization
+                            log_event("[ERROR] Too many frames with no motion, reinitializing SLAM.");
+                            perform_full_reinit(SLAM, frame_counter, slam_ready_flag_written,
+                                              first_frame, identity_frame_count, flag_dir);
+                            continue;
                         }
                     }
 
                     if (identity_frame_count >= MAX_GRACE_FRAMES) {
                         log_event("[INFO] Grace period over. Checking for motion.");
                         if (frobenius_norm < 1e-3) {
-                            log_event("[WARN] No motion detected. Resetting SLAM.");
-                            SLAM.Reset();
+                            log_event("[WARN] No motion detected. Performing full reinitialization.");
+                            perform_full_reinit(SLAM, frame_counter, slam_ready_flag_written,
+                                              first_frame, identity_frame_count, flag_dir);
+                            continue;
                         } else {
                             log_event("[INFO] Motion detected. Continuing normal operation.");
                         }
@@ -642,15 +841,16 @@ int main(int argc, char **argv) {
                 // Twc.at<float>(0, 3) = 0.05f * fake_motion_counter;  // Move along X
 
                 // Send Twc instead of Tcw if tracking is good
-                // if (pose_sock >= 0 && track_state >= ORB_SLAM2::Tracking::OK && cv::checkRange(Twc)) {
+                int track_state = SLAM.GetTrackingState();
                 log_event("[CHECK] About to test pose_sock condition in main().");
 
                 std::ostringstream live_sock_check;
-                live_sock_check << "[CHECK] At pose send time, pose_sock=" << pose_sock;
+                live_sock_check << "[CHECK] At pose send time, pose_sock=" << pose_sock
+                                 << ", track_state=" << track_state;
                 log_event(live_sock_check.str());
 
-                if (true) {
-                    log_event("[DEBUG] Entering pose send block unconditionally for testing.");
+                if (pose_sock >= 0 && track_state >= ORB_SLAM2::Tracking::OK && cv::checkRange(Twc)) {
+                    log_event("[DEBUG] Entering pose send block.");
 
                     // Diagnostic: Confirm matrix validity
                     std::ostringstream status;
@@ -666,6 +866,11 @@ int main(int argc, char **argv) {
 
                     cv::Mat Twc_send;
                     Twc.convertTo(Twc_send, CV_32F); // ensure float32
+                    std::vector<float> quat{0.f, 0.f, 0.f, 1.f};
+                    if (!Twc_send.empty() && Twc_send.rows >= 3 && Twc_send.cols >= 3) {
+                        cv::Mat Rwc = Twc_send.rowRange(0,3).colRange(0,3);
+                        quat = ORB_SLAM2::Converter::toQuaternion(Rwc);
+                    }
 
                     if (send_pose(pose_sock, Twc_send)) {
                         // --- Send covariance as a single float ---
@@ -681,17 +886,40 @@ int main(int argc, char **argv) {
                         }
 
                         // --- Send inlier count as an int ---
-                        int inlier_count = get_feature_inliers(SLAM);
-                        int inlier_sent = send(pose_sock, reinterpret_cast<char*>(&inlier_count), sizeof(int), 0);
+                        int inlier_sent = send(pose_sock, reinterpret_cast<char*>(&inliers), sizeof(int), 0);
                         if (inlier_sent != sizeof(int)) {
                             log_event("[ERROR] Failed to send inlier count.");
                         } else {
-                            log_event("[DEBUG] Inlier count sent to Python receiver: " + std::to_string(inlier_count));
+                            log_event("[DEBUG] Inlier count sent to Python receiver: " + std::to_string(inliers));
                         }
                         log_event("Pose (Twc) sent to Python receiver.");
+
+                        // Record metrics for this frame
+                        int tracking_state = -1;
+                        auto tracker_metrics = SLAM.GetTracker();
+                        if (tracker_metrics) tracking_state = tracker_metrics->mState;
+                        if (metrics_stream.is_open()) {
+                            double relative_time = timestamp - server_start_time;
+                            float x = 0.0f, y = 0.0f, z = 0.0f;
+                            if (!Twc_send.empty() && Twc_send.rows >= 3 && Twc_send.cols >= 4) {
+                                x = Twc_send.at<float>(0, 3);
+                                y = Twc_send.at<float>(1, 3);
+                                z = Twc_send.at<float>(2, 3);
+                            }
+                            int keyframes = SLAM.KeyFramesInMap();
+                            int map_points = SLAM.MapPointsInMap();
+                            metrics_stream << std::fixed << std::setprecision(6)
+                                           << frame_counter << ',' << total_frame_counter << ',' << relative_time << ','
+                                           << tracking_state << ',' << inliers << ','
+                                           << covariance_value << ',' << keyframes << ',' << map_points << ','
+                                           << x << ',' << y << ',' << z << ','
+                                           << quat[0] << ',' << quat[1] << ',' << quat[2] << ',' << quat[3] << '\n';
+                        }
                     } else {
                         log_event("[WARN] send_pose() returned false.");
                     }
+                } else {
+                    log_event("[DEBUG] Pose send conditions not met.");
                 }
 
                 } else {
@@ -699,17 +927,117 @@ int main(int argc, char **argv) {
                 }
 
             frame_counter++;
+            total_frame_counter++;  // Add this line
+
+        // Add this inside your main loop, after successful SLAM processing:
+        if (total_frame_counter % 50 == 0 && total_frame_counter > 0) {
+            log_event("[DEBUG] Periodic save at total frame " + std::to_string(total_frame_counter) + 
+                      " (session frame " + std::to_string(frame_counter) + ")");
+            try {
+                std::string periodic_traj = join_path(log_dir, "CameraTrajectory_periodic.txt");
+                SLAM.SaveTrajectoryTUM(periodic_traj);
+                log_event("[DEBUG] Periodic trajectory saved");
+            } catch (const std::exception& e) {
+                log_event("[ERROR] Periodic save failed: " + std::string(e.what()));
+            }
         }
+    }
 
     // --- Cleanup and exit ---
     log_event("[DEBUG] Closing sockets and cleaning up...");
     slam_server::cleanup_resources(sock, server_fd, pose_sock);
     if (pose_log_stream.is_open()) pose_log_stream.close();
+    if (metrics_stream.is_open()) metrics_stream.close();
     log_event("[DEBUG] Sockets closed. SLAM server shutting down.");
-    SLAM.Shutdown();
 
-    SLAM.SaveTrajectoryTUM(join_path(log_dir, "CameraTrajectory.txt"));
-    SLAM.SaveKeyFrameTrajectoryTUM(join_path(log_dir, "KeyFrameTrajectory.txt"));
+    if (slam_video_writer.isOpened()) {
+        log_event("[DEBUG] Releasing video writer");
+        slam_video_writer.release();
+    }
+
+    // Quick check - if frame_counter is very low, probably no useful data
+    if (frame_counter < 10) {
+        log_event("[WARN] Very few frames processed (" + std::to_string(frame_counter) + 
+                 ") - skipping trajectory save");
+    } else {
+        log_event("[DEBUG] Attempting to save trajectory files...");
+        
+        try {
+            // Save camera trajectory (this works)
+            std::string traj_file = join_path(log_dir, "CameraTrajectory.txt");
+            log_event("[DEBUG] Saving trajectory to: " + traj_file);
+            SLAM.SaveTrajectoryTUM(traj_file);
+            log_event("[DEBUG] CameraTrajectory.txt saved successfully");
+            
+            // Check if trajectory file has content before proceeding
+            if (std::ifstream(traj_file).good()) {
+                std::ifstream check_file(traj_file);
+                std::string first_line;
+                std::getline(check_file, first_line);
+                
+                if (first_line.empty()) {
+                    log_event("[WARN] CameraTrajectory.txt is empty - skipping other saves");
+                } else {
+                    log_event("[DEBUG] CameraTrajectory.txt verified with data");
+                    
+                    // Try keyframe save with caution
+                    std::string keyframe_file = join_path(log_dir, "KeyFrameTrajectory.txt");
+                    log_event("[DEBUG] Attempting to save keyframes to: " + keyframe_file);
+                    
+                    try {
+                        // Get tracker to check if keyframes exist
+                        auto tracker = SLAM.GetTracker();
+                        if (tracker) {
+                            int num_keyframes = tracker->GetNumLocalKeyFrames();
+                            log_event("[DEBUG] Number of local keyframes: " + std::to_string(num_keyframes));
+                            
+                            if (num_keyframes > 0) {
+                                SLAM.SaveKeyFrameTrajectoryTUM(keyframe_file);
+                                log_event("[DEBUG] KeyFrameTrajectory.txt saved successfully");
+                            } else {
+                                log_event("[WARN] No keyframes available - creating empty file");
+                                std::ofstream empty_kf(keyframe_file);
+                                empty_kf << "# No keyframes generated during this session\n";
+                                empty_kf.close();
+                            }
+                        } else {
+                            log_event("[WARN] Tracker is null - skipping keyframe save");
+                        }
+                    } catch (const std::exception& e) {
+                        log_event("[ERROR] Exception during keyframe save: " + std::string(e.what()));
+                    }
+                    
+                    // Try map points save
+                    std::string mappoints_file = join_path(log_dir, "MapPoints.txt");
+                    log_event("[DEBUG] Attempting to save map points to: " + mappoints_file);
+                    
+                    try {
+                        SLAM.SaveMapPoints(mappoints_file);
+                        log_event("[DEBUG] MapPoints.txt saved successfully");
+                    } catch (const std::exception& e) {
+                        log_event("[ERROR] Exception during map points save: " + std::string(e.what()));
+                        // Create empty file as fallback
+                        std::ofstream empty_mp(mappoints_file);
+                        empty_mp << "# No map points available during this session\n";
+                        empty_mp.close();
+                    }
+                }
+            } else {
+                log_event("[ERROR] CameraTrajectory.txt was NOT created");
+            }
+            
+        } catch (const std::exception& e) {
+            log_event("[ERROR] Exception during trajectory save: " + std::string(e.what()));
+        } catch (...) {
+            log_event("[ERROR] Unknown exception during trajectory save");
+        }
+    }
+    std::ofstream done_flag(join_path(flag_dir, "slam_done.flag"));
+    done_flag << "DONE" << std::endl;
+    done_flag.close();
+
+    log_event("[DEBUG] Shutting down SLAM system...");
+    SLAM.Shutdown();
 
     return 0;
 }

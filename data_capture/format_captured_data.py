@@ -1,3 +1,5 @@
+"""Format captured AirSim data into ORB-SLAM compatible dataset."""
+
 import os
 import shutil
 

@@ -18,3 +18,4 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             break
         floats = struct.unpack('<12f', data)
         print("Received pose:", floats)
+        

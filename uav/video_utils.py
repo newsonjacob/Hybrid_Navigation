@@ -1,7 +1,12 @@
+"""Utilities for asynchronous video encoding."""
+
 from threading import Thread
 import cv2
 
+
 def start_video_writer_thread(frame_queue, out_writer, exit_flag):
+    """Write frames from ``frame_queue`` to ``out_writer`` in a thread."""
+
     def video_worker():
         while not exit_flag.is_set() or not frame_queue.empty():
             frame = frame_queue.get()

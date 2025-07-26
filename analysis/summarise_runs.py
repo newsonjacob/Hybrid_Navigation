@@ -1,3 +1,5 @@
+"""Helper functions for summarising multiple run logs."""
+
 import csv
 import math
 from typing import Tuple

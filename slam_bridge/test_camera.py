@@ -25,3 +25,4 @@ def test_camera(camera_names=["front_left", "front_right"], image_type=airsim.Im
 if __name__ == "__main__":
     # Try different camera names as needed
     test_camera(camera_names=["front_left", "front_right"])
+    

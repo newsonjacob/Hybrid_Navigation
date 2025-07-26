@@ -9,7 +9,7 @@
 
 namespace slam_server {
 
-const char* POSE_RECEIVER_IP = getenv("POSE_RECEIVER_IP") ? getenv("POSE_RECEIVER_IP") : "192.168.1.102";
+const char* POSE_RECEIVER_IP = getenv("POSE_RECEIVER_IP") ? getenv("POSE_RECEIVER_IP") : "192.168.1.101";
 const int POSE_RECEIVER_PORT = getenv("POSE_RECEIVER_PORT") ? atoi(getenv("POSE_RECEIVER_PORT")) : 6001;
 
 int create_server_socket(int port) {

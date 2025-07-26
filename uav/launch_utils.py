@@ -1,3 +1,5 @@
+"""Helper functions for launching external processes and waiting on events."""
+
 import logging
 import subprocess
 import socket
@@ -6,6 +8,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
+from uav.paths import STOP_FLAG_PATH
 
 try:
     import pygetwindow as gw
@@ -14,7 +17,7 @@ except Exception:  # pragma: no cover - platform without GUI
 
 # Default stop flag used to cancel wait operations. Tests or callers may
 # monkeypatch this path.
-STOP_FLAG: Path = Path("flags/stop.flag")
+STOP_FLAG: Path = STOP_FLAG_PATH
 
 __all__ = [
     "wait_for_window",
@@ -22,7 +25,7 @@ __all__ = [
     "wait_for_port",
     "start_streamer",
     "launch_slam_backend",
-    "record_slam_video",
+    "resize_window",
     "STOP_FLAG",
 ]
 
@@ -134,34 +137,18 @@ def launch_slam_backend(receiver_host: str, receiver_port: int) -> subprocess.Po
     return proc
 
 
-def record_slam_video(window_substring: str = "ORB-SLAM2", duration: int = 60) -> Tuple[Optional[subprocess.Popen], Optional[str]]:
-    """Record the SLAM visualization window using ``ffmpeg``."""
+def resize_window(title_substring: str, width: int, height: int) -> bool:
+    """Resize the first window containing ``title_substring``."""
     logger = logging.getLogger(__name__)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    video_path = f"analysis/slam_output_{timestamp}.mp4"
+    if not gw:
+        logger.debug("pygetwindow not available; cannot resize window")
+        return False
     try:
-        time.sleep(1)
-        window_title = None
-        titles = gw.getAllTitles() if gw else []
-        for title in titles:
-            if window_substring in title:
-                window_title = title
-                break
-        if not window_title:
-            raise RuntimeError(f"Could not find window with title containing '{window_substring}'.")
-        ffmpeg_cmd = [
-            "ffmpeg",
-            "-hide_banner", "-loglevel", "error",
-            "-y",
-            "-f", "gdigrab",
-            "-framerate", "30",
-            "-i", f"title={window_title}",
-            "-t", str(duration),
-            video_path,
-        ]
-        proc = subprocess.Popen(ffmpeg_cmd)
-        logger.info("Started screen recording to %s", video_path)
-        return proc, video_path
-    except Exception as e:  # pragma: no cover - depends on system
-        logger.warning("Screen recording failed to start: %s", e)
-        return None, None
+        for win in gw.getAllWindows():
+            if title_substring.lower() in win.title.lower():
+                win.resizeTo(width, height)
+                logger.info("Resized window '%s' to %dx%d", win.title, width, height)
+                return True
+    except Exception as e:  # pragma: no cover - depends on OS
+        logger.warning("Failed to resize window '%s': %s", title_substring, e)
+    return False

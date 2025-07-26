@@ -1,12 +1,29 @@
+"""Overlay utilities for drawing navigation info on frames."""
+
 import cv2
 import numpy as np
 
-def draw_overlay(vis_img, frame_count, speed, state, sim_time,
-                 smooth_L, smooth_C, smooth_R,
-                 delta_L, delta_C, delta_R,
-                 left_count, center_count, right_count,
-                 good_old, flow_vectors,
-                 in_grace=False):
+
+def draw_overlay(
+    vis_img,
+    frame_count,
+    speed,
+    state,
+    sim_time,
+    smooth_L,
+    smooth_C,
+    smooth_R,
+    delta_L,
+    delta_C,
+    delta_R,
+    left_count,
+    center_count,
+    right_count,
+    good_old,
+    flow_vectors,
+    in_grace=False,
+):
+    """Draw tracked features and text overlays onto ``vis_img``."""
     img = vis_img.copy()
     h, w = img.shape[:2]
     third = w // 3
@@ -55,7 +72,8 @@ def draw_overlay(vis_img, frame_count, speed, state, sim_time,
     # Status overlay text (draw after blending)
     cv2.putText(img, f"Frame: {frame_count}", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
     cv2.putText(img, f"Speed: {speed:.2f}", (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-    cv2.putText(img, f"State: {state}", (10, 85), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    state_str = state.name if hasattr(state, "name") else str(state)
+    cv2.putText(img, f"State: {state_str}", (10, 85), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
     cv2.putText(img, f"Sim Time: {sim_time:.2f}s", (10, 115), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
     if in_grace:

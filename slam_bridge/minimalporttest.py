@@ -8,3 +8,4 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     conn, addr = s.accept()
     print("Connected by", addr)
     conn.close()
+    

@@ -5,7 +5,10 @@ from collections import deque
 from queue import Queue
 from tests.conftest import airsim_stub
 
+from uav.navigation_core import NavigationInput
+
 from uav.navigation import Navigator
+from uav.navigation_state import NavigationState
 
 
 class DummyFuture:
@@ -61,12 +64,12 @@ def test_brake_updates_flags_and_calls():
     nav = Navigator(client)
     prev = nav.last_movement_time
     result = nav.brake()
-    assert result == 'brake'
+    assert result is NavigationState.BRAKE
     assert nav.braked is True
     assert nav.dodging is False
     assert nav.last_movement_time == prev
     name, args, kwargs, fut = client.calls[-1]
-    assert name == 'moveByVelocityAsync'
+    assert name == 'moveByVelocityZAsync'
     assert args == (0, 0, 0, 0.5)
     assert fut.join_called is False
 
@@ -76,7 +79,7 @@ def test_dodge_left_sets_flags_and_calls():
     nav = Navigator(client)
     prev = nav.last_movement_time
     result = nav.dodge(0, 0, 20)
-    assert result == 'dodge_None'
+    assert result in (NavigationState.DODGE_LEFT, NavigationState.DODGE_RIGHT)
     assert nav.braked is False
     assert nav.dodging is True
     assert nav.last_movement_time > prev
@@ -94,7 +97,7 @@ def test_ambiguous_dodge_forces_lower_flow_side():
     client = DummyClient()
     nav = Navigator(client)
     result = nav.dodge(10, 10.5, 11)
-    assert result == 'dodge_None'
+    assert result in (NavigationState.DODGE_LEFT, NavigationState.DODGE_RIGHT)
     client.moveByVelocityAsync.assert_called_once_with(0, 0, 0, 0.5)
     client.moveByVelocityBodyFrameAsync.assert_called_once()
     call = client.moveByVelocityBodyFrameAsync.call_args
@@ -106,7 +109,7 @@ def test_resume_forward_clears_flags_and_calls():
     nav = Navigator(client)
     prev = nav.last_movement_time
     result = nav.resume_forward()
-    assert result == 'resume'
+    assert result is NavigationState.RESUME
     assert nav.braked is False
     assert nav.dodging is False
     assert nav.last_movement_time > prev
@@ -123,7 +126,7 @@ def test_nudge_updates_time_and_calls():
     nav = Navigator(client)
     prev = nav.last_movement_time
     result = nav.nudge_forward()
-    assert result == 'nudge'
+    assert result is NavigationState.NUDGE
     assert nav.braked is False
     assert nav.dodging is False
     assert nav.last_movement_time > prev
@@ -138,7 +141,7 @@ def test_reinforce_updates_time_and_calls():
     nav = Navigator(client)
     prev = nav.last_movement_time
     result = nav.reinforce()
-    assert result == 'resume_reinforce'
+    assert result is NavigationState.RESUME_REINFORCE
     assert nav.braked is False
     assert nav.dodging is False
     assert nav.last_movement_time > prev
@@ -154,7 +157,7 @@ def test_dodge_settle_duration_short():
     nav = Navigator(client)
     before = time.time()
     nav.dodge(0, 0, 20)
-    assert nav.settling is False
+    assert not hasattr(nav, "settling")
 
 
 def test_resume_forward_not_called_during_grace():
@@ -209,32 +212,53 @@ def test_navigation_skips_actions_during_grace_after_blind_forward(monkeypatch):
     nav = Navigator(client)
     nav.blind_forward()
     frame_q = Queue()
-    params = {'state': [None]}
+    params = {'state': [NavigationState.NONE]}
+    nav_input = NavigationInput(
+        good_old=[],
+        flow_vectors=None,
+        flow_std=0.0,
+        smooth_L=2.0,
+        smooth_C=0.1,
+        smooth_R=2.0,
+        delta_L=0.0,
+        delta_C=0.0,
+        delta_R=0.0,
+        left_count=0,
+        center_count=0,
+        right_count=0,
+        frame_queue=frame_q,
+        vis_img=object(),
+        time_now=time.time(),
+        frame_count=1,
+        state_history=deque(maxlen=10),
+        pos_history=deque(maxlen=10),
+        param_refs=params,
+    )
     result = navigation_step(
         client,
         nav,
         None,
-        [],
-        None,
-        0.0,
-        2.0,
-        0.1,
-        2.0,
-        0.0,
-        0.0,
-        0,
-        0,
-        0,
-        0,
-        frame_q,
-        object(),
-        time.time(),
-        1,
-        None,
-        deque(maxlen=10),
-        deque(maxlen=10),
-        params,
+        nav_input,
     )
 
-    assert result[0] == "none"
+    assert result[0] is NavigationState.NONE
     assert client.moveByVelocityZAsync.call_count == 1
+
+def test_slam_to_goal_accepts_pose_matrix(monkeypatch):
+    client = DummyClient()
+    nav = Navigator(client)
+
+    from uav import config
+    monkeypatch.setattr(config, "SLAM_YAW_OFFSET", 10.0, raising=False)
+
+    pose = [
+        [0, -1, 0, 5.0],
+        [1, 0, 0, 3.0],
+        [0, 0, 1, -2.0],
+    ]
+    nav.slam_to_goal(pose, (6.0, 3.0, -2.0), max_speed=1.0)
+
+    name, args, kwargs, fut = client.calls[-1]
+    assert name == "moveByVelocityAsync"
+    assert abs(kwargs["yaw_mode"].yaw_or_rate - 100.0) < 1e-3
+

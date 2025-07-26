@@ -1,3 +1,5 @@
+"""SLAM initialization maneuvers for AirSim flights."""
+
 import airsim
 import time
 import math
@@ -6,9 +8,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 def run_slam_bootstrap(client, duration=8.0, vehicle_name="UAV"):
-    """
-    Perform rich camera motion to help SLAM initialize.
-    Includes forward motion, lateral zigzag, and yaw rotations.
+    """Perform a motion sequence to help SLAM converge.
+
+    Parameters
+    ----------
+    client : airsim.MultirotorClient
+        AirSim client used to send velocity commands.
+    duration : float, optional
+        Duration of the bootstrap sequence in seconds.
+    vehicle_name : str, optional
+        Name of the vehicle to control.
     """
     logger.info("[SLAM_BOOT] Starting SLAM bootstrap motion...")
 
@@ -45,7 +54,11 @@ def run_slam_bootstrap(client, duration=8.0, vehicle_name="UAV"):
 
         time.sleep(0.1)
 
-    # Stop the drone at the end
+    # Stop the drone at the end and ensure it faces forward
     client.moveByVelocityAsync(0, 0, 0, 1.0, vehicle_name=vehicle_name)
+    if hasattr(client, "rotateToYawAsync"):
+        client.rotateToYawAsync(0, vehicle_name=vehicle_name)
+    else:
+        logger.debug("rotateToYawAsync not available on client stub")
     logger.info("[SLAM_BOOT] Bootstrap motion complete.")
 

@@ -32,11 +32,20 @@ def launch_sim(args, settings_path, config: Optional[ConfigParser] = None):
     ue4_exe = args.ue4_path or config_exe or exe_paths[args.map]
     map_path = map_launch_args[args.map]
 
+    width = 1280
+    height = 720
+    if config is not None:
+        try:
+            width = config.getint("window", "airsim_width", fallback=width)
+            height = config.getint("window", "airsim_height", fallback=height)
+        except Exception:
+            pass
+
     sim_cmd = [
         ue4_exe,
         "-windowed",
-        "-ResX=1280",
-        "-ResY=720",
+        f"-ResX={width}",
+        f"-ResY={height}",
         f'-settings={settings_path}',
         map_path
     ]

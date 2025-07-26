@@ -26,7 +26,7 @@ This checklist tracks planned improvements and features for the `ReactiveOptical
 - [ ] Add `requirements.txt` with pinned dependencies
 - [ ] Add CLI options: `--vehicle_name`, `--no-launch`, `--save`
 - [ ] Move logs to `runs/` or `experiments/` for clarity
-- [ ] Add `analyze.py` for log post-processing and visualisation
+- [ ] Add `analyse.py` for log post-processing and visualisation
 - [ ] Create base classes: `PerceptionModule`, `NavigationStrategy`
 - [ ] Add GitHub topics and project description
 - [ ] Tag current repo state as v0.1.0 (working reactive version)
