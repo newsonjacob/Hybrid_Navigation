@@ -381,11 +381,18 @@ def cli_main() -> None:
     "Entry point used when executing this module as a script."
     timestamp = init_logging_and_flags()
 
-    for flag in [AIRSIM_READY_FLAG, 
-                 SLAM_READY_FLAG, 
-                 SLAM_FAILED_FLAG, 
-                 START_NAV_FLAG, 
-                 STOP_FLAG, 
+    args = parse_args()
+    if getattr(args, "reset", False):
+        logger.info("[RESET] Clearing flags directory %s", FLAGS_DIR)
+        for f in FLAGS_DIR.glob("*"):
+            if f.is_file():
+                f.unlink(missing_ok=True)
+
+    for flag in [AIRSIM_READY_FLAG,
+                 SLAM_READY_FLAG,
+                 SLAM_FAILED_FLAG,
+                 START_NAV_FLAG,
+                 STOP_FLAG,
                  FLAGS_DIR / "nav_mode.flag",
                  ]:
         flag.unlink(missing_ok=True)

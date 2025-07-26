@@ -47,4 +47,9 @@ def parse_args():
         default=".",
         help="Directory to store logs and analysis outputs",
     )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Remove all existing flag files before starting",
+    )
     return parser.parse_args()
