@@ -122,10 +122,6 @@ def detect_obstacle_with_hysteresis(
     setattr(navigator, "last_combination_flow", combination_flow)
     setattr(navigator, "last_minimum_flow", minimum_flow)
     
-    logger.debug(
-        f"[HYSTERESIS] Raw: {raw_detection}, Detection count: {detection_count}, "
-        f"Clear count: {clear_count}, Confirmed: {confirmed}"
-    )
     return confirmed, sudden_rise, center_blocked, combination_flow, minimum_flow
 
 
@@ -507,8 +503,6 @@ def navigation_step(
     combination_flow = False
     minimum_flow = False
 
-
-    logger.debug("Flow Magnitudes — L: %.2f, C: %.2f, R: %.2f", smooth_L, smooth_C, smooth_R)
 
     if handle_grace_period(time_now, navigator, frame_queue, vis_img, param_refs):
         return (

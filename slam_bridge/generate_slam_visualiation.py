@@ -1,10 +1,20 @@
+"""Generate an interactive 3D visualisation from ORB-SLAM trajectories."""
+
+import argparse
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-from pathlib import Path
 
 def load_trajectory(file_path, cols=(1, 2, 3)):
-    return pd.read_csv(file_path, sep=" ", header=None).iloc[:, list(cols)].values
+    """Return an ``Nx3`` array of positions from a trajectory file."""
+
+    return (
+        pd.read_csv(file_path, sep=" ", header=None)
+        .iloc[:, list(cols)]
+        .values
+    )
 
 def main():
     # File paths (adjust if needed)

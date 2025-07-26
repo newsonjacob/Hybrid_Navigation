@@ -164,8 +164,6 @@ def write_frame_output(
     if frame_count % 50 == 0:
         logger.info(f"Logged frame {frame_count} - Buffer size: {len(log_buffer)}")
     
-    logger.debug("Actual FPS: %.2f", actual_fps)
-    logger.debug("Features detected: %d", len(good_old))
     return loop_start
 
 

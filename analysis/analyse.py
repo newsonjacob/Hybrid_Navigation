@@ -79,12 +79,25 @@ except ImportError as e:
         sys.exit(1)
 
 # Import mesh utilities
-from .mesh_utils import (
-    add_environment_mesh_to_plot,
-    extract_mesh_data,
-    apply_mesh_corrections,
-)
-
+try:
+    from .mesh_utils import (
+        add_environment_mesh_to_plot,
+        extract_mesh_data,
+        apply_mesh_corrections,
+    )
+except ImportError as e:
+    logger.warning(f"Relative import for mesh_utils failed: {e}")
+    try:
+        from mesh_utils import (
+            add_environment_mesh_to_plot,
+            extract_mesh_data,
+            apply_mesh_corrections,
+        )
+        logger.info("[OK] Imported mesh_utils using direct import")
+    except ImportError as e:
+        logger.error(f"❌ Failed to import mesh_utils: {e}")
+        sys.exit(1)
+        
 
 # ========== Analysis Functions ========== #
 # These functions handle the main analysis logic.
@@ -436,7 +449,10 @@ def load_environment_mesh():
 def generate_3d_trajectory(path, df, output, time_col):
     """Generate 3D trajectory with environment mesh."""
     try:
-        from .visualise_flight import build_plot
+        try:
+            from .visualise_flight import build_plot
+        except ImportError:
+            from visualise_flight import build_plot
         
         # Fix AirSim Z-axis (negative Z = up → positive Z = up)
         corrected_path = path.copy()
