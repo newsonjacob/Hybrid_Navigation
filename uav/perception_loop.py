@@ -52,6 +52,7 @@ def start_perception_thread(ctx):
         nonlocal last_vis_img 
         local_client = airsim.MultirotorClient()
         local_client.confirmConnection()
+        logger.info("[PerceptionWorker] Connected to AirSim client")
         request = [
             ImageRequest(config.FLOW_CAMERA, ImageType.Scene, False, True),
             ImageRequest(config.STEREO_LEFT_CAMERA, ImageType.Scene, False, True),

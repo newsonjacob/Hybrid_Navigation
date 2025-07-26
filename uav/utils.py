@@ -19,6 +19,7 @@ def init_client(client):
         client.armDisarm(True)
         if hasattr(client, "confirmConnection"):
             client.confirmConnection()
+            print("[INFO] Connecting to AirSim from utils.py")
     except Exception as e:
         logger.warning("Client init failed: %s", e)
     return client

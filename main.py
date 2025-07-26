@@ -168,6 +168,7 @@ def main() -> None:
         try:
             client = airsim.MultirotorClient()
             client.confirmConnection()
+            print("[INFO] Connecting to AirSim from main.py")
             break
         except Exception as e:
             logger.info(f"Waiting for simulator to be ready... (attempt {attempt+1}/{max_attempts})")

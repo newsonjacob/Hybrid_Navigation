@@ -209,6 +209,7 @@ class ImageStreamer:
         self.connect()
         logger.info("[RUN] Connected to SLAM server")
         self.client.confirmConnection()
+        print("[INFO] Connecting to AirSim from stream_airsim_image.py")
         logger.info("[RUN] AirSim client connection confirmed")
         self.init_first_frame()
         logger.info("[RUN] First frame initialized")

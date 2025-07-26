@@ -70,6 +70,7 @@ class SlamReceiver:
                 logger.info("[SLAMReceiver] Connecting to AirSim client...")
                 self.airsim_client = airsim.MultirotorClient()
                 self.airsim_client.confirmConnection()
+                print("[INFO] Connecting to AirSim from slam_receiver.py")
             except Exception as e:
                 logger.error("[SLAMReceiver] Failed to connect to AirSim: %s", e)
                 return
