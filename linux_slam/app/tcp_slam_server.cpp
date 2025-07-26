@@ -15,7 +15,6 @@
 #include "server/network.hpp"
 #include "server/slam_runner.hpp"
 #include "Converter.h"
-#include <filesystem>
 #include <sys/stat.h>
 #include <cerrno>
 #include <arpa/inet.h>
@@ -45,7 +44,7 @@ using slam_server::recv_all;
 using slam_server::send_pose;
 
 // ------- Main function to set up the TCP server, receive images, and process them with ORB-SLAM2 -------
-// Simple cross-platform helpers
+// Utility helpers
 #ifdef _WIN32
 const char PATH_SEP = '\\';
 #else
@@ -73,10 +72,61 @@ static bool create_directories(const std::string& path) {
     return true;
 }
 
+struct ServerConfig {
+    std::string vocab;
+    std::string settings;
+    std::string log_dir{"logs"};
+    std::string flag_dir{"flags"};
+    std::string image_dir;
+    std::string video_file;
+};
+
 static std::string join_path(const std::string& a, const std::string& b) {
     if (a.empty()) return b;
     if (a.back() == PATH_SEP) return a + b;
     return a + PATH_SEP + b;
+}
+
+static ServerConfig parse_arguments(int argc, char** argv) {
+    ServerConfig cfg;
+    if (const char* e = getenv("SLAM_LOG_DIR")) cfg.log_dir = e;
+    if (const char* e = getenv("SLAM_FLAG_DIR")) cfg.flag_dir = e;
+    if (const char* e = getenv("SLAM_IMAGE_DIR")) cfg.image_dir = e;
+    if (const char* e = getenv("SLAM_VIDEO_FILE")) cfg.video_file = e;
+
+    std::vector<std::string> args;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        const std::string prefix = "--video-file=";
+        if (arg.rfind(prefix, 0) == 0) {
+            cfg.video_file = arg.substr(prefix.size());
+        } else {
+            args.push_back(arg);
+        }
+    }
+
+    if (args.size() < 2) {
+        std::cerr << "Usage: ./tcp_slam_server vocab settings [log_dir] [flag_dir] [image_dir] [--video-file=FILE]" << std::endl;
+        std::exit(1);
+    }
+    cfg.vocab = args[0];
+    cfg.settings = args[1];
+    if (args.size() >= 3) cfg.log_dir = args[2];
+    if (args.size() >= 4) cfg.flag_dir = args[3];
+    if (args.size() >= 5) cfg.image_dir = args[4];
+
+    if (cfg.image_dir.empty()) cfg.image_dir = join_path(cfg.log_dir, "images");
+    if (cfg.video_file.empty()) cfg.video_file = join_path(cfg.log_dir, "slam_feed.avi");
+
+    create_directories(cfg.log_dir);
+    create_directories(cfg.flag_dir);
+    create_directories(cfg.image_dir);
+    std::string video_dir = cfg.video_file.substr(0, cfg.video_file.find_last_of("/\\"));
+    if (!video_dir.empty()) {
+        create_directories(video_dir);
+    }
+
+    return cfg;
 }
 
 static void perform_full_reinit(ORB_SLAM2::System& SLAM,
@@ -97,42 +147,14 @@ static void perform_full_reinit(ORB_SLAM2::System& SLAM,
 
 int main(int argc, char **argv) {
 
-    std::string log_dir = getenv("SLAM_LOG_DIR") ? getenv("SLAM_LOG_DIR") : "logs";
-    std::string flag_dir = getenv("SLAM_FLAG_DIR") ? getenv("SLAM_FLAG_DIR") : "flags";
-    std::string image_dir = getenv("SLAM_IMAGE_DIR") ? getenv("SLAM_IMAGE_DIR") : join_path(log_dir, "images");
-    std::string video_file = getenv("SLAM_VIDEO_FILE") ? getenv("SLAM_VIDEO_FILE") : "";
+    ServerConfig cfg = parse_arguments(argc, argv);
 
-    std::vector<std::string> args;
-    for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
-        const std::string prefix = "--video-file=";
-        if (arg.rfind(prefix, 0) == 0) {
-            video_file = arg.substr(prefix.size());
-        } else {
-            args.push_back(arg);
-        }
-    }
+    std::string log_dir = cfg.log_dir;
+    std::string flag_dir = cfg.flag_dir;
+    std::string image_dir = cfg.image_dir;
+    std::string video_file = cfg.video_file;
 
-    if (args.size() < 2) {
-        cerr << "Usage: ./tcp_slam_server vocab settings [log_dir] [flag_dir] [image_dir] [--video-file=FILE]" << endl;
-        return 1;
-    }
-
-    if (args.size() >= 3) log_dir = args[2];
-    if (args.size() >= 4) flag_dir = args[3];
-    if (args.size() >= 5) image_dir = args[4];
-
-    if (video_file.empty())
-        video_file = join_path(log_dir, "slam_feed.avi");
-
-    create_directories(log_dir);
-    create_directories(flag_dir);
-    create_directories(image_dir);
-
-    std::string video_dir = video_file.substr(0, video_file.find_last_of("/\\"));
-    if (!video_dir.empty()) {
-        create_directories(video_dir);
-    }
+    // Create metrics CSV for runtime statistics
 
     // Create metrics CSV for runtime statistics
     std::string metrics_file = join_path(log_dir, "slam_metrics.csv");
@@ -163,9 +185,8 @@ int main(int argc, char **argv) {
     cv::VideoWriter slam_video_writer;
     bool video_writer_initialized = false;
 
-    // Get vocabulary and settings file paths from command line arguments
-    std::string vocab = args[0];
-    std::string settings = args[1];
+    std::string vocab = cfg.vocab;
+    std::string settings = cfg.settings;
 
     // Set log file path with timestamp if not provided
     const char* log_file_env = getenv("SLAM_LOG_FILE");
