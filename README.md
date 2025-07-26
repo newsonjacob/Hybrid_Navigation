@@ -153,6 +153,19 @@ pip install -e .
 pytest
 ```
 
+### linux_slam (ORB-SLAM2)
+
+The `linux_slam` directory contains the original ORB-SLAM2 implementation. Build
+the library using its helper script:
+
+```bash
+cd linux_slam
+./build.sh
+```
+
+See [`linux_slam/README.md`](linux_slam/README.md) for detailed steps. Building
+requires system packages like Pangolin and Eigen to be installed beforehand.
+
 ### Command Line Interface
 
 The `hybrid-nav` entry point exposes several options:
