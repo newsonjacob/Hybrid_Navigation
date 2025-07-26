@@ -44,7 +44,7 @@ def format_log_line(
         f"{left_count},{center_count},{right_count},"
         f"{brake_thres:.2f},{actual_fps:.2f},"
         f"{state_str},{collided},{obstacle_detected},{int(side_safe)},"
-        f"{pos.x_val:.2f},{pos.y_val:.2f},{pos.z_val:.2f},"
+        f"{pos.x_val:.2f},{pos.y_val:.2f},{-pos.z_val:.2f},"
         f"{yaw:.2f},{speed:.2f},"
         f"{time_now:.2f},{len(good_old)},"
         f"{simgetimage_s:.3f},{decode_s:.3f},{processing_s:.3f},{loop_elapsed:.3f},"

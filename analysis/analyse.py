@@ -138,10 +138,15 @@ def analyse_logs(log_file_path, output_dir):
             time_label = "Time"
 
         path = df[["pos_x", "pos_y", "pos_z"]].to_numpy(dtype=float)
+        logger.info(f"[OK] Extracted 3D path data with shape: {path.shape}")
+        logger.info(f"[DEBUG] Path data sample: {path[:5]}")  # Log first 5 rows for debugging
 
         # Generate separate 3D trajectory file
-        output = Path(output_dir)
-        generate_3d_trajectory(path, df, output, time_col)
+        if path.shape[0] > 0:
+            output = Path(output_dir)
+            generate_3d_trajectory(path, df, output, time_col)
+        else:
+            logger.warning("No trajectory data available for plotting.")
 
         # Basic summary statistics for testing environments
         stats = [
@@ -454,9 +459,8 @@ def generate_3d_trajectory(path, df, output, time_col):
         except ImportError:
             from visualise_flight import build_plot
         
-        # Fix AirSim Z-axis (negative Z = up → positive Z = up)
         corrected_path = path.copy()
-        corrected_path[:, 2] = -corrected_path[:, 2]
+        # corrected_path[:, 2] = -corrected_path[:, 2]
         
         # Create 3D plot
         fig3d = build_plot(corrected_path, [], np.array([0, 0, 0]), log=df, colour_by=None)

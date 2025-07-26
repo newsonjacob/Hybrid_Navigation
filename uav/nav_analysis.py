@@ -105,14 +105,14 @@ def finalise_files(ctx):
 
         generated_files = [Path(f) for f in files if f and os.path.exists(f)]
 
-        # Generate SLAM pose comparison plot when available
-        try:
-            from uav import slam_utils
-
-            slam_utils.generate_pose_comparison_plot()
-            logger.info("SLAM pose comparison plot generated")
-        except Exception as slam_error:
-            logger.info(f"SLAM plot generation skipped: {slam_error}")
+        # Generate SLAM pose comparison plot when available. SLAM mode only.
+        if log_csv.name.startswith("slam_log_"):
+            try:
+                from uav import slam_utils
+                slam_utils.generate_pose_comparison_plot()
+                logger.info("SLAM pose comparison plot generated")
+            except Exception as slam_error:
+                logger.info(f"SLAM plot generation skipped: {slam_error}")
 
         if generated_files:
             logger.info("Analysis complete! Generated files:")
