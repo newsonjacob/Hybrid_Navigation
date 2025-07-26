@@ -32,9 +32,11 @@ SLAM poses contain both position and orientation. When a pose matrix is passed t
 
 ## Installation
 
-Install the pinned dependencies and the package:
+Install the system dependency `libgl1` (needed by OpenCV) and the pinned
+Python packages:
 
 ```bash
+sudo apt-get update && sudo apt-get install -y libgl1
 pip install -r requirements.txt
 pip install -e .
 ```
@@ -64,8 +66,10 @@ pip install -e .
    cd ReactiveOptical_Flow
    ```
 
-2. Install required Python packages using the pinned versions:
+2. Install system and Python dependencies. `libgl1` is required by OpenCV and
+   NumPy is pinned below 1.27 for compatibility:
    ```bash
+   sudo apt-get update && sudo apt-get install -y libgl1
    pip install -r requirements.txt
    pip install -e .
    ```

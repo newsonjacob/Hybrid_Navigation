@@ -7,7 +7,7 @@ setup(
     packages=find_packages(exclude=['tests', 'flow_logs']),
     install_requires=[
         'opencv-python>=4.7,<4.8',
-        'numpy>=1.24,<1.25',
+        'numpy>=1.24,<1.27',
         'airsim>=1.8,<1.9',
         'msgpack-rpc-python>=0.4,<0.5',
         'msgpack>=1.0,<1.0.7',
