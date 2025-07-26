@@ -147,7 +147,7 @@ def analyse_logs(log_file_path, output_dir):
         stats = [
             {
                 "frames": len(df),
-                "collisions": int(df.get("collision", pd.Series(0)).sum()),
+                "collisions": int(df.get("collided", pd.Series(0)).sum()),
                 "distance": float(df.get("pos_x", pd.Series()).diff().abs().sum()),
                 "fps_avg": float(df.get("fps", pd.Series()).mean()),
                 "loop_avg": float(df.get("loop_s", pd.Series()).mean()),
@@ -212,10 +212,10 @@ def analyse_logs(log_file_path, output_dir):
                 line=dict(color='red')
             ), row=3, col=1, secondary_y=False)  # Primary y-axis
             
-        if time_col in df.columns and "memory_rss" in df.columns:
+        if time_col in df.columns and "memory_mb" in df.columns:
             fig.add_trace(go.Scatter(
                 x=df[time_col], 
-                y=df["memory_rss"] / (1024 * 1024),
+                y=df["memory_mb"],
                 name="Memory (MB)",
                 line=dict(color='purple')
             ), row=3, col=1, secondary_y=True)  # Secondary y-axis
@@ -229,7 +229,7 @@ def analyse_logs(log_file_path, output_dir):
 
         # Calculate CPU and memory statistics
         cpu_vals = df["cpu_percent"].dropna() if "cpu_percent" in df.columns else pd.Series(dtype=float)
-        memory_vals = df["memory_rss"].dropna() / (1024 * 1024) if "memory_rss" in df.columns else pd.Series(dtype=float)  # Convert to MB
+        memory_vals = df["memory_mb"].dropna() if "memory_mb" in df.columns else pd.Series(dtype=float)  # Convert to MB
 
         # Calculate flight duration
         flight_duration = 0

@@ -8,7 +8,6 @@ from pathlib import Path
 
 import uav.paths as paths
 from uav.analysis_helpers import (
-    _generate_visualisation,
     _generate_performance,
     _generate_report,
 )
@@ -81,7 +80,6 @@ def finalise_files(ctx):
 
         try:
             files = [
-                _generate_visualisation(log_csv, analysis_dir, timestamp),
                 _generate_performance(log_csv, analysis_dir, timestamp),
                 _generate_report(log_csv, analysis_dir, timestamp),
             ]

@@ -116,7 +116,7 @@ def write_frame_output(
     actual_fps = 1 / max(loop_elapsed, 1e-6)
     loop_start = time.time()
     cpu_percent = get_cpu_percent()
-    mem_rss = get_memory_info().rss
+    mem_mb = get_memory_info().rss / (1024 * 1024)
     fps_list.append(actual_fps)
     
     state_str_name = state_str.name if hasattr(state_str, "name") else str(state_str)
@@ -149,7 +149,7 @@ def write_frame_output(
         processing_s,
         loop_elapsed,
         cpu_percent,
-        mem_rss,
+        mem_mb,
         sudden_rise,
         center_blocked,
         combination_flow,
@@ -206,7 +206,7 @@ def handle_reset(client, ctx, frame_count):
             "brake_thres,fps,"
             "state,collided,obstacle,side_safe,"
             "pos_x,pos_y,pos_z,yaw,speed,"
-            "time,features,simgetimage_s,decode_s,processing_s,loop_s,cpu_percent,memory_rss,"
+            "time,features,simgetimage_s,decode_s,processing_s,loop_s,cpu_percent,memory_mb,"
             "sudden_rise,center_blocked,combination_flow,minimum_flow\n"
         )
     log_file = open(log_path, 'a')

@@ -29,7 +29,7 @@ def format_log_line(
     processing_s,
     loop_elapsed,
     cpu_percent,
-    mem_rss,
+    mem_mb,
     sudden_rise,
     center_blocked,
     combination_flow,
@@ -48,6 +48,6 @@ def format_log_line(
         f"{yaw:.2f},{speed:.2f},"
         f"{time_now:.2f},{len(good_old)},"
         f"{simgetimage_s:.3f},{decode_s:.3f},{processing_s:.3f},{loop_elapsed:.3f},"
-        f"{cpu_percent:.1f},{mem_rss},"
+        f"{cpu_percent:.1f},{mem_mb:.1f},"
         f"{int(sudden_rise)},{int(center_blocked)},{int(combination_flow)},{int(minimum_flow)}\n"
     )

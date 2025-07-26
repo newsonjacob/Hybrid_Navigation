@@ -116,7 +116,7 @@ def setup_environment(args, client, nav_mode="reactive"):
             "brake_thres,fps,"
             "state,collided,obstacle,side_safe,"
             "pos_x,pos_y,pos_z,yaw,speed,"
-            "time,features,simgetimage_s,decode_s,processing_s,loop_s,cpu_percent,memory_rss,"
+            "time,features,simgetimage_s,decode_s,processing_s,loop_s,cpu_percent,memory_mb,"
             "sudden_rise,center_blocked,combination_flow,minimum_flow\n"
         )
         retain_recent_logs(str(flow_dir))
