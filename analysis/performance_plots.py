@@ -46,7 +46,13 @@ def build_plot(df: pd.DataFrame) -> Any:
     import plotly.graph_objects as go
 
     cpu = df.get("cpu_percent", pd.Series(dtype=float))
-    mem = df.get("memory_rss", pd.Series(dtype=float)) / (1024 * 1024)
+
+    if "memory_rss" in df.columns:
+        mem = df["memory_rss"] / (1024 * 1024)
+    elif "memory_mb" in df.columns:
+        mem = df["memory_mb"]
+    else:
+        mem = pd.Series(dtype=float)
 
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     fig.add_trace(go.Scatter(x=x, y=cpu, name="CPU %"), secondary_y=False) 
