@@ -1,22 +1,50 @@
+"""Generate an interactive 3D visualisation from ORB-SLAM trajectories."""
+
+import argparse
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-from pathlib import Path
 
 def load_trajectory(file_path, cols=(1, 2, 3)):
-    return pd.read_csv(file_path, sep=" ", header=None).iloc[:, list(cols)].values
+    """Return an ``Nx3`` array of positions from a trajectory file."""
 
-def main():
-    # File paths (adjust if needed)
-    base_path = Path(r"h:\Documents\AirSimExperiments\Hybrid_Navigation\logs")  # or specify full path
+    return (
+        pd.read_csv(file_path, sep=" ", header=None)
+        .iloc[:, list(cols)]
+        .values
+    )
+
+def main(args=None):
+    """Entry point for the script."""
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "base_path",
+        nargs="?",
+        default="linux_slam",
+        help="Directory containing ORB-SLAM output files",
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        default=None,
+        help="Path for the generated HTML file",
+    )
+
+    opts = parser.parse_args(args)
+
+    base_path = Path(opts.base_path)
+    base_path = base_path.expanduser().resolve()
     camera_file = base_path / "CameraTrajectory.txt"
     keyframe_file = base_path / "KeyFrameTrajectory.txt"
     map_file = base_path / "MapPoints.txt"
 
     # Load and reorient axes: Z→X, X→Y, Y→Z
-    camera = load_trajectory(camera_file, cols=(2, 0, 1))
-    keyframe = load_trajectory(keyframe_file, cols=(2, 0, 1))
-    mappoints = load_trajectory(map_file, cols=(2, 0, 1))
+    camera = load_trajectory(camera_file, cols=(2, 0, 1)) if camera_file.exists() else np.empty((0, 3))
+    keyframe = load_trajectory(keyframe_file, cols=(2, 0, 1)) if keyframe_file.exists() else np.empty((0, 3))
+    mappoints = load_trajectory(map_file, cols=(2, 0, 1)) if map_file.exists() else np.empty((0, 3))
 
     # Invert Z (was Y) and Y (was X)
     camera[:, 1] *= -1
@@ -65,7 +93,9 @@ def main():
     )
 
     # Output file
-    output_file = base_path / "slam_trajectory_visualisation.html"
+    output_file = (
+        Path(opts.output) if opts.output else base_path / "slam_trajectory_visualisation.html"
+    )
     fig.write_html(str(output_file))
     print(f"Saved visualization to: {output_file}")
 

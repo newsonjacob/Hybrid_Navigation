@@ -3,6 +3,7 @@
 import logging
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import uav.paths as paths
@@ -84,8 +85,21 @@ def finalise_files(ctx):
                 _generate_performance(log_csv, analysis_dir, timestamp),
                 _generate_report(log_csv, analysis_dir, timestamp),
             ]
+            if log_csv.name.startswith("slam_log_"):
+                script = Path(__file__).resolve().parent.parent / "slam_bridge" / "generate_slam_visualisation.py"
+                output_html = analysis_dir / f"slam_trajectory_{timestamp}.html"
+                subprocess.run([
+                    sys.executable,
+                    str(script),
+                    str(Path("linux_slam")),
+                    "--output",
+                    str(output_html),
+                ], check=True)
+                files.append(str(output_html))
         except subprocess.CalledProcessError as proc_error:
-            logger.error(f"Analysis subprocess failed: {proc_error.stderr}")
+            msg = f"Analysis subprocess failed: {proc_error.stderr}"
+            logger.warning(msg)
+            logging.getLogger().warning(msg)
             files = []
         except Exception as analysis_error:
             logger.error(f"Analysis generation failed: {analysis_error}")

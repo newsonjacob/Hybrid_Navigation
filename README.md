@@ -15,6 +15,7 @@ This repository contains the implementation of a reactive obstacle avoidance sys
 - The pose comparison CSV now records the current navigation state
 - Visualises 3D flight paths with interactive HTML output
 - Automatically runs all analysis tools after each simulation and saves the reports
+- Automatically generates a 3D SLAM trajectory visualisation after SLAM runs
 - Compatible with a custom stereo camera setup (`oakd_camera`)
 - Stereo images are streamed in grayscale to reduce processing overhead
 - Works with auto-launched AirSim simulation
