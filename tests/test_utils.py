@@ -1,6 +1,6 @@
 import os
 import time
-from uav.utils import retain_recent_logs, should_flat_wall_dodge, retain_recent_views, retain_recent_files
+from uav.utils import retain_recent_files_config, should_flat_wall_dodge
 
 
 def test_retain_recent_logs_keeps_latest(tmp_path):
@@ -12,7 +12,8 @@ def test_retain_recent_logs_keeps_latest(tmp_path):
         p = log_dir / f"reactive_log_{ts}.csv"
         p.write_text("data")
 
-    retain_recent_logs(str(log_dir), keep=3)
+    cfg = {str(log_dir): [("reactive_log_*.csv", 3)]}
+    retain_recent_files_config(cfg)
     remaining = sorted(f.name for f in log_dir.iterdir())
     assert remaining == [
         f"reactive_log_20240101_00000{i}.csv" for i in range(3, 6)
@@ -21,7 +22,8 @@ def test_retain_recent_logs_keeps_latest(tmp_path):
 
 def test_retain_recent_logs_missing_dir(tmp_path):
     missing = tmp_path / "missing"
-    retain_recent_logs(str(missing), keep=3)
+    cfg = {str(missing): [("reactive_log_*.csv", 3)]}
+    retain_recent_files_config(cfg)
     assert not missing.exists()
 
 
@@ -47,14 +49,16 @@ def test_retain_recent_views_keeps_latest(tmp_path):
         mod_time = now - i
         os.utime(p, (mod_time, mod_time))
 
-    retain_recent_views(str(view_dir), keep=5)
+    cfg = {str(view_dir): [("flight_view_*.html", 5)]}
+    retain_recent_files_config(cfg)
     remaining = sorted(f.name for f in view_dir.iterdir())
     assert remaining == [f"flight_view_{i}.html" for i in range(5)]
 
 
 def test_retain_recent_views_missing_dir(tmp_path):
     missing = tmp_path / "missing"
-    retain_recent_views(str(missing), keep=5)
+    cfg = {str(missing): [("flight_view_*.html", 5)]}
+    retain_recent_files_config(cfg)
     assert not missing.exists()
 
 
@@ -69,13 +73,15 @@ def test_retain_recent_files_keeps_latest(tmp_path):
         mod_time = now - i
         os.utime(p, (mod_time, mod_time))
 
-    retain_recent_files(str(data_dir), "*.txt", keep=2)
+    cfg = {str(data_dir): [("*.txt", 2)]}
+    retain_recent_files_config(cfg)
     remaining = sorted(f.name for f in data_dir.iterdir())
     assert remaining == ["file_0.txt", "file_1.txt"]
 
 
 def test_retain_recent_files_missing_dir(tmp_path):
     missing = tmp_path / "none"
-    retain_recent_files(str(missing), "*.txt", keep=2)
+    cfg = {str(missing): [("*.txt", 2)]}
+    retain_recent_files_config(cfg)
     assert not missing.exists()
 
