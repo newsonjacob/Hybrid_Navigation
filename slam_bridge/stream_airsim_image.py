@@ -1,10 +1,9 @@
 import sys
-from pathlib import Path
-sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 import os
 import argparse
 import logging
+from uav.paths import FLAGS_DIR
 
 from datetime import datetime
 
@@ -12,7 +11,7 @@ import socket
 import struct
 import time
 
-from typing import List
+from typing import List, Union
 
 import airsim
 import numpy as np
@@ -51,7 +50,7 @@ class ImageStreamer:
         self.port = port
         self.mode = mode 
         self.retries = retries
-        self.sock: socket.socket | None = None
+        self.sock: Union[socket.socket, None] = None  # Fix | to Union
         self.client = airsim.MultirotorClient()
         self.frame_index = 0
 
@@ -210,6 +209,7 @@ class ImageStreamer:
         self.connect()
         logger.info("[RUN] Connected to SLAM server")
         self.client.confirmConnection()
+        print("[INFO] Connecting to AirSim from stream_airsim_image.py")
         logger.info("[RUN] AirSim client connection confirmed")
         self.init_first_frame()
         logger.info("[RUN] First frame initialized")
@@ -232,7 +232,7 @@ def parse_args() -> argparse.Namespace:
 # This will parse arguments, set up logging, and start the streamer
 def main() -> None:
     log_name = f"airsim_stream_{datetime.now():%Y%m%d_%H%M%S}.log"
-    Path("flags").mkdir(exist_ok=True)
+    # FLAGS_DIR is imported to ensure the directory exists
     args = parse_args()
     streamer = ImageStreamer(args.host, args.port, args.mode, args.retries)
     try:

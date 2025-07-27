@@ -10,28 +10,26 @@ import plotly.graph_objects as go
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from slam_bridge.slam_receiver import get_latest_pose
+from uav.logging_config import setup_logging
 
-# --- Global logger for this module ---
-logger = logging.getLogger("slam_plotter")
-logger.info("SLAM plotter script started.")
-
-# --- Optional pose-specific log file ---
-pose_log_dir = Path("logs")
-pose_log_dir.mkdir(exist_ok=True)
-pose_log_path = pose_log_dir / f"pose_log_{time.strftime('%Y%m%d_%H%M%S')}.txt"
-
-pose_logger = logging.getLogger("slam_plotter.pose_log")
-pose_logger.setLevel(logging.INFO)
-
-pose_handler = logging.FileHandler(pose_log_path, mode="a", encoding="utf-8")
-pose_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s: %(message)s"))
-
-pose_logger.addHandler(pose_handler)
-pose_logger.propagate = False  # Don't propagate to root
+# --- Loggers ---
+logger = logging.getLogger(__name__)
+pose_logger = logging.getLogger(f"{__name__}.pose_log")
 
 # --- Trajectory buffers ---
 x_vals, y_vals, z_vals = [], [], []
 pose_lock = threading.Lock()
+
+
+def _setup_pose_logger(timestamp: str) -> None:
+    pose_log_dir = Path("logs")
+    pose_log_dir.mkdir(exist_ok=True)
+    pose_log_path = pose_log_dir / f"pose_log_{timestamp}.txt"
+    handler = logging.FileHandler(pose_log_path, mode="a", encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s: %(message)s"))
+    pose_logger.addHandler(handler)
+    pose_logger.setLevel(logging.INFO)
+    pose_logger.propagate = False
 
 
 def plot_slam_trajectory():
@@ -81,3 +79,16 @@ def save_interactive_plot():
     )
     fig.write_html(str(plot_path))
     logger.info(f"Trajectory plot saved to: {plot_path}")
+
+
+def main() -> None:
+    """Configure logging and start trajectory collection."""
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    setup_logging(log_file=f"slam_plotter_{timestamp}.log")
+    _setup_pose_logger(timestamp)
+    logger.info("SLAM plotter script started.")
+    plot_slam_trajectory()
+
+
+if __name__ == "__main__":
+    main()

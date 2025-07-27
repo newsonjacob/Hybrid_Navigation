@@ -1,318 +1,131 @@
-# === Standard Library Imports ===
-import os
-import cv2
-import time
-import subprocess
-import numpy as np
+"""Main navigation loop responsible for moving the UAV."""
+
 import logging
-from datetime import datetime
-from queue import Queue
-from threading import Thread
-
-# === AirSim Imports ===
+import time
+import numpy as np
 import airsim
-try:
-    from airsim import ImageRequest, ImageType, LandedState
-except Exception:  # LandedState may not exist in stubbed environments
-    from airsim import ImageRequest, ImageType
-    LandedState = None
 
-# === Internal Module Imports ===
-from uav.overlay import draw_overlay
-from uav.navigation_rules import compute_thresholds
-from uav.video_utils import start_video_writer_thread
-from uav.logging_utils import format_log_line
-from uav.perception import OpticalFlowTracker, FlowHistory
-from uav.navigation import Navigator
-from uav.state_checks import in_grace_period
-from uav.scoring import compute_region_stats
-from uav.utils import (get_drone_state, retain_recent_logs, init_client)
-from uav.utils import retain_recent_files, retain_recent_views
-from uav import config
-from uav.logging_helpers import log_frame_data, write_video_frame, write_frame_output, handle_reset
-from uav.context import ParamRefs, NavContext
-from uav.perception_loop import perception_loop, start_perception_thread, process_perception_data
-from uav.navigation_core import detect_obstacle, determine_side_safety, handle_obstacle, navigation_step, apply_navigation_decision
-from uav.navigation_slam_boot import run_slam_bootstrap
-from uav.paths import STOP_FLAG_PATH
-from uav.slam_utils import (
-    is_slam_stable,
-    is_obstacle_ahead,
-    generate_pose_comparison_plot,
+import uav.config as uav_config
+from uav.logging_helpers import LoggingContext, ThreadManager
+from uav.nav_runtime import (
+    setup_environment,
+    check_startup_grace,
+    has_landed,
+    check_exit_conditions,
+    get_perception_data,
+    update_navigation_state,
+    log_and_record_frame,
+    ensure_stable_slam_pose,
+    handle_waypoint_progress,
+    SimulationProcess,
+    shutdown_threads,
+    close_logging,
+    shutdown_airsim,
+    cleanup,
 )
+from uav.navigation_core import (
+    detect_obstacle,
+    determine_side_safety,
+    handle_obstacle,
+)
+from uav.navigation_slam_boot import run_slam_bootstrap
+from slam_bridge.slam_receiver import get_latest_pose_matrix, get_pose_history
+from uav.slam_utils import COVARIANCE_THRESHOLD, MIN_INLIERS_THRESHOLD
+from uav.performance import get_cpu_percent, get_memory_info
+from uav.perception_loop import process_perception_data
+from uav.utils import get_drone_state
 
 logger = logging.getLogger("nav_loop")
-logger.warning("[TEST] __name__ = %s | handlers = %s", __name__, logger.handlers)
-
-# === Perception Processing ===
-
-def setup_environment(args, client):
-    """Initialize the navigation environment and return a context dict."""
-    from uav.interface import exit_flag
-    from uav.utils import retain_recent_logs
-    param_refs = ParamRefs()
-    logger.info("Available vehicles: %s", client.listVehicles())
-    init_client(client)
-    client.takeoffAsync().join(); client.moveToPositionAsync(0, 0, -2, 2).join()
-    feature_params = dict(maxCorners=150, qualityLevel=0.05, minDistance=5, blockSize=5)
-    lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
-    tracker, flow_history, navigator = OpticalFlowTracker(lk_params, feature_params), FlowHistory(), Navigator(client)
-    from collections import deque
-    state_history, pos_history = deque(maxlen=3), deque(maxlen=3)
-    start_time = time.time()
-    GOAL_X, MAX_SIM_DURATION = args.goal_x, args.max_duration
-    logger.info("Config:\n  Goal X: %sm\n  Max Duration: %ss", GOAL_X, MAX_SIM_DURATION)
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    os.makedirs("flow_logs", exist_ok=True)
-    log_file = open(f"flow_logs/full_log_{timestamp}.csv", 'w')
-    log_file.write(
-        "frame,flow_left,flow_center,flow_right,"
-        "delta_left,delta_center,delta_right,flow_std,"
-        "left_count,center_count,right_count,"
-        "brake_thres,dodge_thres,probe_req,fps,"
-        "state,collided,obstacle,side_safe,"
-        "pos_x,pos_y,pos_z,yaw,speed,"
-        "time,features,simgetimage_s,decode_s,processing_s,loop_s\n"
-    )
-    retain_recent_logs("flow_logs")
-    retain_recent_logs("logs")
-    retain_recent_files("analysis", "slam_traj_*.html", keep=5)
-    retain_recent_files("analysis", "slam_output_*.mp4", keep=5)
-    try: fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-    except AttributeError: fourcc = cv2.FOURCC(*'MJPG')
-    out = cv2.VideoWriter(config.VIDEO_OUTPUT, fourcc, config.VIDEO_FPS, config.VIDEO_SIZE)
-    frame_queue = Queue(maxsize=20)
-    video_thread = start_video_writer_thread(frame_queue, out, exit_flag)
-    ctx = NavContext(
-        exit_flag=exit_flag,
-        param_refs=param_refs,
-        tracker=tracker,
-        flow_history=flow_history,
-        navigator=navigator,
-        state_history=state_history,
-        pos_history=pos_history,
-        frame_queue=frame_queue,
-        video_thread=video_thread,
-        out=out,
-        log_file=log_file,
-        log_buffer=[],
-        timestamp=timestamp,
-        start_time=start_time,
-        fps_list=[],
-        fourcc=fourcc,
-    )
-    return ctx
-
-# === Helper Functions ===
-
-def check_startup_grace(ctx, time_now):
-    """Return True when startup grace period has elapsed."""
-    if ctx.startup_grace_over:
-        return True
-    if time_now - ctx.start_time < config.GRACE_PERIOD_SEC:
-        ctx.param_refs.state[0] = "startup_grace"
-        if not ctx.grace_logged:
-            logger.info(
-                "Startup grace period active — waiting to start perception and nav"
-            )
-            ctx.grace_logged = True
-        time.sleep(0.05)
-        return False
-    ctx.startup_grace_over = True
-    logger.info("Startup grace period complete — beginning full nav logic")
-    return True
 
 
-def get_perception_data(ctx):
-    """Retrieve the latest perception result or None."""
+def _resolve(cli_val, default_val):
+    """Return CLI override if provided, otherwise default."""
+    return default_val if cli_val is None else cli_val
+
+
+def _load_waypoints(config, default):
+    """Parse waypoint tuples from the config if available."""
+    if config is None or not hasattr(config, "items"):
+        return list(default)
     try:
-        return ctx.perception_queue.get(timeout=1.0)
+        items = config.items("waypoints")
     except Exception:
-        return None
+        return list(default)
 
+    waypoints = []
+    for _, value in items:
+        try:
+            parts = [float(v.strip()) for v in value.split(",")]
+            if len(parts) == 3:
+                waypoints.append(tuple(parts))
+        except Exception:
+            continue
+    return waypoints or list(default)
 
-def update_navigation_state(client, args, ctx, data, frame_count, time_now, max_flow_mag):
-    """Process perception data and decide the next navigation action."""
-    processed = process_perception_data(
-        client,
-        args,
-        data,
-        frame_count,
-        ctx.frame_queue,
-        ctx.flow_history,
-        ctx.navigator,
-        ctx.param_refs,
-        time_now,
-        max_flow_mag,
-    )
-    if processed is None:
-        return None
-    (
-        vis_img,
-        good_old,
-        flow_vectors,
-        flow_std,
-        simgetimage_s,
-        decode_s,
-        processing_s,
-        smooth_L,
-        smooth_C,
-        smooth_R,
-        delta_L,
-        delta_C,
-        delta_R,
-        probe_mag,
-        probe_count,
-        left_count,
-        center_count,
-        right_count,
-        in_grace,
-    ) = processed
-    prev_state = ctx.param_refs.state[0]
-    nav_decision = apply_navigation_decision(
-        client,
-        ctx.navigator,
-        ctx.flow_history,
-        good_old,
-        flow_vectors,
-        flow_std,
-        smooth_L,
-        smooth_C,
-        smooth_R,
-        delta_L,
-        delta_C,
-        delta_R,
-        probe_mag,
-        probe_count,
-        left_count,
-        center_count,
-        right_count,
-        ctx.frame_queue,
-        vis_img,
-        time_now,
-        frame_count,
-        prev_state,
-        ctx.state_history,
-        ctx.pos_history,
-        ctx.param_refs,
-    )
-    return processed, nav_decision
-
-
-def log_and_record_frame(
-    client,
-    ctx,
-    loop_start,
-    frame_duration,
-    processed,
-    nav_decision,
-    frame_count,
-    time_now,
-):
-    """Overlay telemetry, log, and queue video frames."""
-    (
-        vis_img,
-        good_old,
-        flow_vectors,
-        flow_std,
-        simgetimage_s,
-        decode_s,
-        processing_s,
-        smooth_L,
-        smooth_C,
-        smooth_R,
-        delta_L,
-        delta_C,
-        delta_R,
-        probe_mag,
-        probe_count,
-        left_count,
-        center_count,
-        right_count,
-        in_grace,
-    ) = processed
-    (
-        state_str,
-        obstacle_detected,
-        side_safe,
-        brake_thres,
-        dodge_thres,
-        probe_req,
-    ) = nav_decision
-    return write_frame_output(
-        client,
-        vis_img,
-        ctx.frame_queue,
-        loop_start,
-        frame_duration,
-        ctx.fps_list,
-        ctx.start_time,
-        smooth_L,
-        smooth_C,
-        smooth_R,
-        delta_L,
-        delta_C,
-        delta_R,
-        left_count,
-        center_count,
-        right_count,
-        good_old,
-        flow_vectors,
-        in_grace,
-        frame_count,
-        time_now,
-        ctx.param_refs,
-        ctx.log_file,
-        ctx.log_buffer,
-        state_str,
-        obstacle_detected,
-        side_safe,
-        brake_thres,
-        dodge_thres,
-        probe_req,
-        simgetimage_s,
-        decode_s,
-        processing_s,
-        flow_std,
-    )
 
 def navigation_loop(args, client, ctx):
-    """Main navigation loop processing perception results."""
-    exit_flag = ctx.exit_flag
-
-    max_flow_mag = config.MAX_FLOW_MAG
-    max_duration = args.max_duration
-    goal_x, goal_y = args.goal_x, config.GOAL_Y
+    """Run the reactive navigation cycle."""
+    max_flow_mag = uav_config.MAX_FLOW_MAG
     frame_count = 0
-    frame_duration = 1.0 / config.TARGET_FPS
+    frame_duration = 1.0 / uav_config.TARGET_FPS
+    max_duration = _resolve(args.max_duration, uav_config.MAX_SIM_DURATION)
+    goal_x = _resolve(args.goal_x, uav_config.GOAL_X)
+    goal_y = _resolve(args.goal_y, uav_config.GOAL_Y)
 
     logger.info("[NavLoop] Starting navigation loop with args: %s", args)
     loop_start = time.time()
-    try:
-        while not exit_flag.is_set():
-            if os.path.exists(STOP_FLAG_PATH):
-                logger.info("Stop flag detected. Landing and shutting down.")
-                exit_flag.set()
-                break
 
+    try:
+        while True:
             frame_count += 1
             time_now = time.time()
-
             if not check_startup_grace(ctx, time_now):
                 continue
-
             data = get_perception_data(ctx)
             if data is None:
                 continue
-
-            if time_now - ctx.start_time >= max_duration:
-                logger.info("Time limit reached — landing and stopping.")
+            if not check_exit_conditions(client, ctx, time_now, max_duration, goal_x, goal_y):
                 break
-
-            pos_goal, _, _ = get_drone_state(client)
-            if abs(pos_goal.x_val - goal_x) < 0.5 and abs(pos_goal.y_val - goal_y) < 0.5:
-                logger.info("Goal reached — landing.")
-                break
+            if getattr(ctx, "landing_future", None) is not None:
+                processed = process_perception_data(
+                    client,
+                    args,
+                    data,
+                    frame_count,
+                    ctx.frame_queue,
+                    ctx.flow_history,
+                    ctx.navigator,
+                    ctx.param_refs,
+                    time_now,
+                    max_flow_mag,
+                )
+                if processed is None:
+                    continue
+                nav_decision = (
+                    "landing",
+                    0,
+                    False,
+                    0.0,
+                    0.0,
+                    False,
+                    False,
+                    False,
+                    False,
+                )
+                loop_start = log_and_record_frame(
+                    client,
+                    ctx,
+                    loop_start,
+                    frame_duration,
+                    processed,
+                    nav_decision,
+                    frame_count,
+                    time_now,
+                )
+                if has_landed(client):
+                    logger.info("Landing complete.")
+                    break
+                continue
 
             result = update_navigation_state(
                 client,
@@ -326,11 +139,6 @@ def navigation_loop(args, client, ctx):
             if result is None:
                 continue
             processed, nav_decision = result
-
-            if ctx.param_refs.reset_flag[0]:
-                frame_count = handle_reset(client, ctx, frame_count)
-                continue
-
             loop_start = log_and_record_frame(
                 client,
                 ctx,
@@ -343,275 +151,272 @@ def navigation_loop(args, client, ctx):
             )
     except KeyboardInterrupt:
         logger.info("Interrupted.")
+    finally:
+        logger.info("Navigation loop complete.")
 
-def slam_navigation_loop(args, client, ctx):
-    """
-    Main navigation loop for SLAM-based navigation with basic obstacle avoidance.
-    """
-    # After drone takeoff and camera ready
-    # run_slam_bootstrap(client, duration=6.0)  # you can tune this
-    # time.sleep(1.0)  # Let SLAM settle after bootstrap
+        try:
+            from uav.logging_helpers import finalize_logging
+            finalize_logging(ctx.log_file, ctx.log_buffer)
+            logger.info("Final log data flushed successfully")
+        except Exception as e:
+            logger.error(f"Failed to finalize logging: {e}")
 
-    # logger.info("[SLAMNav] Starting SLAM navigation loop.")
 
-    from slam_bridge.slam_receiver import get_latest_pose, get_pose_history
-    from slam_bridge.frontier_detection import detect_frontiers  
-
-    # --- Incorporate exit_flag from ctx for GUI stop button ---
-    exit_flag = None
-    navigator = None
+def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
+    """SLAM-based navigation loop with basic obstacle avoidance."""
+    exit_flag = getattr(ctx, "exit_flag", None)
+    navigator = getattr(ctx, "navigator", None)
     last_action = "none"
-    if ctx is not None:
-        exit_flag = getattr(ctx, "exit_flag", None)
-        navigator = getattr(ctx, "navigator", None)
 
-    # --- Initialize SLAM navigation parameters ---
+    max_duration = _resolve(args.max_duration, uav_config.MAX_SIM_DURATION)
+    goal_x = _resolve(args.goal_x, uav_config.GOAL_X)
+    goal_y = _resolve(args.goal_y, uav_config.GOAL_Y)
+    goal_z = _resolve(getattr(args, "goal_z", None), -2.0)
+
     start_time = time.time()
-    max_duration = getattr(args, "max_duration", 60)
-    goal_x = getattr(args, "goal_x", 29)
-    goal_y = getattr(args, "goal_y", 0) if hasattr(args, "goal_y") else 0
-    goal_z = getattr(args, "goal_z", -2) if hasattr(args, "goal_z") else -2
-    threshold = 0.5  # meters
+    frame_count = 0
+    frame_duration = 1.0 / uav_config.TARGET_FPS
+    cov_thres = getattr(config, "covariance_threshold", COVARIANCE_THRESHOLD) if config else COVARIANCE_THRESHOLD
+    inlier_thres = getattr(config, "inlier_threshold", MIN_INLIERS_THRESHOLD) if config else MIN_INLIERS_THRESHOLD
+    threshold = 0.5
 
-    # Simplified execution path used by tests
+    # Store client reference in context for logging
+    ctx.client = client
+
+    if max_duration != 0 and uav_config.ENABLE_SLAM_BOOTSTRAP:
+        if ctx is not None and getattr(ctx, "param_refs", None):
+            ctx.param_refs.state[0] = "bootstrap"
+        run_slam_bootstrap(client, duration=6.0)
+        time.sleep(1.0)
+        if ctx is not None and getattr(ctx, "param_refs", None):
+            ctx.param_refs.state[0] = "waypoint_nav"
+
     if max_duration == 0 and navigator is not None:
-        pose = get_latest_pose()
-        return navigator.slam_to_goal(pose, (goal_x, goal_y, goal_z))
+        if pose_source == "airsim" and hasattr(client, "simGetVehiclePose"):
+            air_pose = client.simGetVehiclePose("UAV")
+            pos = air_pose.position
+            yaw = airsim.to_eularian_angles(air_pose.orientation)[2]
+            cy, sy = np.cos(yaw), np.sin(yaw)
+            pose_mat = np.array([
+                [cy, -sy, 0, pos.x_val],
+                [sy, cy, 0, pos.y_val],
+                [0, 0, 1, pos.z_val],
+            ])
+        else:
+            pose_mat = get_latest_pose_matrix()
+        return navigator.slam_to_goal(pose_mat, (goal_x, goal_y, goal_z))
 
-    # --- Define waypoints for SLAM navigation ---
-    waypoints = [
-        (20, 0, -2),  # (x, y, z)
+    default_waypoints = [
+        (20, 0, -2),
         (20, -2.5, -2),
         (22.5, -2.5, -2),
         (23.5, -0.5, -2),
-        (45, 0, -2)
-        
+        (45, 0, -2),
     ]
+    waypoints = _load_waypoints(config, default_waypoints)
     current_waypoint_index = 0
-    logger.info("[DEBUG] Entered slam_navigation_loop")
+    landing_future = None
+
     try:
         while True:
-            # --- Check for exit_flag to allow GUI stop button to interrupt navigation ---
-            if (exit_flag is not None and exit_flag.is_set()) or os.path.exists(STOP_FLAG_PATH):
-                logger.info("[SLAMNav] Stop flag detected. Landing and exiting navigation loop.")
-                client.landAsync().join()
-                break
+            frame_count += 1  # Increment frame counter
+            time_now = time.time()
+            loop_start = time_now  # Track loop timing
 
-            # --- Get the latest SLAM pose ---
-            pose = get_latest_pose()
-            if pose is None: # No pose received, hover to recover
-                logger.warning("[SLAMNav] No pose received – hovering to recover.")
-                # client.hoverAsync().join()
-                time.sleep(1.0)  # allow SLAM to reinitialize
+            pose_data = ensure_stable_slam_pose(
+                client,
+                pose_source,
+                cov_thres,
+                inlier_thres,
+                exit_flag,
+                start_time,
+                max_duration,
+                ctx,
+            )
+            if pose_data[0] is None:
+                logger.info("[SLAMNav] SLAM pose not stable yet, retrying...")
+                # Log unstable state
+                fps = 1 / max(time.time() - loop_start, 1e-6)
+                if ctx is not None:
+                    ctx.fps_list.append(fps)
+                log_slam_frame(
+                    ctx,
+                    frame_count,
+                    time_now,
+                    fps,
+                    0,
+                    0,
+                    0,
+                    current_waypoint_index,
+                    999.0,
+                    "unstable",
+                    "UNSTABLE",
+                )
                 continue
 
-            # --- Check if SLAM is stable ---
-            if not is_slam_stable():  # Check SLAM stability
-                logger.warning("[SLAMNav] SLAM is unstable. Pausing navigation.")
-                # client.hoverAsync().join()  # Pause the drone (hover)
-                continue  # Exit the loop or you can reset/restart SLAM if necessary
-            # else:
-            #     logger.info("[SLAMNav] SLAM is stable. Continuing navigation.")
-
-            x_slam, y_slam, z_slam = pose
-            x, y, z = x_slam, y_slam, -z_slam  # Adjust z for AirSim
-            # logger.info(f"[SLAMNav] Received pose: x={x:.2f}, y={y:.2f}, z={z:.2f}")
-            # logger.debug("[SLAM Pose] x=%.2f, y=%.2f, z=%.2f", x, y, z)
-
-            # Print real drone position from AirSim
-            # Air_pose = client.simGetVehiclePose("UAV")
-            # pos = Air_pose.position
-            # airsim_x, airsim_y, airsim_z = pos.x_val, pos.y_val, pos.z_val
-            if hasattr(client, "simGetVehiclePose"):
-                Air_pose = client.simGetVehiclePose("UAV")
-                pos = getattr(Air_pose, "position", None)
-                if pos is not None:
-                    airsim_x, airsim_y, airsim_z = pos.x_val, pos.y_val, pos.z_val
-                else:
-                    airsim_x, airsim_y, airsim_z = x, y, z
-            else:
-                airsim_x, airsim_y, airsim_z = x_slam, y_slam, z_slam
-            # logger.debug("[UAV Pose] x=%.2f, y=%.2f, z=%.2f", pos.x_val, pos.y_val, pos.z_val)
-
-            # Detect exploration frontiers from accumulated SLAM poses
+            transformed_pose, (x, y, z) = pose_data
             history = get_pose_history()
-            map_pts = np.array(
-                [[m[0][3], m[1][3], m[2][3]] for _, m in history], dtype=float
+            map_pts = np.array([[m[0][3], m[1][3], m[2][3]] for _, m in history], dtype=float)
+            
+            if not check_exit_conditions(client, ctx, time_now, max_duration, goal_x, goal_y):
+                break
+
+            # Get the current goal
+            curr_goal = waypoints[current_waypoint_index] # (waypoint_x, waypoint_y, waypoint_z)
+
+            # Calculate distance to the current goal
+            dist_to_goal = np.sqrt((x - curr_goal[0]) ** 2 + (y - curr_goal[1]) ** 2) 
+
+            # Check if the final waypoint has been reached
+            if current_waypoint_index == len(waypoints) - 1 and dist_to_goal < threshold:
+                logger.info("[SLAMNav] Final goal reached — landing.")
+                time.sleep(0.1)
+                fps = 1 / max(time.time() - loop_start, 1e-6)
+                if ctx is not None:
+                    ctx.fps_list.append(fps)
+                # Log final goal reached
+                log_slam_frame(
+                    ctx,
+                    frame_count,
+                    time_now,
+                    fps,
+                    x,
+                    y,
+                    z,
+                    current_waypoint_index,
+                    dist_to_goal,
+                    "final_goal",
+                    "COMPLETE",
+                )
+                break
+
+            (waypoint_x, waypoint_y, waypoint_z), current_waypoint_index, dist = handle_waypoint_progress(
+                x, y, waypoints, current_waypoint_index, threshold
             )
-            frontiers = detect_frontiers(map_pts)
-            # if frontiers.size:
-            #     logger.debug("[SLAMNav] Frontier voxels detected: %d", len(frontiers))
-            #     logger.debug("[SLAMNav] Sample frontier: x=%.2f y=%.2f z=%.2f",
-            #         frontiers[0][0],
-            #         frontiers[0][1],
-            #         frontiers[0][2],
-            #     )
 
-            # Check for collision/obstacle
-            # collision = client.simGetCollisionInfo()
-            # if getattr(collision, "has_collided", False):
-            #     logger.warning("[SLAMNav] Obstacle detected! Executing avoidance maneuver.")
-            #     client.moveByVelocityAsync(-1.0, 0, 0, 1).join()  # Back up
-            #     continue
+            if ctx is not None and getattr(ctx, "param_refs", None):
+                ctx.param_refs.state[0] = f"waypoint_{current_waypoint_index + 1}"
 
-            # --- Get the current waypoint (goal) ---
-            goal_x, goal_y, goal_z = waypoints[current_waypoint_index]
-            logger.info(f"[SLAMNav] Current waypoint: {current_waypoint_index + 1} at ({goal_x}, {goal_y}, {goal_z})")
-
-            # --- Calculate the distance to the current waypoint ---
-            distance_to_goal = np.sqrt((airsim_x - goal_x)**2 + (airsim_y - goal_y)**2)
-            # distance_to_goal = np.sqrt((x - goal_x)**2 + (y - goal_y)**2)
-            logger.info(f"Distance to waypoint: {distance_to_goal:.2f} meters")
-
-            # --- If the drone is within the threshold of the waypoint, move to the next waypoint ---
-            if distance_to_goal < threshold:  # Threshold for reaching waypoint
-                logger.info(f"Reached waypoint {current_waypoint_index + 1}, moving to next waypoint.")
-                current_waypoint_index = (current_waypoint_index + 1) % len(waypoints)  # Move to next waypoint
-
-            # --- Use SLAM for deliberative navigation ---
-            if navigator is None:
-                navigator = Navigator(client)
-            # last_action = client.moveToPositionAsync(2,0,-2, 2)
-            last_action = navigator.slam_to_goal(None, (goal_x, goal_y, goal_z))
-            # logger.info("[SLAMNav] Action: %s", last_action)
-        
-            # --- Check if the stop flag is set ---
-            if os.path.exists(STOP_FLAG_PATH):
-                logger.info("Stop flag detected. Landing and shutting down.")
-                client.landAsync().join()
-                break
-
-            # End condition
-            if time.time() - start_time > max_duration:
-                logger.info("[SLAMNav] Max duration reached, ending navigation.")
-                client.landAsync().join()
-                break
-
-            # # Depth-based obstacle check before moving toward the goal # Depth check optional
-            # ahead, depth = is_obstacle_ahead(client)
-            # if ahead:
-            #     msg = "[SLAMNav] Depth obstacle detected"
-            #     if depth is not None:
-            #         msg += f" at {depth:.2f}m"
-            #     logger.warning(msg)
-            #     if navigator is not None:
-            #         navigator.dodge(0, 0, 0, direction="right")
-            #     else:
-            #         client.hoverAsync().join()
-            #     continue
-
-            time.sleep(0.1)  # Allow for periodic updates
+            last_action = navigator.slam_to_goal(transformed_pose, (waypoint_x, waypoint_y, waypoint_z))
+            
+            # Log SLAM navigation data
+            slam_state = "TRACKING"
+            if hasattr(ctx, "param_refs") and ctx.param_refs.state:
+                slam_state = ctx.param_refs.state[0].upper()
+            
+            fps = 1 / max(time.time() - loop_start, 1e-6)
+            if ctx is not None:
+                ctx.fps_list.append(fps)
+            log_slam_frame(
+                ctx,
+                frame_count,
+                time_now,
+                fps,
+                x,
+                y,
+                z,
+                current_waypoint_index,
+                dist_to_goal,
+                last_action,
+                slam_state,
+            )
+            
+            time.sleep(0.1)
+            
     except KeyboardInterrupt:
         logger.info("[SLAMNav] Interrupted by user.")
-        client.landAsync().join()
     finally:
         logger.info("[SLAMNav] SLAM navigation loop finished.")
-        # generate_pose_comparison_plot()
+        
+        # Final flush of SLAM data
+        try:
+            from uav.logging_helpers import finalize_logging
+            finalize_logging(ctx.log_file, ctx.log_buffer)
+            logger.info("Final SLAM log data flushed successfully")
+        except Exception as e:
+            logger.error(f"Failed to finalize SLAM logging: {e}")
+            
     return last_action
 
-def shutdown_threads(ctx):
-    """Stop worker threads and wait for them to exit."""
-    if ctx is None:
+
+def log_slam_frame(ctx, frame_count, time_now, fps, x, y, z, waypoint_index, dist_to_goal, action, slam_state="OK"):
+    """Log SLAM navigation data to ``slam_log_*.csv``."""
+    if not ctx.log_file:
         return
 
-    exit_flag = getattr(ctx, "exit_flag", None)
-    if exit_flag is not None:
-        exit_flag.set()
-
-    frame_queue = getattr(ctx, "frame_queue", None)
-    if frame_queue is not None:
-        try:
-            frame_queue.put(None, block=False)
-        except Exception:
-            pass
-
-    for attr in ("video_thread", "perception_thread"):
-        thread = getattr(ctx, attr, None)
-        if thread is not None:
+    try:
+        client = getattr(ctx, "client", None)
+        pos_x = pos_y = pos_z = 0.0
+        speed = 0.0
+        yaw = 0.0
+        collided = 0
+        if client:
             try:
-                thread.join()
-            except Exception:
-                pass
+                pos, yaw, speed = get_drone_state(client)
+                pos_x = pos.x_val
+                pos_y = pos.y_val
+                pos_z = pos.z_val
+            except Exception as exc:
+                logger.error(f"Error getting drone state: {exc}")
+                pos_x = pos_y = pos_z = speed = yaw = 0.0
 
+        from slam_bridge import slam_receiver
+        covariance = slam_receiver.get_latest_covariance()
+        inliers = slam_receiver.get_latest_inliers()
+        confidence = None
+        if covariance is not None:
+            confidence = 1.0 / (1.0 + float(covariance))
 
-def close_logging(ctx):
-    """Flush buffered log/video data and close file handles."""
-    if ctx is None:
-        return
-
-    out = getattr(ctx, "out", None)
-    if out is not None:
+        # --- Add raw SLAM coordinates ---
+        slam_x_raw = slam_y_raw = slam_z_raw = float('nan')
         try:
-            out.release()
+            pose_matrix = slam_receiver.get_latest_pose_matrix()
+            if pose_matrix is not None:
+                slam_x_raw = float(pose_matrix[0][3])
+                slam_y_raw = float(pose_matrix[1][3])
+                slam_z_raw = float(pose_matrix[2][3])
         except Exception:
             pass
 
-    log_file = getattr(ctx, "log_file", None)
-    log_buffer = getattr(ctx, "log_buffer", None)
-    if log_file is not None:
-        try:
-            if log_buffer:
-                log_file.writelines(log_buffer)
-                log_buffer.clear()
-            log_file.close()
-        except Exception as exc:
-            logger.warning("⚠️ Log file already closed or error writing: %s", exc)
+        # --- Transformed SLAM (no scale correction) ---
+        slam_x_trans = slam_z_raw
+        slam_y_trans = -slam_x_raw
+        slam_z_trans = -slam_y_raw
 
+        # --- Scale-corrected SLAM ---
+        slam_x_corr = 0.7 * slam_z_raw
+        slam_y_corr = 0.68 * -slam_x_raw
+        slam_z_corr = 0.48 * -slam_y_raw
 
-def shutdown_airsim(client):
-    """Land the drone and disable API control."""
-    if client is None:
-        return
-    try:
-        fut = client.landAsync()
-        fut.join()
-        client.armDisarm(False)
-        client.enableApiControl(False)
-    except Exception as exc:
-        logger.error("Landing error: %s", exc)
+        cpu_percent = get_cpu_percent()
+        mem_mb = get_memory_info().rss / (1024 * 1024)
 
+        rel_time = time_now - ctx.start_time
 
-def finalize_files(ctx):
-    """Generate flight analysis and clean up generated files."""
-    if ctx is None:
-        return
+        log_line = (
+            f"{frame_count},"
+            f"{rel_time:.2f},"
+            f"{fps:.2f},"
+            f"{slam_state}_WP{waypoint_index + 1},"
+            f"{collided},"
+            f"{pos_x:.2f},{pos_y:.2f},{-pos_z:.2f},"
+            f"{slam_x_corr:.4f},{slam_y_corr:.4f},{slam_z_corr:.4f}," 
+            f"{slam_x_trans:.4f},{slam_y_trans:.4f},{slam_z_trans:.4f},"  
+            f"{slam_x_raw:.4f},{slam_y_raw:.4f},{slam_z_raw:.4f},"
+            f"{yaw:.2f},"
+            f"{speed:.2f},"
+            f"{cpu_percent:.1f},"
+            f"{mem_mb:.1f},"
+            f"{'' if covariance is None else f'{covariance:.4f}'},"
+            f"{'' if inliers is None else inliers},"
+            f"{'' if confidence is None else f'{confidence:.4f}'}\n"
+        )
 
-    timestamp = getattr(ctx, "timestamp", None)
-    if timestamp:
-        try:
-            html_output = f"analysis/flight_view_{timestamp}.html"
-            subprocess.run(["python3", "-m", "analysis.visualise_flight", html_output])
-            logger.info("Flight path analysis saved to %s", html_output)
-        except Exception as exc:
-            logger.error("Error generating flight path analysis: %s", exc)
+        ctx.log_file.write(log_line)
 
-    try:
-        retain_recent_views("analysis", 5)
-    except Exception as exc:
-        logger.error("Error retaining recent views: %s", exc)
+        if frame_count % 5 == 0:
+            ctx.log_file.flush()
+            logger.debug(f"SLAM frame {frame_count} logged and flushed")
 
-    try:
-        if os.path.exists(STOP_FLAG_PATH):
-            os.remove(STOP_FLAG_PATH)
-            logger.info("Removed stop flag file.")
-    except Exception as exc:
-        logger.error("Error removing stop flag file: %s", exc)
-
-
-def cleanup(client, sim_process, ctx):
-    """Clean up resources and land the drone."""
-    logger.info("Landing...")
-
-    shutdown_threads(ctx)
-    close_logging(ctx)
-    shutdown_airsim(client)
-    finalize_files(ctx)
-
-    if sim_process:
-        sim_process.terminate()
-        try:
-            sim_process.wait(timeout=5)
-        except Exception:
-            sim_process.kill()
-        logger.info("UE4 simulation closed.")
-
+    except Exception as e:
+        logger.error(f"Failed to log SLAM frame {frame_count}: {e}")

@@ -19,6 +19,7 @@ def init_client(client):
         client.armDisarm(True)
         if hasattr(client, "confirmConnection"):
             client.confirmConnection()
+            print("[INFO] Connecting to AirSim from utils.py")
     except Exception as e:
         logger.warning("Client init failed: %s", e)
     return client
@@ -55,82 +56,24 @@ def get_drone_state(client):
 
 
 def _timestamp_from_name(path: str) -> float:
-    """Return a UNIX timestamp parsed from ``full_log_YYYYMMDD_HHMMSS.csv``.
+    """Return a UNIX timestamp parsed from a log filename.
 
-    Falls back to the file's modification time if parsing fails.
+    Handles ``reactive_log_YYYYMMDD_HHMMSS.csv`` and
+    ``slam_log_YYYYMMDD_HHMMSS.csv``. Falls back to the file's
+    modification time if parsing fails.
     """
     name = os.path.basename(path)
-    ts = name[len("full_log_"):-len(".csv")]
+    if name.startswith("reactive_log_"):
+        ts = name[len("reactive_log_"):-len(".csv")]
+    elif name.startswith("slam_log_"):
+        ts = name[len("slam_log_"):-len(".csv")]
+    else:
+        ts = ""
     try:
         dt = datetime.strptime(ts, "%Y%m%d_%H%M%S")
         return dt.timestamp()
     except Exception:
         return os.path.getmtime(path)
-
-
-def retain_recent_logs(log_dir: str, keep: int = 2) -> None:
-    """
-    Keep only the ``keep`` most recent logs for each log type in the logs folder.
-    Handles: full_log_*.csv, launch_*.log, slam_server_debug_*.log, pose_log_*.txt
-    """
-    log_patterns = [
-        "full_log_*.csv",
-        "launch_*.log",
-        "slam_*.log",
-        "pose_*.txt",
-        "pose_*.log",
-        "airsim_*.log",
-    ]
-    for pattern in log_patterns:
-        try:
-            files = [
-                os.path.join(log_dir, f)
-                for f in os.listdir(log_dir)
-                if fnmatch.fnmatch(f, pattern)
-            ]
-        except FileNotFoundError:
-            logger.warning("\u26A0\uFE0F Log directory '%s' not found.", log_dir)
-            continue
-        files.sort(key=_timestamp_from_name, reverse=True)
-        for old_file in files[keep:]: # Keep the most recent `keep` files
-            try:
-                os.remove(old_file)
-            except OSError as e:
-                logger.warning("\u26A0\uFE0F Could not delete %s: %s", old_file, e)
-
-def retain_recent_files(dir_path: str, pattern: str, keep: int = 5) -> None:
-    """Keep only the ``keep`` most recent files matching ``pattern``.
-
-    Parameters
-    ----------
-    dir_path : str
-        Directory to search for files.
-    pattern : str
-        Glob pattern used to select files within ``dir_path``.
-    keep : int, optional
-        Number of recent files to preserve. Older files are removed.
-    """
-    try:
-        files = [
-            os.path.join(dir_path, f)
-            for f in os.listdir(dir_path)
-            if fnmatch.fnmatch(f, pattern)
-        ]
-    except FileNotFoundError:
-        return
-
-    files.sort(key=os.path.getmtime, reverse=True)
-
-    for old_file in files[keep:]:
-        try:
-            os.remove(old_file)
-        except OSError:
-            pass
-
-def retain_recent_views(view_dir: str, keep: int = 5) -> None:
-    """Keep only the ``keep`` most recent ``flight_view_*.html`` files."""
-
-    retain_recent_files(view_dir, "flight_view_*.html", keep)
 
 def should_flat_wall_dodge(
     center_mag: float,
@@ -149,3 +92,37 @@ def should_flat_wall_dodge(
         return False
 
     return probe_mag < 0.5 and center_mag > 0.7
+
+def retain_recent_files_config(retention_config: dict) -> None:
+    """Delete old files according to ``retention_config``.
+
+    The configuration maps directory paths to ``(pattern, keep)`` tuples and is
+    generic so it can be used for *any* file type (logs, images, data files,
+    etc.). Files are matched using ``fnmatch`` and the newest ``keep`` files are
+    preserved in each directory.
+    """
+    import os, fnmatch
+
+    for dir_path, rules in retention_config.items():
+        for pattern, keep in rules:
+            try:
+                files = [
+                    os.path.join(dir_path, f)
+                    for f in os.listdir(dir_path)
+                    if fnmatch.fnmatch(f, pattern)
+                ]
+            except FileNotFoundError:
+                logger.warning("⚠️ Directory '%s' not found.", dir_path)
+                continue
+
+            # Use timestamp from name if log, else modification time
+            if "log" in pattern or "csv" in pattern:
+                files.sort(key=_timestamp_from_name, reverse=True)
+            else:
+                files.sort(key=os.path.getmtime, reverse=True)
+
+            for old_file in files[keep:]:
+                try:
+                    os.remove(old_file)
+                except OSError as e:
+                    logger.warning("⚠️ Could not delete %s: %s", old_file, e)

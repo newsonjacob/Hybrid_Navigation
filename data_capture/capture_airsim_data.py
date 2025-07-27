@@ -1,3 +1,5 @@
+"""Standalone script to capture images from AirSim runs."""
+
 import logging
 import airsim
 import os
@@ -17,7 +19,7 @@ def main() -> None:
     # Connect to AirSim
     client = airsim.MultirotorClient()
     client.confirmConnection()
-    logger.info("Connected to AirSim!")
+    print("[INFO] Connecting to AirSim from capture_airsim_data.py")
 
     # CSV file to save IMU data: timestamp, accel(x,y,z), gyro(x,y,z)
     imu_file = open(os.path.join(output_dir, "imu_data.csv"), mode="w", newline="")

@@ -5,32 +5,49 @@ import unittest.mock as mock
 
 
 def test_helper_functions_exist(monkeypatch):
-    airsim_stub = types.SimpleNamespace(ImageRequest=object, ImageType=object)
+    airsim_stub = types.SimpleNamespace(
+        ImageRequest=object,
+        ImageType=object,
+        DrivetrainType=types.SimpleNamespace(ForwardOnly=1),
+        YawMode=lambda *a, **k: None,
+    )
     monkeypatch.setitem(sys.modules, 'airsim', airsim_stub)
-    nl = importlib.import_module('uav.nav_loop')
-    importlib.reload(nl)
-    for name in (
+    nlr = importlib.import_module('uav.nav_runtime')
+    importlib.reload(nlr)
+    nla = importlib.import_module('uav.nav_analysis')
+    importlib.reload(nla)
+    nll = importlib.import_module('uav.nav_loop')
+    importlib.reload(nll)
+
+    runtime_funcs = [
         'setup_environment',
         'start_perception_thread',
-        'navigation_loop',
         'check_startup_grace',
         'get_perception_data',
         'update_navigation_state',
         'log_and_record_frame',
-        'process_perception_data',
-        'apply_navigation_decision',
-        'write_frame_output',
-        'handle_reset',
         'shutdown_threads',
         'close_logging',
         'shutdown_airsim',
-        'finalize_files',
         'cleanup',
+        'ThreadManager',
+        'LoggingContext',
+        'SimulationProcess',
+    ]
+    for name in runtime_funcs:
+        assert hasattr(nlr, name)
+
+    assert hasattr(nla, 'finalise_files')
+
+    loop_funcs = [
+        'navigation_loop',
+        'slam_navigation_loop',
         'detect_obstacle',
         'determine_side_safety',
         'handle_obstacle',
-    ):
-        assert hasattr(nl, name)
+    ]
+    for name in loop_funcs:
+        assert hasattr(nll, name)
 
 
 class DummyFuture:
@@ -91,11 +108,17 @@ def test_determine_side_safety(monkeypatch):
 
 
 def test_handle_obstacle_dodge_and_resume(monkeypatch):
-    airsim_stub = types.SimpleNamespace(ImageRequest=object, ImageType=object)
+    airsim_stub = types.SimpleNamespace(
+        ImageRequest=object,
+        ImageType=object,
+        DrivetrainType=types.SimpleNamespace(ForwardOnly=1),
+        YawMode=lambda *a, **k: None,
+    )
     monkeypatch.setitem(sys.modules, 'airsim', airsim_stub)
     nl = importlib.import_module('uav.nav_loop')
     importlib.reload(nl)
     from uav.navigation import Navigator
+    from uav.navigation_state import NavigationState
 
     client = DummyClient()
     nav = Navigator(client)
@@ -104,7 +127,7 @@ def test_handle_obstacle_dodge_and_resume(monkeypatch):
         nav, 1, True, True, False, False, False,
         0.0, 0.0, 0.0, 15, 20
     )
-    assert state.startswith('dodge')
+    assert state in (NavigationState.DODGE_LEFT, NavigationState.DODGE_RIGHT)
     assert nav.dodging is True
 
     # Resume when obstacle cleared
@@ -112,4 +135,4 @@ def test_handle_obstacle_dodge_and_resume(monkeypatch):
         nav, 0, False, False, False, False, False,
         0.0, 0.0, 0.0, 15, 20
     )
-    assert state == 'resume'
+    assert state is NavigationState.RESUME

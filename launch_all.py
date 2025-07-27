@@ -8,9 +8,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from uav.paths import FLAGS_DIR
 
 from uav.logging_config import setup_logging
-from uav.utils import retain_recent_logs
+from uav.config import RETENTION_CONFIG
+from uav.utils import retain_recent_files_config
 from uav.cli import parse_args
 from uav.config import load_app_config
 from uav.interface import start_gui, exit_flag
@@ -20,12 +22,16 @@ from uav import launch_utils as lutils
 # ---------------------------------------------------------------------------
 # Flag paths are defined at import time so tests may monkeypatch them.
 # ---------------------------------------------------------------------------
-flags_dir = Path("flags")
-AIRSIM_READY_FLAG = flags_dir / "airsim_ready.flag"
-SLAM_READY_FLAG = flags_dir / "slam_ready.flag"
-SLAM_FAILED_FLAG = flags_dir / "slam_failed.flag"
-START_NAV_FLAG = flags_dir / "start_nav.flag"
-STOP_FLAG = flags_dir / "stop.flag"
+flags_dir = FLAGS_DIR
+AIRSIM_READY_FLAG = FLAGS_DIR / "airsim_ready.flag"
+SLAM_READY_FLAG = FLAGS_DIR / "slam_ready.flag"
+SLAM_FAILED_FLAG = FLAGS_DIR / "slam_failed.flag"
+START_NAV_FLAG = FLAGS_DIR / "start_nav.flag"
+STOP_FLAG = FLAGS_DIR / "stop.flag"
+
+# When a shutdown is requested we wait this long for the main process to exit
+# before forcibly terminating it.
+GRACE_TIME = 10
 
 # keep lutils in sync with our stop flag
 lutils.STOP_FLAG = STOP_FLAG
@@ -51,6 +57,7 @@ def init_logging_and_flags() -> str:
         "slam_plotter",
         "utils",
         "pose_receiver",
+        "perception",
     ]
     module_logs = {
         mod: f"{mod.replace('.', '_')}_{timestamp}.log" for mod in modules_with_dedicated_logs
@@ -61,7 +68,6 @@ def init_logging_and_flags() -> str:
     logger = logging.getLogger("Launch")
     logger.info("Logging to logs/%s", launch_log)
 
-    flags_dir.mkdir(exist_ok=True)
     return timestamp
 
 # ---------------------------------------------------------------------------
@@ -91,9 +97,30 @@ def start_streamer(host: str, port: int, stream_mode: str = "stereo") -> subproc
 def launch_slam_backend(receiver_host: str, receiver_port: int) -> subprocess.Popen:
     return lutils.launch_slam_backend(receiver_host, receiver_port)
 
+# ---------------------------------------------------------------------------
+# Shutdown helpers
+# ---------------------------------------------------------------------------
 
-def record_slam_video(window_substring: str = "ORB-SLAM2", duration: int = 60):
-    return lutils.record_slam_video(window_substring, duration)
+def request_shutdown(proc: Optional[subprocess.Popen], logger: logging.Logger, timeout: float = GRACE_TIME) -> bool:
+    """Signal ``main.py`` to stop and wait for it to exit.
+
+    Returns ``True`` if the process exited gracefully within the timeout."""
+    if proc is None:
+        return True
+
+    STOP_FLAG.touch()
+
+    if getattr(proc, "poll", lambda: None)() is not None:
+        return True
+
+    try:
+        logger.info("[SHUTDOWN] Waiting up to %.1fs for main process to exit...", timeout)
+        proc.wait(timeout=timeout)
+        logger.info("[SHUTDOWN] Main process exited gracefully.")
+        return True
+    except subprocess.TimeoutExpired:
+        logger.warning("[SHUTDOWN] Main process did not exit within grace period.")
+        return False
 
 # ---------------------------------------------------------------------------
 # Launcher dataclass managing subprocesses
@@ -106,12 +133,14 @@ class Launcher:
     main_proc: Optional[subprocess.Popen] = None
     slam_proc: Optional[subprocess.Popen] = None
     stream_proc: Optional[subprocess.Popen] = None
-    ffmpeg_proc: Optional[subprocess.Popen] = None
     slam_video_path: Optional[str] = None
 
     def shutdown(self) -> None:
         """Terminate all started subprocesses and clean temporary files."""
         self.logger.info("[SHUTDOWN] Initiating shutdown sequence for all subprocesses.")
+
+        # Ensure any running GUI exits when the simulation finishes
+        exit_flag.set()
 
         if exit_flag.is_set() or STOP_FLAG.exists():
             self.logger.info("[SHUTDOWN] Shutdown signal detected. Proceeding with shutdown.")
@@ -136,37 +165,45 @@ class Launcher:
                 self.logger.warning("[SHUTDOWN] Forcing SLAM backend shutdown...")
                 self.slam_proc.kill()
 
-        if isinstance(self.ffmpeg_proc, subprocess.Popen):
-            self.logger.info("[SHUTDOWN] Terminating screen recording (PID %s)", getattr(self.ffmpeg_proc, "pid", "n/a"))
-            self.ffmpeg_proc.terminate()
-            try:
-                self.ffmpeg_proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.logger.warning("[SHUTDOWN] Forcing screen recorder shutdown...")
-                self.ffmpeg_proc.kill()
+        graceful = request_shutdown(self.main_proc, self.logger)
 
-        if self.main_proc is not None:
-            self.logger.info("[SHUTDOWN] Terminating main script (PID %s)", getattr(self.main_proc, "pid", "n/a"))
-            self.main_proc.terminate()
-            try:
-                self.main_proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.logger.warning("[SHUTDOWN] Forcing main script shutdown...")
-                self.main_proc.kill()
+        if self.main_proc is not None and getattr(self.main_proc, "poll", lambda: None)() is None:
+            if not graceful:
+                self.logger.info("[SHUTDOWN] Terminating main script (PID %s)", getattr(self.main_proc, "pid", "n/a"))
+                self.main_proc.terminate()
+                try:
+                    self.main_proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.logger.warning("[SHUTDOWN] Forcing main script shutdown...")
+                    self.main_proc.kill()
 
-        pid_file = flags_dir / "ue4_sim.pid"
+        pid_file = FLAGS_DIR / "ue4_sim.pid"
         if pid_file.exists():
             try:
                 ue4_pid = int(pid_file.read_text())
                 self.logger.info("[SHUTDOWN] Terminating UE4 simulation (PID %s)", ue4_pid)
-                subprocess.call(["taskkill", "/F", "/PID", str(ue4_pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                try:
+                    subprocess.call(
+                        ["taskkill", "/F", "/PID", str(ue4_pid)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                except FileNotFoundError:
+                    self.logger.warning("taskkill not available")
             except Exception as e:  # pragma: no cover - best effort
                 self.logger.warning("[SHUTDOWN] Failed to terminate UE4 by PID: %s", e)
             finally:
                 pid_file.unlink(missing_ok=True)
         else:
-            subprocess.call(["taskkill", "/F", "/IM", "Blocks.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            subprocess.call(["taskkill", "/F", "/IM", "UE4Editor.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            for proc_name in ("Blocks.exe", "UE4Editor.exe"):
+                try:
+                    subprocess.call(
+                        ["taskkill", "/F", "/IM", proc_name],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                except FileNotFoundError:
+                    self.logger.warning("taskkill not available")
 
         if self.slam_video_path and not os.path.exists(self.slam_video_path):
             self.logger.warning("SLAM video file not created.")
@@ -187,8 +224,30 @@ def wait_for_start_flag() -> bool:
     return True
 
 
+def wait_for_slam_done_flag(timeout: float = 15.0) -> bool:
+    """Wait for the slam_done.flag to appear, or timeout."""
+    slam_done_flag = FLAGS_DIR / "slam_done.flag"
+    logger.info("[MAIN] Waiting for SLAM backend to finish (slam_done.flag)...")
+    start = time.time()
+    while not slam_done_flag.exists():
+        if time.time() - start > timeout:
+            logger.warning("[MAIN] Timeout waiting for slam_done.flag.")
+            return False
+        time.sleep(0.2)
+    logger.info("[MAIN] slam_done.flag detected.")
+    return True
+
+
 def main(timestamp: str, selected_nav_mode: Optional[str] = None) -> bool:
     """Launch the simulation using the provided timestamp."""
+
+    # --- Remove old flags if they exist ---
+    for flag_name in ["slam_shutdown.flag", "stop.flag", "slam_done.flag"]:
+        flag_path = FLAGS_DIR / flag_name
+        if flag_path.exists():
+            flag_path.unlink()
+            logger.info(f"[MAIN] Removed stale {flag_name} at startup.")
+
     args = parse_args()
     if selected_nav_mode is not None:
         args.nav_mode = selected_nav_mode
@@ -224,6 +283,10 @@ def main(timestamp: str, selected_nav_mode: Optional[str] = None) -> bool:
             launcher.shutdown()
             return False
 
+        airsim_width = config.getint("window", "airsim_width", fallback=1280)
+        airsim_height = config.getint("window", "airsim_height", fallback=720)
+        lutils.resize_window("Blocks", airsim_width, airsim_height)
+
         if args.nav_mode == "slam":
             logger.info("[MAIN] Launching SLAM streamer and backend for SLAM mode.")
             launcher.stream_proc = start_streamer(slam_server_host, slam_server_port, args.stream_mode)
@@ -258,12 +321,6 @@ def main(timestamp: str, selected_nav_mode: Optional[str] = None) -> bool:
                 return False
             logger.info("[MAIN] Pangolin window found.")
 
-            launcher.ffmpeg_proc, launcher.slam_video_path = record_slam_video("ORB-SLAM2")
-            if launcher.ffmpeg_proc:
-                logger.info("[MAIN] Screen recording started (PID %s)", getattr(launcher.ffmpeg_proc, "pid", "n/a"))
-            else:
-                logger.warning("[MAIN] Screen recording failed to start.")
-
             if SLAM_FAILED_FLAG.exists():
                 logger.error("[MAIN] SLAM backend reported failure — aborting simulation.")
                 launcher.shutdown()
@@ -281,10 +338,13 @@ def main(timestamp: str, selected_nav_mode: Optional[str] = None) -> bool:
         while launcher.main_proc and getattr(launcher.main_proc, "poll", lambda: None)() is None:
             if STOP_FLAG.exists():
                 logger.info("[MAIN] Stop flag detected. Initiating graceful shutdown...")
-                launcher.shutdown()
                 break
             time.sleep(1)
         logger.info("[MAIN] main.py completed or terminated.")
+
+        # Wait for SLAM backend to finish saving files
+        wait_for_slam_done_flag(timeout=15.0)
+
         return True
 
     finally:
@@ -297,32 +357,39 @@ def main(timestamp: str, selected_nav_mode: Optional[str] = None) -> bool:
 
 def wait_for_nav_mode_and_launch(timestamp: str) -> None:
     logger.info("Waiting for user to select navigation mode and launch simulation...")
-    while not (flags_dir / "nav_mode.flag").exists():
+    while not (FLAGS_DIR / "nav_mode.flag").exists():
         if STOP_FLAG.exists():
             logger.info("Stop flag detected before simulation started. Shutting down.")
             return
         time.sleep(0.2)
 
-    with open(flags_dir / "nav_mode.flag") as f:
+    with open(FLAGS_DIR / "nav_mode.flag") as f:
         selected_nav_mode = f.read().strip()
     logger.info(f"User selected navigation mode: {selected_nav_mode}")
 
     try:
         main(timestamp, selected_nav_mode)
     finally:
-        retain_recent_logs("logs")
+        retain_recent_files_config(RETENTION_CONFIG)
 
 
 def cli_main() -> None:
     "Entry point used when executing this module as a script."
     timestamp = init_logging_and_flags()
 
-    for flag in [AIRSIM_READY_FLAG, 
-                 SLAM_READY_FLAG, 
-                 SLAM_FAILED_FLAG, 
-                 START_NAV_FLAG, 
-                 STOP_FLAG, 
-                 flags_dir / "nav_mode.flag",
+    args = parse_args()
+
+    logger.info("[RESET] Clearing flags directory %s", FLAGS_DIR)
+    for f in FLAGS_DIR.glob("*"):
+        if f.is_file():
+            f.unlink(missing_ok=True)
+
+    for flag in [AIRSIM_READY_FLAG,
+                 SLAM_READY_FLAG,
+                 SLAM_FAILED_FLAG,
+                 START_NAV_FLAG,
+                 STOP_FLAG,
+                 FLAGS_DIR / "nav_mode.flag",
                  ]:
         flag.unlink(missing_ok=True)
 
@@ -340,4 +407,3 @@ def cli_main() -> None:
 
 if __name__ == "__main__":  # pragma: no cover - manual execution
     cli_main()
-    

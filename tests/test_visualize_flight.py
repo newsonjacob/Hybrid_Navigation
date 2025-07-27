@@ -1,4 +1,5 @@
 import sys
+import subprocess
 import types
 import pytest
 # Replace potential numpy stub from conftest with the real package
@@ -73,3 +74,54 @@ def test_find_alignment_marker_success_and_failure():
 
     with pytest.raises(ValueError):
         vis.find_alignment_marker([], marker_name="missing")
+
+
+def test_obstacles_add_traces():
+    telemetry = vis.np.array([[0, 0, 0], [1, 1, 1]])
+
+    no_obs_fig = vis.build_plot(telemetry, [], vis.np.array([0, 0, 0]))
+    base_count = len(no_obs_fig.data)
+
+    obstacles = [
+        {"name": "Box1", "location": [0, 0, 0], "dimensions": [1, 1, 1], "rotation": [0, 0, 0]},
+    ]
+
+    fig = vis.build_plot(telemetry, obstacles, vis.np.array([0, 0, 0]))
+
+    assert len(fig.data) > base_count
+
+
+def test_colour_and_orientation(monkeypatch):
+    telemetry = vis.np.array([[0, 0, 0], [1, 0, 0], [2, 0, 0]])
+    log = {"time": [0, 1, 2], "speed": [1, 2, 3]}
+    orientations = vis.np.array([0, 45, 90])
+
+    monkeypatch.setattr(vis, "draw_box", lambda *a, **k: [], raising=False)
+
+    fig = vis.build_plot(
+        telemetry,
+        [],
+        vis.np.array([0, 0, 0]),
+        log=log,
+        colour_by="time",
+        orientations=orientations,
+    )
+
+    # Expect an extra orientation trace
+    assert len(fig.data) >= 2
+    # First trace should include line colour information
+    path_trace = fig.data[0]
+    assert path_trace.kwargs.get("line", {}).get("color") is not None
+
+
+def test_visualise_cli_writes_html(tmp_path):
+    out_path = tmp_path / "plot.html"
+
+    result = subprocess.run(
+        [sys.executable, "-m", "analysis.visualise_flight", str(out_path)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert out_path.exists()
+    assert "<html" in out_path.read_text().lower()
