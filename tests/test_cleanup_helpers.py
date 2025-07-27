@@ -101,7 +101,7 @@ def test_finalise_files(monkeypatch, tmp_path):
     nl = _reload_nav_loop(monkeypatch)
     calls = []
     monkeypatch.setattr(nl.subprocess, 'run', lambda cmd, **kw: calls.append(cmd))
-    monkeypatch.setattr('uav.nav_analysis.retain_recent_views', lambda *a, **k: calls.append(('retain', a, k)))
+    monkeypatch.setattr('uav.nav_analysis.retain_recent_files_config', lambda *a, **k: calls.append(('retain', a, k)))
     monkeypatch.setattr('uav.slam_utils.generate_pose_comparison_plot', lambda: calls.append('pose_plot'))
     nl.STOP_FLAG_PATH = tmp_path/'stop.flag'
     nl.STOP_FLAG_PATH.write_text('1')
@@ -113,7 +113,7 @@ def test_finalise_files(monkeypatch, tmp_path):
     nl.finalise_files(ctx)
     assert any('analysis/performance_plots.py' in ' '.join(c) for c in calls)
     assert any('analysis/analyse.py' in ' '.join(c) for c in calls)
-    assert 'pose_plot' in calls
+    assert 'pose_plot' not in calls
     assert not nl.STOP_FLAG_PATH.exists()
 
 
@@ -121,7 +121,7 @@ def test_finalise_files_slam(monkeypatch, tmp_path):
     nl = _reload_nav_loop(monkeypatch)
     calls = []
     monkeypatch.setattr(nl.subprocess, 'run', lambda cmd, **kw: calls.append(cmd))
-    monkeypatch.setattr('uav.nav_analysis.retain_recent_views', lambda *a, **k: calls.append(('retain', a, k)))
+    monkeypatch.setattr('uav.nav_analysis.retain_recent_files_config', lambda *a, **k: calls.append(('retain', a, k)))
     monkeypatch.setattr('uav.slam_utils.generate_pose_comparison_plot', lambda: calls.append('pose_plot'))
     nl.STOP_FLAG_PATH = tmp_path / 'stop.flag'
     nl.STOP_FLAG_PATH.write_text('1')
@@ -143,7 +143,7 @@ def test_finalise_files_calledprocesserror(monkeypatch, tmp_path, caplog):
         raise nl.subprocess.CalledProcessError(1, cmd, stderr="fail")
 
     monkeypatch.setattr(nl.subprocess, 'run', raise_error)
-    monkeypatch.setattr('uav.nav_analysis.retain_recent_views', lambda *a, **k: None)
+    monkeypatch.setattr('uav.nav_analysis.retain_recent_files_config', lambda *a, **k: None)
     monkeypatch.setattr('uav.slam_utils.generate_pose_comparison_plot', lambda: None)
 
     nl.STOP_FLAG_PATH = tmp_path / 'stop.flag'
