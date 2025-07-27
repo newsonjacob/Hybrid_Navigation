@@ -94,9 +94,12 @@ def should_flat_wall_dodge(
     return probe_mag < 0.5 and center_mag > 0.7
 
 def retain_recent_files_config(retention_config: dict) -> None:
-    """
-    Retain only the specified number of recent files for each pattern and directory.
+    """Delete old files according to ``retention_config``.
 
+    The configuration maps directory paths to ``(pattern, keep)`` tuples and is
+    generic so it can be used for *any* file type (logs, images, data files,
+    etc.). Files are matched using ``fnmatch`` and the newest ``keep`` files are
+    preserved in each directory.
     """
     import os, fnmatch
 

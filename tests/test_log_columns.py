@@ -12,10 +12,7 @@ def test_setup_environment_header_includes_perf(monkeypatch, tmp_path):
     importlib.reload(nl)
 
     monkeypatch.setattr(nl, "start_video_writer_thread", lambda *a, **k: types.SimpleNamespace(join=lambda: None))
-    monkeypatch.setattr(nl, "retain_recent_logs", lambda *a, **k: None)
-    monkeypatch.setattr(nl, "retain_recent_files", lambda *a, **k: None)
-    if hasattr(nl, "retain_recent_views"):
-        monkeypatch.setattr(nl, "retain_recent_views", lambda *a, **k: None)
+    monkeypatch.setattr(nl, "retain_recent_files_config", lambda *a, **k: None)
     monkeypatch.setattr(nl, "init_client", lambda *a, **k: None)
     monkeypatch.setattr(nl, "OpticalFlowTracker", lambda *a, **k: object())
     monkeypatch.setattr(nl, "FlowHistory", lambda *a, **k: object())
@@ -50,10 +47,7 @@ def test_setup_environment_slam_log(monkeypatch, tmp_path):
     importlib.reload(nl)
 
     monkeypatch.setattr(nl, "start_video_writer_thread", lambda *a, **k: types.SimpleNamespace(join=lambda: None))
-    monkeypatch.setattr(nl, "retain_recent_logs", lambda *a, **k: None)
-    monkeypatch.setattr(nl, "retain_recent_files", lambda *a, **k: None)
-    if hasattr(nl, "retain_recent_views"):
-        monkeypatch.setattr(nl, "retain_recent_views", lambda *a, **k: None)
+    monkeypatch.setattr(nl, "retain_recent_files_config", lambda *a, **k: None)
     monkeypatch.setattr(nl, "init_client", lambda *a, **k: None)
     monkeypatch.setattr(nl, "OpticalFlowTracker", lambda *a, **k: object())
     monkeypatch.setattr(nl, "FlowHistory", lambda *a, **k: object())
