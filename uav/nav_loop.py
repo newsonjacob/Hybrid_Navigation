@@ -236,8 +236,22 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
             if pose_data[0] is None:
                 logger.info("[SLAMNav] SLAM pose not stable yet, retrying...")
                 # Log unstable state
-                log_slam_frame(ctx, frame_count, time_now, 0, 0, 0, 
-                              current_waypoint_index, 999.0, "unstable", "UNSTABLE")
+                fps = 1 / max(time.time() - loop_start, 1e-6)
+                if ctx is not None:
+                    ctx.fps_list.append(fps)
+                log_slam_frame(
+                    ctx,
+                    frame_count,
+                    time_now,
+                    fps,
+                    0,
+                    0,
+                    0,
+                    current_waypoint_index,
+                    999.0,
+                    "unstable",
+                    "UNSTABLE",
+                )
                 continue
 
             transformed_pose, (x, y, z) = pose_data
@@ -256,9 +270,24 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
             # Check if the final waypoint has been reached
             if current_waypoint_index == len(waypoints) - 1 and dist_to_goal < threshold:
                 logger.info("[SLAMNav] Final goal reached — landing.")
+                time.sleep(0.1)
+                fps = 1 / max(time.time() - loop_start, 1e-6)
+                if ctx is not None:
+                    ctx.fps_list.append(fps)
                 # Log final goal reached
-                log_slam_frame(ctx, frame_count, time_now, x, y, z, 
-                              current_waypoint_index, dist_to_goal, "final_goal", "COMPLETE")
+                log_slam_frame(
+                    ctx,
+                    frame_count,
+                    time_now,
+                    fps,
+                    x,
+                    y,
+                    z,
+                    current_waypoint_index,
+                    dist_to_goal,
+                    "final_goal",
+                    "COMPLETE",
+                )
                 break
 
             (waypoint_x, waypoint_y, waypoint_z), current_waypoint_index, dist = handle_waypoint_progress(
@@ -275,8 +304,22 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
             if hasattr(ctx, "param_refs") and ctx.param_refs.state:
                 slam_state = ctx.param_refs.state[0].upper()
             
-            log_slam_frame(ctx, frame_count, time_now, x, y, z, 
-                          current_waypoint_index, dist_to_goal, last_action, slam_state)
+            fps = 1 / max(time.time() - loop_start, 1e-6)
+            if ctx is not None:
+                ctx.fps_list.append(fps)
+            log_slam_frame(
+                ctx,
+                frame_count,
+                time_now,
+                fps,
+                x,
+                y,
+                z,
+                current_waypoint_index,
+                dist_to_goal,
+                last_action,
+                slam_state,
+            )
             
             time.sleep(0.1)
             
@@ -296,7 +339,7 @@ def slam_navigation_loop(args, client, ctx, config=None, pose_source="slam"):
     return last_action
 
 
-def log_slam_frame(ctx, frame_count, time_now, x, y, z, waypoint_index, dist_to_goal, action, slam_state="OK"):
+def log_slam_frame(ctx, frame_count, time_now, fps, x, y, z, waypoint_index, dist_to_goal, action, slam_state="OK"):
     """Log SLAM navigation data to ``slam_log_*.csv``."""
     if not ctx.log_file:
         return
@@ -353,6 +396,7 @@ def log_slam_frame(ctx, frame_count, time_now, x, y, z, waypoint_index, dist_to_
         log_line = (
             f"{frame_count},"
             f"{rel_time:.2f},"
+            f"{fps:.2f},"
             f"{slam_state}_WP{waypoint_index + 1},"
             f"{collided},"
             f"{pos_x:.2f},{pos_y:.2f},{-pos_z:.2f},"

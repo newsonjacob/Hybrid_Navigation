@@ -123,7 +123,7 @@ def setup_environment(args, client, nav_mode="reactive"):
     elif nav_mode == "slam":
         log_file = open(flow_dir / f"slam_log_{timestamp}.csv", "w")
         log_file.write(
-            "frame,time,state,collided,pos_x,pos_y,pos_z,"
+            "frame,time,fps,state,collided,pos_x,pos_y,pos_z,"
             "slam_x_corr,slam_y_corr,slam_z_corr,"
             "slam_x_trans,slam_y_trans,slam_z_trans,"
             "slam_x_raw,slam_y_raw,slam_z_raw,"

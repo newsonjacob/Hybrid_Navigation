@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from .mesh_utils import (
+from mesh_utils import (
     add_environment_mesh_to_plot,
     extract_mesh_data,
     apply_mesh_corrections,
@@ -127,7 +127,11 @@ def load_trajectory_from_csv(csv_path: str) -> Optional[tuple]:
         trajectory = df[["pos_x", "pos_y", "pos_z"]].to_numpy(dtype=float)
         
         # Fix AirSim Z-axis (negative Z = up → positive Z = up)
-        trajectory[:, 2] = -trajectory[:, 2]
+        if np.mean(trajectory[:, 2]) < 0:
+            trajectory[:, 2] = -trajectory[:, 2]
+
+        # # Invert Y-axis
+        # trajectory[:, 1] = -trajectory[:, 1]
         
         # Extract metadata
         start_pos = trajectory[0] if len(trajectory) > 0 else np.array([0, 0, 0])
@@ -191,8 +195,8 @@ def create_overlay_plot(trajectories: List[tuple], output_path: str):
             y=trajectory[:, 1], 
             z=trajectory[:, 2],
             mode='lines+markers',
-            line=dict(color=color, width=4),
-            marker=dict(size=2, color=color),
+            line=dict(color=color, width=2),
+            marker=dict(size=1, color=color),
             name=f"{flight_name}",
             hovertemplate=(
                 f"<b>{flight_name}</b><br>"
@@ -212,7 +216,7 @@ def create_overlay_plot(trajectories: List[tuple], output_path: str):
             y=[trajectory[0, 1]],
             z=[trajectory[0, 2]],
             mode='markers',
-            marker=dict(size=8, color=color, symbol='diamond'),
+            marker=dict(size=3, color=color, symbol='diamond'),
             name=f"{flight_name} Start",
             showlegend=False,
             hovertemplate=f"<b>{flight_name} START</b><br>X: %{{x:.2f}}m<br>Y: %{{y:.2f}}m<br>Z: %{{z:.2f}}m<extra></extra>"
@@ -224,7 +228,7 @@ def create_overlay_plot(trajectories: List[tuple], output_path: str):
             y=[trajectory[-1, 1]],
             z=[trajectory[-1, 2]],
             mode='markers',
-            marker=dict(size=8, color=color, symbol='square'),
+            marker=dict(size=3, color=color, symbol='square'),
             name=f"{flight_name} End",
             showlegend=False,
             hovertemplate=f"<b>{flight_name} END</b><br>X: %{{x:.2f}}m<br>Y: %{{y:.2f}}m<br>Z: %{{z:.2f}}m<extra></extra>"
